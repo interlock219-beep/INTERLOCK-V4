@@ -20,11 +20,22 @@ class HITLQueue:
     handling, and audit trail. Requests are durably persisted in the
     database so they survive application restarts and are shared across
     application instances. Entries expire after a configurable TTL.
+
+    Supports dual approval: requests require a configurable number of
+    distinct approvers before transitioning to approved. Self-approval
+    is prevented by comparing approver identity to the requester.
     """
 
-    def __init__(self, *, ttl_seconds: int = 300, redis_client: Any | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        ttl_seconds: int = 300,
+        redis_client: Any | None = None,
+        required_approvers: int = 1,
+    ) -> None:
         self._ttl_seconds = ttl_seconds
         self._redis_client = redis_client
+        self._required_approvers = required_approvers
 
     async def enqueue_request(
         self,
@@ -34,9 +45,11 @@ class HITLQueue:
         risk_score: float = 0.0,
         tenant_id: str | None = None,
         user_id: UUID | None = None,
+        required_approvers: int | None = None,
     ) -> str:
         request_key = request_id or str(uuid4())
         now = datetime.now(tz=UTC)
+        approvers = required_approvers or self._required_approvers
         try:
             with get_db_session() as session:
                 session.add(
@@ -49,12 +62,12 @@ class HITLQueue:
                         expires_at=now + timedelta(seconds=self._ttl_seconds),
                         tenant_id=tenant_id,
                         user_id=user_id,
+                        required_approvers=approvers,
                     )
                 )
         except IntegrityError as exc:
             raise ApprovalError(f"Approval request {request_key} already exists") from exc
 
-        # Best-effort cache write for fast lookups; the database is the source of truth.
         if self._redis_client is not None:
             with contextlib.suppress(Exception):
                 self._redis_client.set(
@@ -85,6 +98,38 @@ class HITLQueue:
         return await self._decide(
             request_id, "rejected", decided_by=decided_by, tenant_id=tenant_id
         )
+
+    async def revoke_request(
+        self,
+        request_id: str,
+        *,
+        tenant_id: str | None = None,
+    ) -> dict[str, object]:
+        now = datetime.now(tz=UTC)
+        with get_db_session() as session:
+            model = session.scalar(
+                select(ApprovalRequestModel).where(ApprovalRequestModel.request_id == request_id)
+            )
+            if model is None:
+                raise ApprovalError(f"Approval request {request_id} not found")
+
+            if self._as_utc(model.expires_at) <= now:
+                raise ApprovalError(f"Approval request {request_id} has expired")
+
+            if model.status in ("approved", "pending"):
+                model.status = "revoked"
+                model.decided_at = now
+                result = self._to_dict(model)
+            else:
+                raise ApprovalError(
+                    f"Approval request {request_id} cannot be revoked from status {model.status}"
+                )
+
+        if self._redis_client is not None:
+            with contextlib.suppress(Exception):
+                self._redis_client.delete(f"hitl:{request_id}")
+
+        return result
 
     async def list_pending_requests(
         self, *, tenant_id: str | None = None
@@ -140,9 +185,27 @@ class HITLQueue:
                     raise ApprovalError(
                         f"Approval request {request_id} does not belong to tenant {tenant_id}"
                     )
-                model.status = decision
-                model.decided_at = now
-                model.decided_by = decided_by
+                if decision == "approved" and model.user_id == decided_by:
+                    raise ApprovalError(
+                        "Self-approval is not permitted. "
+                        "A different approver must authorize this request."
+                    )
+                if decision == "approved":
+                    model.approval_count += 1
+                    if model.approval_count >= model.required_approvers:
+                        model.status = "approved"
+                        model.decided_at = now
+                        model.decided_by = decided_by
+                    else:
+                        result = self._to_dict(model)
+                        expired = False
+                        session.flush()
+                        return result
+                else:
+                    model.status = "rejected"
+                    model.decided_at = now
+                    model.decided_by = decided_by
+
                 result = self._to_dict(model)
                 expired = False
 
@@ -157,12 +220,6 @@ class HITLQueue:
 
     @staticmethod
     def _as_utc(dt: datetime) -> datetime:
-        """Normalize a possibly-naive datetime to an aware UTC datetime.
-
-        SQLite stores ``DateTime(timezone=True)`` columns as naive datetimes,
-        so values read back from the database must be re-attached to UTC before
-        comparison with aware ``datetime.now(tz=UTC)`` values.
-        """
         if dt.tzinfo is None:
             return dt.replace(tzinfo=UTC)
         return dt.astimezone(UTC)
@@ -179,4 +236,6 @@ class HITLQueue:
             "decided_by": str(model.decided_by) if model.decided_by else None,
             "tenant_id": model.tenant_id,
             "user_id": str(model.user_id) if model.user_id else None,
+            "approval_count": model.approval_count,
+            "required_approvers": model.required_approvers,
         }

@@ -1,8 +1,10 @@
 from fastapi import APIRouter
 
 from app.presentation.api.v1.routes import (
+    activity,
     approval,
     auth,
+    billing,
     compliance,
     discovery,
     health,
@@ -18,3 +20,5 @@ api_v1_router.include_router(approval.router)
 api_v1_router.include_router(metrics.router)
 api_v1_router.include_router(compliance.router)
 api_v1_router.include_router(discovery.router)
+api_v1_router.include_router(billing.router)
+api_v1_router.include_router(activity.router)

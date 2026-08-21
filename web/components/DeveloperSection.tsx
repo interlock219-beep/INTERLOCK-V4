@@ -60,14 +60,14 @@ export function DeveloperSection() {
                   <span className="text-cyan-400">try</span>:{'\n'}
                   {'  '}execution_token = client.verify_intent( {'\n'}
                   {'    '}tool_name=<span className="text-emerald-400">"database_query"</span>,{'\n'}
-                  {'    '}tool_arguments={{<span className="text-emerald-400">"query"</span>: <span className="text-emerald-400">"SELECT * FROM users LIMIT 10"</span>}},{'\n'}
+                  {'    '}tool_arguments={'{'}<span className="text-emerald-400">"query"</span>: <span className="text-emerald-400">"SELECT * FROM users LIMIT 10"</span>{'}'},{'\n'}
                   {'    '}user_prompt=<span className="text-emerald-400">"List all active users"</span>,{'\n'}
                   {'    '}agent_id=<span className="text-emerald-400">"agent-001"</span>,{'\n'}
                   {'  '}){'\n'}
                   {'  '}result = client.consume_execution_token(execution_token){'\n'}
                   {'  '}print(<span className="text-emerald-400">"Action executed:"</span>, result){'\n'}
                   <span className="text-cyan-400">except</span> SecurityError <span className="text-cyan-400">as</span> exc:{'\n'}
-                  {'  '}print(<span className="text-emerald-400">f"IntentLock denied execution: {exc}"</span>)
+                  {'  '}print(<span className="text-emerald-400">f"IntentLock denied execution: {`{${'exc'}}`}"</span>)
                 </code>
               </pre>
             </div>

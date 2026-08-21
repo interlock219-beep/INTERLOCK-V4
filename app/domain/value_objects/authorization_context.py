@@ -16,4 +16,5 @@ class AuthorizationContext:
     action: str = "execute"
     resource: str = ""
     service_id: str | None = None
+    user_role: str | None = None
     authorized_at: datetime | None = field(default=None, kw_only=True)

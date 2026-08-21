@@ -34,8 +34,14 @@ def init_db() -> None:
     from app.infrastructure.persistence.models import (  # noqa: F401
         ApprovalRequestModel,
         AuditEventModel,
+        CheckoutSessionModel,
         ExecutionTokenModel,
+        InvoiceModel,
+        PlanModel,
+        SubscriptionModel,
+        UsageRecordModel,
         UserModel,
+        WebhookEventModel,
     )
 
     Base.metadata.create_all(bind=engine)

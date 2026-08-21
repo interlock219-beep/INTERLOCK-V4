@@ -2,12 +2,26 @@
 
 from app.infrastructure.persistence.models.approval_request_model import ApprovalRequestModel
 from app.infrastructure.persistence.models.audit_event_model import AuditEventModel
+from app.infrastructure.persistence.models.billing_models import (
+    CheckoutSessionModel,
+    InvoiceModel,
+    PlanModel,
+    SubscriptionModel,
+    UsageRecordModel,
+    WebhookEventModel,
+)
 from app.infrastructure.persistence.models.execution_token_model import ExecutionTokenModel
 from app.infrastructure.persistence.models.user_model import UserModel
 
 __all__ = [
     "ApprovalRequestModel",
     "AuditEventModel",
+    "CheckoutSessionModel",
     "ExecutionTokenModel",
+    "InvoiceModel",
+    "PlanModel",
+    "SubscriptionModel",
+    "UsageRecordModel",
     "UserModel",
+    "WebhookEventModel",
 ]

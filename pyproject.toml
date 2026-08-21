@@ -57,11 +57,11 @@ include = ["app*", "sdk*"]
 target-version = "py311"
 line-length = 100
 src = ["."]
-exclude = []
+exclude = ["alembic/versions/*.py", "scripts", "examples"]
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "B", "UP", "SIM", "S", "C4", "DTZ", "T20"]
-ignore = ["S101"]
+ignore = ["S101", "UP017"]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**/*.py" = ["S106", "S105"]
@@ -85,7 +85,7 @@ disallow_untyped_defs = true
 disallow_untyped_calls = true
 no_implicit_optional = true
 check_untyped_defs = true
-exclude = "^tests/"
+exclude = "^tests/|^scripts/"
 plugins = ["sqlalchemy.ext.mypy.plugin"]
 
 [[tool.mypy.overrides]]

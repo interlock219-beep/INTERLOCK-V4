@@ -10,7 +10,7 @@ IntentLock evaluates a proposed tool action before it executes, returns a short-
 ![Python](https://img.shields.io/badge/python-3.11%2B-blue)
 ![FastAPI](https://img.shields.io/badge/FastAPI-0.115%2B-green)
 ![License](https://img.shields.io/badge/license-Proprietary-lightgrey)
-![Tests](https://img.shields.io/badge/tests-760%20passing-brightgreen)
+![Tests](https://img.shields.io/badge/tests-848%20passing-brightgreen)
 ![Coverage](https://img.shields.io/badge/coverage-99.92%25-ff69b4)
 
 ---

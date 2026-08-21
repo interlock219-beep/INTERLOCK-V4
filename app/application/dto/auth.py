@@ -14,6 +14,7 @@ class RegisterRequest(BaseModel):
 
     email: EmailStr
     password: str = Field(min_length=_PASSWORD_MIN_LENGTH, max_length=128)
+    tenant_id: str | None = None
 
     @field_validator("password")
     @classmethod

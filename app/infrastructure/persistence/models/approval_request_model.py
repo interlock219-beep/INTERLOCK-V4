@@ -1,7 +1,7 @@
 from datetime import datetime
 from uuid import UUID, uuid4
 
-from sqlalchemy import DateTime, Float, String, Text, Uuid
+from sqlalchemy import DateTime, Float, Integer, String, Text, Uuid
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.infrastructure.persistence.database import Base
@@ -23,3 +23,5 @@ class ApprovalRequestModel(Base):
     decided_by: Mapped[UUID | None] = mapped_column(Uuid(as_uuid=True), nullable=True)
     tenant_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
     user_id: Mapped[UUID | None] = mapped_column(Uuid(as_uuid=True), nullable=True)
+    approval_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    required_approvers: Mapped[int] = mapped_column(Integer, nullable=False, default=1)

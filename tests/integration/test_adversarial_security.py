@@ -1709,25 +1709,29 @@ def test_missing_authorization_header_rejected(client: TestClient) -> None:
 
 @pytest.mark.asyncio
 async def test_redis_failure_fails_closed_on_approval(client: TestClient, admin_token: str) -> None:
-    from app.presentation.api.v1.routes.approval import _hitl_queue
+    from uuid import uuid4
 
-    _hitl_queue.reset()
-    req_id = await _hitl_queue.enqueue_request(intent_text="transfer $500", risk_score=0.85)
+    from app.presentation.api.v1.routes import approval as approval_module
 
-    with pytest.raises(RuntimeError):
-        original = _hitl_queue.approve_request
+    requester_id = uuid4()
+    req_id = await approval_module._hitl_queue.enqueue_request(
+        intent_text="transfer $500", risk_score=0.85, user_id=requester_id
+    )
 
-        async def failing(*args, **kwargs):
-            raise RuntimeError("Redis down")
+    original = approval_module.HITLQueue.approve_request
 
-        _hitl_queue.approve_request = failing
-        try:
+    async def failing(self, *args, **kwargs):
+        raise RuntimeError("Redis down")
+
+    approval_module.HITLQueue.approve_request = failing
+    try:
+        with pytest.raises(RuntimeError):
             client.post(
                 f"/api/v1/approval/{req_id}/approve",
                 headers=_auth_headers(admin_token),
             )
-        finally:
-            _hitl_queue.approve_request = original
+    finally:
+        approval_module.HITLQueue.approve_request = original
 
 
 @pytest.mark.asyncio

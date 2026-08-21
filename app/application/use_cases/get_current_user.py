@@ -1,7 +1,12 @@
+from datetime import UTC, datetime
 from uuid import UUID
 
 from app.application.dto.auth import UserResponse
-from app.domain.exceptions.domain_errors import UserNotFoundError
+from app.domain.exceptions.domain_errors import (
+    AccountLockedError,
+    InactiveUserError,
+    UserNotFoundError,
+)
 from app.domain.repositories.user_repository import UserRepository
 
 
@@ -15,6 +20,14 @@ class GetCurrentUserUseCase:
         user = await self._user_repository.get_by_id(user_id)
         if user is None:
             raise UserNotFoundError(f"User not found: {user_id}")
+
+        if not user.is_active:
+            raise InactiveUserError("User account is inactive.")
+
+        if user.locked_until is not None and datetime.now(tz=UTC) < user.locked_until:
+            raise AccountLockedError(
+                "Account is locked due to multiple failed login attempts."
+            )
 
         return UserResponse(
             id=user.id,

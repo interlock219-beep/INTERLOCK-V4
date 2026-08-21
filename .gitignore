@@ -76,3 +76,15 @@ requirements-dev.txt
 
 # Local Python version managers
 .python-version
+
+# Frontend
+web/.next/
+web/node_modules/
+web/package-lock.json
+web/tsconfig.tsbuildinfo
+
+# Coverage debug artifacts
+coverage_debug.json
+coverage_direct.json
+coverage_manual.json
+coverage_swap.json

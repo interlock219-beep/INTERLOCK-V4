@@ -27,7 +27,12 @@ def upgrade() -> None:
         "approval_requests",
         sa.Column("tenant_id", sa.String(length=64), nullable=True),
     )
-    op.create_index("ix_approval_requests_tenant_id", "approval_requests", ["tenant_id"], unique=False)
+    op.create_index(
+        "ix_approval_requests_tenant_id",
+        "approval_requests",
+        ["tenant_id"],
+        unique=False,
+    )
     op.add_column(
         "approval_requests",
         sa.Column("user_id", sa.Uuid(), nullable=True),

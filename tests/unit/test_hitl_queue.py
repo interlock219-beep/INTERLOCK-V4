@@ -22,20 +22,23 @@ async def test_enqueue_and_list() -> None:
 
 async def test_approve_request() -> None:
     queue = HITLQueue(ttl_seconds=300)
-    request_id = await queue.enqueue_request(intent_text="transfer funds", risk_score=0.7)
-    entry = await queue.approve_request(request_id)
+    request_id = await queue.enqueue_request(
+        intent_text="transfer funds", risk_score=0.7, user_id=uuid4()
+    )
+    entry = await queue.approve_request(request_id, decided_by=uuid4())
     assert entry["status"] == "approved"
     assert "decided_at" in entry
 
-    # After approval, it should no longer be pending
     pending = await queue.list_pending_requests()
     assert len(pending) == 0
 
 
 async def test_reject_request() -> None:
     queue = HITLQueue(ttl_seconds=300)
-    request_id = await queue.enqueue_request(intent_text="transfer funds", risk_score=0.7)
-    entry = await queue.reject_request(request_id)
+    request_id = await queue.enqueue_request(
+        intent_text="transfer funds", risk_score=0.7, user_id=uuid4()
+    )
+    entry = await queue.reject_request(request_id, decided_by=uuid4())
     assert entry["status"] == "rejected"
     assert "decided_at" in entry
 
@@ -48,8 +51,9 @@ async def test_approve_missing_request_raises() -> None:
 
 async def test_approve_expired_request_raises() -> None:
     queue = HITLQueue(ttl_seconds=300)
-    request_id = await queue.enqueue_request(intent_text="transfer funds", risk_score=0.7)
-    # Force expiration by setting expires_at in the past
+    request_id = await queue.enqueue_request(
+        intent_text="transfer funds", risk_score=0.7, user_id=uuid4()
+    )
     with get_db_session() as session:
         model = session.scalar(
             select(ApprovalRequestModel).where(ApprovalRequestModel.request_id == request_id)
@@ -63,15 +67,19 @@ async def test_approve_expired_request_raises() -> None:
 
 async def test_cannot_approve_twice() -> None:
     queue = HITLQueue(ttl_seconds=300)
-    request_id = await queue.enqueue_request(intent_text="transfer funds", risk_score=0.7)
-    await queue.approve_request(request_id)
+    request_id = await queue.enqueue_request(
+        intent_text="transfer funds", risk_score=0.7, user_id=uuid4()
+    )
+    await queue.approve_request(request_id, decided_by=uuid4())
     with pytest.raises(ApprovalError):
-        await queue.approve_request(request_id)
+        await queue.approve_request(request_id, decided_by=uuid4())
 
 
 async def test_reset_clears_queue() -> None:
     queue = HITLQueue(ttl_seconds=300)
-    await queue.enqueue_request(intent_text="transfer funds", risk_score=0.7)
+    await queue.enqueue_request(
+        intent_text="transfer funds", risk_score=0.7, user_id=uuid4()
+    )
     queue.reset()
     pending = await queue.list_pending_requests()
     assert len(pending) == 0
@@ -82,7 +90,9 @@ async def test_reset_clears_queue() -> None:
 
 async def test_request_persisted_to_database() -> None:
     queue = HITLQueue(ttl_seconds=300)
-    request_id = await queue.enqueue_request(intent_text="transfer funds", risk_score=0.7)
+    request_id = await queue.enqueue_request(
+        intent_text="transfer funds", risk_score=0.7, user_id=uuid4()
+    )
 
     with get_db_session() as session:
         model = session.scalar(
@@ -96,40 +106,50 @@ async def test_request_persisted_to_database() -> None:
 
 async def test_duplicate_rejection_raises() -> None:
     queue = HITLQueue(ttl_seconds=300)
-    request_id = await queue.enqueue_request(intent_text="transfer funds", risk_score=0.7)
-    await queue.reject_request(request_id)
+    request_id = await queue.enqueue_request(
+        intent_text="transfer funds", risk_score=0.7, user_id=uuid4()
+    )
+    await queue.reject_request(request_id, decided_by=uuid4())
     with pytest.raises(ApprovalError):
-        await queue.reject_request(request_id)
+        await queue.reject_request(request_id, decided_by=uuid4())
 
 
 async def test_reject_already_approved_raises() -> None:
     queue = HITLQueue(ttl_seconds=300)
-    request_id = await queue.enqueue_request(intent_text="transfer funds", risk_score=0.7)
-    await queue.approve_request(request_id)
+    request_id = await queue.enqueue_request(
+        intent_text="transfer funds", risk_score=0.7, user_id=uuid4()
+    )
+    await queue.approve_request(request_id, decided_by=uuid4())
     with pytest.raises(ApprovalError):
-        await queue.reject_request(request_id)
+        await queue.reject_request(request_id, decided_by=uuid4())
 
 
 async def test_duplicate_request_id_raises() -> None:
     queue = HITLQueue(ttl_seconds=300)
-    await queue.enqueue_request(request_id="fixed-id", intent_text="transfer funds", risk_score=0.7)
+    await queue.enqueue_request(
+        request_id="fixed-id", intent_text="transfer funds", risk_score=0.7, user_id=uuid4()
+    )
     with pytest.raises(ApprovalError):
-        await queue.enqueue_request(request_id="fixed-id", intent_text="another", risk_score=0.5)
+        await queue.enqueue_request(
+            request_id="fixed-id", intent_text="another", risk_score=0.5, user_id=uuid4()
+        )
 
 
 async def test_persists_across_instances() -> None:
     queue1 = HITLQueue(ttl_seconds=300)
-    request_id = await queue1.enqueue_request(intent_text="transfer funds", risk_score=0.7)
+    requester_id = uuid4()
+    approver_id = uuid4()
+    request_id = await queue1.enqueue_request(
+        intent_text="transfer funds", risk_score=0.7, user_id=requester_id
+    )
 
-    # A new queue instance (simulating another process/instance) sees the same data.
     queue2 = HITLQueue(ttl_seconds=300)
     pending = await queue2.list_pending_requests()
     assert [p["request_id"] for p in pending] == [request_id]
 
-    entry = await queue2.approve_request(request_id)
+    entry = await queue2.approve_request(request_id, decided_by=approver_id)
     assert entry["status"] == "approved"
 
-    # queue1 also sees the approved state (no longer pending).
     pending1 = await queue1.list_pending_requests()
     assert len(pending1) == 0
 
@@ -140,14 +160,15 @@ async def test_database_failure_does_not_approve() -> None:
     from app.domain.services import hitl_queue as hitl_module
 
     queue = HITLQueue(ttl_seconds=300)
-    request_id = await queue.enqueue_request(intent_text="transfer funds", risk_score=0.7)
+    request_id = await queue.enqueue_request(
+        intent_text="transfer funds", risk_score=0.7, user_id=uuid4()
+    )
 
     with patch.object(
         hitl_module, "get_db_session", side_effect=RuntimeError("db down")
     ), pytest.raises(RuntimeError):
-        await queue.approve_request(request_id)
+        await queue.approve_request(request_id, decided_by=uuid4())
 
-    # The request must still be pending (not approved).
     pending = await queue.list_pending_requests()
     assert [p["request_id"] for p in pending] == [request_id]
     assert pending[0]["status"] == "pending"
@@ -159,7 +180,9 @@ async def test_transaction_rollback_prevents_approval() -> None:
     from app.infrastructure.persistence import database
 
     queue = HITLQueue(ttl_seconds=300)
-    request_id = await queue.enqueue_request(intent_text="transfer funds", risk_score=0.7)
+    request_id = await queue.enqueue_request(
+        intent_text="transfer funds", risk_score=0.7, user_id=uuid4()
+    )
 
     original = database.SessionLocal
     fake_session = MagicMock()
@@ -172,16 +195,17 @@ async def test_transaction_rollback_prevents_approval() -> None:
         status="pending",
         created_at=datetime.now(tz=UTC),
         expires_at=datetime.now(tz=UTC) + timedelta(seconds=300),
+        approval_count=0,
+        required_approvers=1,
     )
     database.SessionLocal = MagicMock(return_value=fake_session)
     try:
         with pytest.raises(RuntimeError):
-            await queue.approve_request(request_id)
+            await queue.approve_request(request_id, decided_by=uuid4())
     finally:
         database.SessionLocal = original
 
     fake_session.rollback.assert_called_once()
-    # The request must still be pending (not approved).
     pending = await queue.list_pending_requests()
     assert [p["request_id"] for p in pending] == [request_id]
     assert pending[0]["status"] == "pending"
@@ -225,8 +249,12 @@ async def test_list_pending_requests_filters_by_tenant() -> None:
 
 async def test_list_pending_requests_returns_all_when_no_tenant_filter() -> None:
     queue = HITLQueue(ttl_seconds=300)
-    await queue.enqueue_request(intent_text="tenant1", risk_score=0.7, tenant_id="tenant-1")
-    await queue.enqueue_request(intent_text="tenant2", risk_score=0.7, tenant_id="tenant-2")
+    await queue.enqueue_request(
+        intent_text="tenant1", risk_score=0.7, tenant_id="tenant-1"
+    )
+    await queue.enqueue_request(
+        intent_text="tenant2", risk_score=0.7, tenant_id="tenant-2"
+    )
 
     pending = await queue.list_pending_requests()
     assert len(pending) == 2
@@ -258,7 +286,7 @@ async def test_same_tenant_approve_succeeds() -> None:
         intent_text="transfer funds", risk_score=0.7, tenant_id="tenant-1"
     )
 
-    entry = await queue.approve_request(request_id, tenant_id="tenant-1")
+    entry = await queue.approve_request(request_id, tenant_id="tenant-1", decided_by=uuid4())
     assert entry["status"] == "approved"
 
 
@@ -269,10 +297,10 @@ async def test_redis_cache_invalidated_on_approve() -> None:
     redis_client = MagicMock()
     queue = HITLQueue(ttl_seconds=300, redis_client=redis_client)
     request_id = await queue.enqueue_request(
-        intent_text="transfer funds", risk_score=0.7, tenant_id="tenant-1"
+        intent_text="transfer funds", risk_score=0.7, tenant_id="tenant-1", user_id=uuid4()
     )
 
-    await queue.approve_request(request_id, tenant_id="tenant-1")
+    await queue.approve_request(request_id, tenant_id="tenant-1", decided_by=uuid4())
     redis_client.delete.assert_called_once_with(f"hitl:{request_id}")
 
 
@@ -280,10 +308,10 @@ async def test_redis_cache_invalidated_on_reject() -> None:
     redis_client = MagicMock()
     queue = HITLQueue(ttl_seconds=300, redis_client=redis_client)
     request_id = await queue.enqueue_request(
-        intent_text="transfer funds", risk_score=0.7, tenant_id="tenant-1"
+        intent_text="transfer funds", risk_score=0.7, tenant_id="tenant-1", user_id=uuid4()
     )
 
-    await queue.reject_request(request_id, tenant_id="tenant-1")
+    await queue.reject_request(request_id, tenant_id="tenant-1", decided_by=uuid4())
     redis_client.delete.assert_called_once_with(f"hitl:{request_id}")
 
 
@@ -291,10 +319,9 @@ async def test_redis_cache_not_invalidated_on_expired() -> None:
     redis_client = MagicMock()
     queue = HITLQueue(ttl_seconds=300, redis_client=redis_client)
     request_id = await queue.enqueue_request(
-        intent_text="transfer funds", risk_score=0.7, tenant_id="tenant-1"
+        intent_text="transfer funds", risk_score=0.7, tenant_id="tenant-1", user_id=uuid4()
     )
 
-    # Force expiration
     with get_db_session() as session:
         model = session.scalar(
             select(ApprovalRequestModel).where(ApprovalRequestModel.request_id == request_id)
@@ -303,6 +330,78 @@ async def test_redis_cache_not_invalidated_on_expired() -> None:
         model.expires_at = datetime.now(tz=UTC) - timedelta(seconds=1)
 
     with pytest.raises(ApprovalError):
-        await queue.approve_request(request_id, tenant_id="tenant-1")
+        await queue.approve_request(request_id, tenant_id="tenant-1", decided_by=uuid4())
 
     redis_client.delete.assert_not_called()
+
+
+# ---------- Dual approval tests ----------
+
+
+async def test_dual_approval_requires_multiple_approvers() -> None:
+    queue = HITLQueue(ttl_seconds=300, required_approvers=2)
+    requester = uuid4()
+    approver1 = uuid4()
+    approver2 = uuid4()
+    request_id = await queue.enqueue_request(
+        intent_text="transfer funds", risk_score=0.9, user_id=requester
+    )
+
+    entry = await queue.approve_request(request_id, decided_by=approver1)
+    assert entry["status"] == "pending"
+    assert entry["approval_count"] == 1
+
+    entry = await queue.approve_request(request_id, decided_by=approver2)
+    assert entry["status"] == "approved"
+    assert entry["approval_count"] == 2
+
+
+async def test_self_approval_prevented() -> None:
+    queue = HITLQueue(ttl_seconds=300)
+    requester = uuid4()
+    request_id = await queue.enqueue_request(
+        intent_text="transfer funds", risk_score=0.9, user_id=requester
+    )
+
+    with pytest.raises(ApprovalError, match="Self-approval is not permitted"):
+        await queue.approve_request(request_id, decided_by=requester)
+
+
+async def test_revoke_approved_request() -> None:
+    queue = HITLQueue(ttl_seconds=300)
+    requester = uuid4()
+    approver = uuid4()
+    request_id = await queue.enqueue_request(
+        intent_text="transfer funds", risk_score=0.9, user_id=requester
+    )
+
+    await queue.approve_request(request_id, decided_by=approver)
+    entry = await queue.revoke_request(request_id)
+    assert entry["status"] == "revoked"
+
+
+async def test_revoke_pending_request() -> None:
+    queue = HITLQueue(ttl_seconds=300)
+    request_id = await queue.enqueue_request(
+        intent_text="transfer funds", risk_score=0.9, user_id=uuid4()
+    )
+
+    entry = await queue.revoke_request(request_id)
+    assert entry["status"] == "revoked"
+
+
+async def test_cannot_revoke_expired_request() -> None:
+    queue = HITLQueue(ttl_seconds=300)
+    request_id = await queue.enqueue_request(
+        intent_text="transfer funds", risk_score=0.9, user_id=uuid4()
+    )
+
+    with get_db_session() as session:
+        model = session.scalar(
+            select(ApprovalRequestModel).where(ApprovalRequestModel.request_id == request_id)
+        )
+        assert model is not None
+        model.expires_at = datetime.now(tz=UTC) - timedelta(seconds=1)
+
+    with pytest.raises(ApprovalError):
+        await queue.revoke_request(request_id)

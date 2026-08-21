@@ -8,9 +8,9 @@ const tiers = [
     name: 'Free',
     price: '$0',
     period: '/month',
-    description: 'Open source, 1 agent, 100 intents/day, community support.',
-    cta: 'Get Started',
-    href: '/docs/developer/QUICKSTART.md',
+    description: '1 agent, 100 intents/day, community support.',
+    cta: 'Start Free',
+    href: '/signup',
     features: [
       '1 agent',
       '100 intents/day',
@@ -25,8 +25,8 @@ const tiers = [
     price: '$49',
     period: '/seat/mo',
     description: '10 agents, 10k intents/day, SSO, priority support.',
-    cta: 'Upgrade to Pro',
-    href: '/docs/business/PRICING.md',
+    cta: 'Start Free',
+    href: '/signup',
     features: [
       '10 agents',
       '10,000 intents/day',
@@ -43,8 +43,8 @@ const tiers = [
     price: '$199',
     period: '/seat/mo',
     description: '100 agents, 100k intents/day, RBAC, SIEM adapter ports, compliance exports.',
-    cta: 'Contact Sales',
-    href: 'mailto:interlock677@gmail.com',
+    cta: 'Start Free',
+    href: '/signup',
     features: [
       '100 agents',
       '100,000 intents/day',
@@ -116,8 +116,6 @@ export function PricingSection() {
 
               <a
                 href={tier.href}
-                target={tier.href.startsWith('http') ? '_blank' : undefined}
-                rel={tier.href.startsWith('http') ? 'noopener noreferrer' : undefined}
                 className={`block w-full py-3 px-6 rounded-xl text-center font-medium transition-all duration-200 ${
                   tier.popular
                     ? 'bg-cyan-500 hover:bg-cyan-400 text-black'

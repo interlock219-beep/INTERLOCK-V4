@@ -12,8 +12,14 @@ from app.application.interfaces.token_service import TokenService
 from app.application.use_cases.authenticate_user import AuthenticateUserUseCase
 from app.application.use_cases.get_current_user import GetCurrentUserUseCase
 from app.application.use_cases.register_user import RegisterUserUseCase
-from app.domain.exceptions.domain_errors import AuthenticationError, UserNotFoundError
+from app.domain.exceptions.domain_errors import (
+    AccountLockedError,
+    AuthenticationError,
+    InactiveUserError,
+    UserNotFoundError,
+)
 from app.domain.repositories.user_repository import UserRepository
+from app.domain.services.password_policy import PasswordPolicy
 from app.infrastructure.config.settings import Settings, get_settings
 from app.infrastructure.persistence.database import SessionLocal
 from app.infrastructure.persistence.repositories.sqlalchemy_user_repository import (
@@ -64,16 +70,35 @@ def get_register_user_use_case(
     user_repository: Annotated[UserRepository, Depends(get_user_repository)],
     password_hasher: Annotated[PasswordHasher, Depends(get_password_hasher)],
     token_service: Annotated[TokenService, Depends(get_token_service)],
+    settings: Annotated[Settings, Depends(get_app_settings)],
 ) -> RegisterUserUseCase:
-    return RegisterUserUseCase(user_repository, password_hasher, token_service)
+    return RegisterUserUseCase(
+        user_repository,
+        password_hasher,
+        token_service,
+        password_policy=PasswordPolicy(
+            min_length=settings.password_min_length,
+            require_uppercase=settings.password_require_uppercase,
+            require_lowercase=settings.password_require_lowercase,
+            require_digit=settings.password_require_digit,
+            require_special=settings.password_require_special,
+        ),
+    )
 
 
 def get_authenticate_user_use_case(
     user_repository: Annotated[UserRepository, Depends(get_user_repository)],
     password_hasher: Annotated[PasswordHasher, Depends(get_password_hasher)],
     token_service: Annotated[TokenService, Depends(get_token_service)],
+    settings: Annotated[Settings, Depends(get_app_settings)],
 ) -> AuthenticateUserUseCase:
-    return AuthenticateUserUseCase(user_repository, password_hasher, token_service)
+    return AuthenticateUserUseCase(
+        user_repository,
+        password_hasher,
+        token_service,
+        lockout_threshold=settings.account_lockout_threshold,
+        lockout_duration_minutes=settings.account_lockout_duration_minutes,
+    )
 
 
 def get_current_user_use_case(
@@ -114,7 +139,7 @@ async def get_current_user(
 ) -> UserResponse:
     try:
         return await use_case.execute(user_id)
-    except UserNotFoundError as exc:
+    except (UserNotFoundError, InactiveUserError, AccountLockedError) as exc:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail=str(exc),

@@ -2,20 +2,22 @@
 
 import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Menu, X, Shield } from 'lucide-react'
+import { Menu, X, Shield, LogIn, UserPlus } from 'lucide-react'
+import Link from 'next/link'
+import { useAuth } from '@/components/AuthProvider'
 
 const navLinks = [
   { label: 'Product', href: '#features' },
   { label: 'Security', href: '#evidence' },
   { label: 'Developers', href: '#developers' },
   { label: 'Pricing', href: '#pricing' },
-  { label: 'Documentation', href: '/docs/INDEX.md' },
   { label: 'GitHub', href: 'https://github.com/interlock677-debug/intentlock', external: true },
 ]
 
 export function Navbar() {
   const [scrolled, setScrolled] = useState(false)
   const [mobileOpen, setMobileOpen] = useState(false)
+  const { user, isLoading } = useAuth()
 
   useEffect(() => {
     const handleScroll = () => setScrolled(window.scrollY > 50)
@@ -55,13 +57,36 @@ export function Navbar() {
           </div>
 
           {/* CTA */}
-          <div className="hidden md:block">
-            <a
-              href="/docs/developer/QUICKSTART.md"
-              className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-cyan-500 hover:bg-cyan-400 text-black text-sm font-medium transition-colors"
-            >
-              Get Started
-            </a>
+          <div className="hidden md:flex items-center gap-3">
+            {!isLoading && (
+              <>
+                {user ? (
+                  <Link
+                    href="/dashboard"
+                    className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-cyan-500 hover:bg-cyan-400 text-black text-sm font-medium transition-colors"
+                  >
+                    Dashboard
+                  </Link>
+                ) : (
+                  <>
+                    <Link
+                      href="/login"
+                      className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm text-intent-muted hover:text-intent-text transition-colors"
+                    >
+                      <LogIn className="w-4 h-4" />
+                      Sign In
+                    </Link>
+                    <Link
+                      href="/signup"
+                      className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-cyan-500 hover:bg-cyan-400 text-black text-sm font-medium transition-colors"
+                    >
+                      <UserPlus className="w-4 h-4" />
+                      Start Free
+                    </Link>
+                  </>
+                )}
+              </>
+            )}
           </div>
 
           {/* Mobile toggle */}
@@ -96,12 +121,22 @@ export function Navbar() {
                   {link.label}
                 </a>
               ))}
-              <a
-                href="/docs/developer/QUICKSTART.md"
-                className="block w-full text-center py-2 rounded-lg bg-cyan-500 hover:bg-cyan-400 text-black text-sm font-medium transition-colors mt-4"
-              >
-                Get Started
-              </a>
+              <div className="pt-3 border-t border-white/10 space-y-2">
+                {user ? (
+                  <Link href="/dashboard" className="block w-full text-center py-2 rounded-lg bg-cyan-500 hover:bg-cyan-400 text-black text-sm font-medium transition-colors">
+                    Dashboard
+                  </Link>
+                ) : (
+                  <>
+                    <Link href="/login" className="block w-full text-center py-2 rounded-lg bg-white/5 hover:bg-white/10 text-sm font-medium transition-colors">
+                      Sign In
+                    </Link>
+                    <Link href="/signup" className="block w-full text-center py-2 rounded-lg bg-cyan-500 hover:bg-cyan-400 text-black text-sm font-medium transition-colors">
+                      Start Free
+                    </Link>
+                  </>
+                )}
+              </div>
             </div>
           </motion.div>
         )}

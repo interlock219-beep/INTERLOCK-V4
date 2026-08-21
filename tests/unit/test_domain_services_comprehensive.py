@@ -185,22 +185,29 @@ def test_intent_evaluator_polyglot_and_parse_helpers() -> None:
 
 
 def test_hitl_queue_full_coverage() -> None:
-    # Redis exception handling in enqueue_request
+    from uuid import uuid4
+
     mock_redis = MagicMock()
     mock_redis.set.side_effect = Exception("Redis error")
     queue = HITLQueue(ttl_seconds=300, redis_client=mock_redis)
 
     req_id = None
     import asyncio
+
     async def run_hitl():
         nonlocal req_id
-        req_id = await queue.enqueue_request(intent_text="action", risk_score=0.9)
-        # Approve and reject
-        appr_entry = await queue.approve_request(req_id)
+        requester = uuid4()
+        approver = uuid4()
+        req_id = await queue.enqueue_request(
+            intent_text="action", risk_score=0.9, user_id=requester
+        )
+        appr_entry = await queue.approve_request(req_id, decided_by=approver)
         assert appr_entry["status"] == "approved"
 
-        req_id2 = await queue.enqueue_request(intent_text="action2", risk_score=0.9)
-        rej_entry = await queue.reject_request(req_id2)
+        req_id2 = await queue.enqueue_request(
+            intent_text="action2", risk_score=0.9, user_id=uuid4()
+        )
+        rej_entry = await queue.reject_request(req_id2, decided_by=uuid4())
         assert rej_entry["status"] == "rejected"
 
         queue.reset()

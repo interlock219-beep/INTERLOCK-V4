@@ -29,10 +29,10 @@ export function CTASection() {
 
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
             <a
-              href="/docs/developer/QUICKSTART.md"
+              href="/signup"
               className="inline-flex items-center gap-2 px-8 py-4 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-black font-semibold transition-all duration-200 hover:scale-105"
             >
-              Get Started
+              Start Free
               <ArrowRight className="w-4 h-4" />
             </a>
             <a

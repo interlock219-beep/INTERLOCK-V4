@@ -66,10 +66,10 @@ export default function Home() {
 
               <div className="flex flex-col sm:flex-row items-center justify-center lg:justify-start gap-4 mb-8">
                 <a
-                  href="/docs/developer/QUICKSTART.md"
+                  href="/signup"
                   className="inline-flex items-center gap-2 px-8 py-4 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-black font-semibold transition-all duration-200 hover:scale-105 w-full sm:w-auto justify-center"
                 >
-                  Protect an Agent
+                  Start Free
                   <ArrowRight className="w-4 h-4" />
                 </a>
                 <a

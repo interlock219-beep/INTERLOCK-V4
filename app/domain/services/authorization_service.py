@@ -13,8 +13,8 @@ class AuthorizationService:
 
     Evaluates agent, user, tool, action, resource, service, and tenant
     identities to produce a deterministic ALLOW / DENY / REQUIRE_HITL
-    decision.  Defaults are permissive for backward compatibility; production
-    deployments should configure explicit restrictions via settings.
+    decision.  Supports default-deny posture and role-based permission
+    enforcement for high-assurance deployments.
     """
 
     def __init__(self, settings: Any | None = None) -> None:
@@ -38,6 +38,10 @@ class AuthorizationService:
         user_decision = self._check_user(context)
         if user_decision != AuthorizationDecision.ALLOW:
             return user_decision, self._user_reason(context)
+
+        role_decision = self._check_role_permissions(context)
+        if role_decision != AuthorizationDecision.ALLOW:
+            return role_decision, self._role_reason(context)
 
         service_decision = self._check_service(context)
         if service_decision != AuthorizationDecision.ALLOW:
@@ -79,6 +83,25 @@ class AuthorizationService:
     def _check_user(self, context: AuthorizationContext) -> AuthorizationDecision:
         if not context.user_id:
             return AuthorizationDecision.DENY
+        return AuthorizationDecision.ALLOW
+
+    def _check_role_permissions(self, context: AuthorizationContext) -> AuthorizationDecision:
+        default_deny = getattr(self._settings, "authorization_default_deny", False)
+        if not default_deny:
+            return AuthorizationDecision.ALLOW
+
+        role_actions = getattr(self._settings, "authorization_role_actions", {})
+        user_role = getattr(context, "user_role", None)
+        if not user_role:
+            return AuthorizationDecision.DENY
+
+        allowed_actions = role_actions.get(user_role)
+        if allowed_actions is None:
+            return AuthorizationDecision.DENY
+
+        if context.action not in allowed_actions:
+            return AuthorizationDecision.DENY
+
         return AuthorizationDecision.ALLOW
 
     def _check_service(self, context: AuthorizationContext) -> AuthorizationDecision:
@@ -148,6 +171,10 @@ class AuthorizationService:
     @staticmethod
     def _user_reason(context: AuthorizationContext) -> str:
         return "Missing user identity"
+
+    @staticmethod
+    def _role_reason(context: AuthorizationContext) -> str:
+        return "Insufficient role permissions"
 
     @staticmethod
     def _service_reason(context: AuthorizationContext) -> str:

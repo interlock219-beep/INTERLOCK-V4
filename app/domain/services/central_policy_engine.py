@@ -70,6 +70,70 @@ class CentralPolicyEngine:
             reason=winner.description or f"Matched rule {winner.id}",
         )
 
+    def simulate(
+        self,
+        context: AuthorizationContext,
+        confidence: float = 1.0,
+        risk_score: float = 0.0,
+    ) -> dict[str, Any]:
+        """Return a detailed simulation of policy evaluation without side effects.
+
+        Includes all matched rules, the winning rule, and the final decision.
+        """
+        policy = self._store.get_active()
+        if policy is None:
+            return {
+                "effect": AuthorizationDecision.ALLOW.value,
+                "rule_id": None,
+                "rule_version": None,
+                "reason": "No active policy; default allow",
+                "matched_rules": [],
+                "policy_version": None,
+            }
+
+        matching_rules = [
+            r for r in policy.rules if self._matches(r.match, context)
+        ]
+
+        applicable_rules = [
+            r for r in matching_rules if self._conditions_met(r.conditions, confidence, risk_score)
+        ]
+
+        matched_rule_details = [
+            {
+                "id": r.id,
+                "version": r.version,
+                "effect": r.effect,
+                "priority": r.priority,
+                "description": r.description,
+            }
+            for r in matching_rules
+        ]
+
+        if not applicable_rules:
+            default = AuthorizationDecision(policy.default_effect)
+            return {
+                "effect": default.value,
+                "rule_id": None,
+                "rule_version": policy.version,
+                "reason": f"Default policy ({policy.version})",
+                "matched_rules": matched_rule_details,
+                "policy_version": policy.version,
+            }
+
+        applicable_rules.sort(key=lambda r: r.priority, reverse=True)
+        winner = applicable_rules[0]
+        effect = AuthorizationDecision(winner.effect)
+
+        return {
+            "effect": effect.value,
+            "rule_id": winner.id,
+            "rule_version": winner.version,
+            "reason": winner.description or f"Matched rule {winner.id}",
+            "matched_rules": matched_rule_details,
+            "policy_version": policy.version,
+        }
+
     def rollback(self, version: str) -> None:
         self._store.rollback(version)
 

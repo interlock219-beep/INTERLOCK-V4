@@ -1,5 +1,5 @@
 import json
-from typing import Annotated
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel
@@ -69,6 +69,7 @@ async def verify_intent(
         action=agent_action.action,
         resource=agent_action.resource or "",
         service_id=agent_action.service_id,
+        user_role=current_user.role,
     )
     auth_decision, auth_reason = _authz_service.authorize(auth_context)
 
@@ -221,3 +222,70 @@ async def execute_intent(
     )
     metrics.increment_execution_tokens_consumed()
     return {"status": "executed", "agent_id": str(payload.get("agent_id", payload.get("sub", "")))}
+
+
+class SimulateRequest(BaseModel):
+    agent_id: str
+    proposed_tool: str
+    tenant_id: str | None = None
+    action: str = "execute"
+    resource: str = ""
+    service_id: str | None = None
+    confidence: float = 1.0
+    risk_score: float = 0.0
+
+
+@router.post("/simulate", response_model=dict[str, Any])
+async def simulate_policy(
+    request: Request,
+    body: SimulateRequest,
+    current_user: CurrentUser,
+) -> dict[str, Any]:
+    """Simulate a policy decision without issuing an execution token.
+
+    Returns the matched rules, winning rule, and final effect.
+    """
+    correlation_id = getattr(request.state, "correlation_id", "")
+
+    if (
+        current_user.tenant_id
+        and body.tenant_id
+        and current_user.tenant_id != body.tenant_id
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Tenant mismatch: request tenant does not match user tenant.",
+        )
+
+    context = AuthorizationContext(
+        user_id=current_user.id,
+        agent_id=body.agent_id,
+        proposed_tool=body.proposed_tool,
+        tenant_id=body.tenant_id,
+        action=body.action,
+        resource=body.resource,
+        service_id=body.service_id,
+        user_role=current_user.role,
+    )
+
+    auth_decision, auth_reason = _authz_service.authorize(context)
+    if auth_decision == AuthorizationDecision.DENY:
+        return {
+            "effect": auth_decision.value,
+            "reason": auth_reason,
+            "authorization_decision": auth_decision.value,
+        }
+
+    simulation = _policy_engine.simulate(context, body.confidence, body.risk_score)
+    simulation["authorization_decision"] = auth_decision.value
+    simulation["authorization_reason"] = auth_reason
+
+    log_verification(
+        agent_id=body.agent_id,
+        proposed_tool=body.proposed_tool,
+        tool_arguments={},
+        verification_status="POLICY_SIMULATED",
+        rejection_reason="",
+        correlation_id=correlation_id,
+    )
+    return simulation

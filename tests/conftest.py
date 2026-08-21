@@ -1,5 +1,7 @@
 import os
 from collections.abc import Generator
+from datetime import UTC, datetime
+from uuid import uuid4
 
 import pytest
 from fastapi.testclient import TestClient
@@ -14,6 +16,7 @@ os.environ.setdefault("DATABASE_URL", "sqlite:///:memory:")
 os.environ.setdefault("APP_ENV", "test")
 os.environ.setdefault("DEBUG", "true")
 os.environ.setdefault("COMPLIANCE_SECRET_KEY", "test-compliance-secret-key")
+os.environ.setdefault("STRIPE_WEBHOOK_SECRET", "whsec_test")
 
 from app.infrastructure.config.settings import get_settings  # noqa: E402
 from app.infrastructure.logging.audit_logger import LOG_PATH  # noqa: E402
@@ -77,3 +80,46 @@ def client() -> Generator[TestClient, None, None]:
 @pytest.fixture
 def valid_password() -> str:
     return "SecurePass1!"
+
+
+@pytest.fixture
+def seed_plans(db_session: Session) -> None:
+    from app.domain.entities.billing_entities import PlanTier
+    from app.infrastructure.persistence.models import PlanModel
+
+    existing = db_session.query(PlanModel).count()
+    if existing > 0:
+        return
+
+    now = datetime.now(tz=UTC)
+    plans = [
+        PlanModel(
+            id=uuid4(),
+            name="Free",
+            tier=PlanTier.FREE,
+            price_monthly_cents=0,
+            price_yearly_cents=0,
+            currency="usd",
+            features="{}",
+            limits='{"intents_per_day": 100}',
+            is_active=True,
+            created_at=now,
+            updated_at=now,
+        ),
+        PlanModel(
+            id=uuid4(),
+            name="Pro",
+            tier=PlanTier.PRO,
+            price_monthly_cents=4900,
+            price_yearly_cents=47040,
+            currency="usd",
+            features="{}",
+            limits='{"intents_per_day": 10000}',
+            is_active=True,
+            created_at=now,
+            updated_at=now,
+        ),
+    ]
+    for plan in plans:
+        db_session.add(plan)
+    db_session.commit()

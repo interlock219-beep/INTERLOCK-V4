@@ -35,6 +35,15 @@ class Settings(BaseSettings):
 
     bcrypt_rounds: int = Field(default=12, ge=10, le=15)
 
+    password_min_length: int = Field(default=12, ge=8, le=128)
+    password_require_uppercase: bool = True
+    password_require_lowercase: bool = True
+    password_require_digit: bool = True
+    password_require_special: bool = True
+
+    account_lockout_threshold: int = Field(default=5, ge=1, le=100)
+    account_lockout_duration_minutes: int = Field(default=15, ge=1, le=10080)
+
     cors_origins: list[str] = Field(default_factory=lambda: ["http://localhost:3000"])
 
     redis_url: str | None = None
@@ -46,6 +55,7 @@ class Settings(BaseSettings):
 
     hitl_ttl_seconds: int = Field(default=300, ge=30, le=3600)
     hitl_approver_roles: list[str] = Field(default_factory=lambda: ["admin", "operator"])
+    hitl_required_approvers: int = Field(default=1, ge=1, le=4)
 
     velocity_window_seconds: int = Field(default=60, ge=10, le=3600)
     velocity_max_requests: int = Field(default=100, ge=1)
@@ -67,6 +77,8 @@ class Settings(BaseSettings):
     authorization_allowed_actions: list[str] | None = Field(default=None)
     authorization_allowed_resources: list[str] | None = Field(default=None)
     authorization_expiry_seconds: int = Field(default=3600, ge=60, le=86400)
+    authorization_default_deny: bool = Field(default=False)
+    authorization_role_actions: dict[str, list[str]] = Field(default_factory=dict)
 
     trusted_proxies: list[str] = Field(default_factory=list)
 
@@ -100,6 +112,10 @@ class Settings(BaseSettings):
     ticketing_project_key: str = Field(default="INTENTLOCK")
     ticketing_issue_type: str = Field(default="Security Incident")
 
+    stripe_secret_key: str = Field(default="")
+    stripe_webhook_secret: str = Field(default="")
+    stripe_publishable_key: str = Field(default="")
+
     @field_validator("cors_origins", mode="before")
     @classmethod
     def parse_cors_origins(cls, value: object) -> list[str]:
@@ -117,6 +133,19 @@ class Settings(BaseSettings):
         if isinstance(value, list):
             return [str(proxy) for proxy in value]
         return []
+
+    @field_validator("authorization_role_actions", mode="before")
+    @classmethod
+    def parse_role_actions(cls, value: object) -> dict[str, list[str]]:
+        if isinstance(value, dict):
+            return {str(k): [str(a) for a in v] for k, v in value.items()}
+        if isinstance(value, str):
+            import json
+
+            parsed = json.loads(value)
+            if isinstance(parsed, dict):
+                return {str(k): [str(a) for a in v] for k, v in parsed.items()}
+        return {}
 
     @field_validator("jwt_secret_key")
     @classmethod

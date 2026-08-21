@@ -14,3 +14,6 @@ class User:
     created_at: datetime
     role: str = "viewer"
     tenant_id: str | None = None
+    failed_login_attempts: int = 0
+    locked_until: datetime | None = None
+    password_changed_at: datetime | None = None

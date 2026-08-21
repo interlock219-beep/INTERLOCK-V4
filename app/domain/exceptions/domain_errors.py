@@ -18,6 +18,14 @@ class InactiveUserError(DomainError):
     """Raised when an inactive user attempts authentication."""
 
 
+class AccountLockedError(DomainError):
+    """Raised when a locked account attempts authentication."""
+
+
+class PasswordPolicyError(DomainError):
+    """Raised when a password does not meet policy requirements."""
+
+
 class ExecutionTokenError(DomainError):
     """Raised when an execution token is invalid, expired, or replayed."""
 

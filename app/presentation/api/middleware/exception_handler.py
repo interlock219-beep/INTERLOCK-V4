@@ -4,12 +4,14 @@ from fastapi import FastAPI, Request, status
 from fastapi.responses import JSONResponse
 
 from app.domain.exceptions.domain_errors import (
+    AccountLockedError,
     ApprovalError,
     ApprovalRequiredError,
     AuthenticationError,
     AuthorizationError,
     DomainError,
     ExecutionTokenError,
+    InactiveUserError,
     PolicyViolationError,
     WebhookError,
 )
@@ -25,7 +27,13 @@ def register_exception_handlers(app: FastAPI) -> None:
 
     @app.exception_handler(DomainError)
     async def domain_error_handler(_request: Request, exc: DomainError) -> JSONResponse:
-        if isinstance(exc, (AuthenticationError, ExecutionTokenError)):
+        security_errors = (
+            AuthenticationError,
+            ExecutionTokenError,
+            AccountLockedError,
+            InactiveUserError,
+        )
+        if isinstance(exc, security_errors):
             logger.warning("Security error: %s", exc)
             return JSONResponse(
                 status_code=status.HTTP_401_UNAUTHORIZED,
