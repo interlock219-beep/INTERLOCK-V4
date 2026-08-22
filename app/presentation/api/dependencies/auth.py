@@ -11,6 +11,7 @@ from app.application.interfaces.password_hasher import PasswordHasher
 from app.application.interfaces.token_service import TokenService
 from app.application.use_cases.authenticate_user import AuthenticateUserUseCase
 from app.application.use_cases.get_current_user import GetCurrentUserUseCase
+from app.application.use_cases.refresh_token import RefreshTokenUseCase
 from app.application.use_cases.register_user import RegisterUserUseCase
 from app.domain.exceptions.domain_errors import (
     AccountLockedError,
@@ -19,6 +20,7 @@ from app.domain.exceptions.domain_errors import (
     UserNotFoundError,
 )
 from app.domain.repositories.user_repository import UserRepository
+from app.domain.services.identity_services import SessionService
 from app.domain.services.password_policy import PasswordPolicy
 from app.infrastructure.config.settings import Settings, get_settings
 from app.infrastructure.persistence.database import SessionLocal
@@ -86,11 +88,27 @@ def get_register_user_use_case(
     )
 
 
+def get_current_user_use_case(
+    user_repository: Annotated[UserRepository, Depends(get_user_repository)],
+) -> GetCurrentUserUseCase:
+    return GetCurrentUserUseCase(user_repository)
+
+
+def get_session_service_dependency(
+    session: Annotated[Session, Depends(_get_session)],
+) -> SessionService:
+    from app.infrastructure.persistence.repositories.sqlalchemy_session_repository import (
+        SQLAlchemySessionService,
+    )
+    return SQLAlchemySessionService(session)
+
+
 def get_authenticate_user_use_case(
     user_repository: Annotated[UserRepository, Depends(get_user_repository)],
     password_hasher: Annotated[PasswordHasher, Depends(get_password_hasher)],
     token_service: Annotated[TokenService, Depends(get_token_service)],
     settings: Annotated[Settings, Depends(get_app_settings)],
+    session_service: Annotated[SessionService, Depends(get_session_service_dependency)],
 ) -> AuthenticateUserUseCase:
     return AuthenticateUserUseCase(
         user_repository,
@@ -98,18 +116,15 @@ def get_authenticate_user_use_case(
         token_service,
         lockout_threshold=settings.account_lockout_threshold,
         lockout_duration_minutes=settings.account_lockout_duration_minutes,
+        session_service=session_service if settings.refresh_token_enabled else None,
+        session_ttl_seconds=settings.session_ttl_seconds,
     )
-
-
-def get_current_user_use_case(
-    user_repository: Annotated[UserRepository, Depends(get_user_repository)],
-) -> GetCurrentUserUseCase:
-    return GetCurrentUserUseCase(user_repository)
 
 
 async def get_current_user_id(
     credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(_bearer_scheme)],
     token_service: Annotated[TokenService, Depends(get_token_service)],
+    session_service: Annotated[SessionService, Depends(get_session_service_dependency)],
 ) -> UUID:
     if credentials is None or credentials.scheme.lower() != "bearer":
         raise HTTPException(
@@ -126,6 +141,13 @@ async def get_current_user_id(
             detail=str(exc),
             headers={"WWW-Authenticate": "Bearer"},
         ) from exc
+
+    if payload.sid and not await session_service.is_session_active(payload.sid):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Session has been revoked or expired.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
 
     return payload.sub
 
@@ -150,6 +172,24 @@ async def get_current_user(
 CurrentUser = Annotated[UserResponse, Depends(get_current_user)]
 
 
+def get_refresh_token_use_case(
+    user_repository: Annotated[UserRepository, Depends(get_user_repository)],
+    token_service: Annotated[TokenService, Depends(get_token_service)],
+    settings: Annotated[Settings, Depends(get_app_settings)],
+    session: Annotated[Session, Depends(_get_session)],
+) -> RefreshTokenUseCase:
+    from app.infrastructure.persistence.repositories.sqlalchemy_session_repository import (
+        SQLAlchemySessionService,
+    )
+    session_service = SQLAlchemySessionService(session)
+    return RefreshTokenUseCase(
+        user_repository,
+        token_service,
+        session_service,
+        session_ttl_seconds=settings.session_ttl_seconds,
+    )
+
+
 def require_hitl_approver(
     current_user: CurrentUser,
     settings: Annotated[Settings, Depends(get_app_settings)],
@@ -165,3 +205,6 @@ def require_hitl_approver(
             detail="Insufficient permissions to approve or reject HITL requests.",
         )
     return current_user
+
+
+

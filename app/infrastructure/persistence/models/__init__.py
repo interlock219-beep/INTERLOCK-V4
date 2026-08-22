@@ -11,17 +11,27 @@ from app.infrastructure.persistence.models.billing_models import (
     WebhookEventModel,
 )
 from app.infrastructure.persistence.models.execution_token_model import ExecutionTokenModel
+from app.infrastructure.persistence.models.identity_models import (
+    EmailVerificationTokenModel,
+    PasswordResetTokenModel,
+    UserMFAModel,
+    UserSessionModel,
+)
 from app.infrastructure.persistence.models.user_model import UserModel
 
 __all__ = [
     "ApprovalRequestModel",
     "AuditEventModel",
     "CheckoutSessionModel",
+    "EmailVerificationTokenModel",
     "ExecutionTokenModel",
     "InvoiceModel",
+    "PasswordResetTokenModel",
     "PlanModel",
     "SubscriptionModel",
     "UsageRecordModel",
+    "UserMFAModel",
     "UserModel",
+    "UserSessionModel",
     "WebhookEventModel",
 ]

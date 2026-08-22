@@ -54,4 +54,5 @@ class AuthResponse(BaseModel):
 
     access_token: str
     token_type: str = "bearer"  # noqa: S105
+    refresh_token: str | None = None
     user: UserResponse

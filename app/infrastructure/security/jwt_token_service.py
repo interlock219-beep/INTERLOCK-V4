@@ -28,7 +28,9 @@ class JWTTokenService(TokenService):
         self._expire_minutes = expire_minutes
         self._clock_skew_seconds = clock_skew_seconds
 
-    def create_access_token(self, *, user_id: UUID, email: str) -> str:
+    def create_access_token(
+        self, *, user_id: UUID, email: str, session_id: str | None = None
+    ) -> str:
         now = datetime.now(tz=UTC)
         payload = {
             "sub": str(user_id),
@@ -39,6 +41,8 @@ class JWTTokenService(TokenService):
             "jti": str(uuid4()),
             "type": "access",
         }
+        if session_id is not None:
+            payload["sid"] = session_id
         return jwt.encode(payload, self._secret_key, algorithm=self._algorithm)
 
     def decode_access_token(self, token: str) -> TokenPayload:
@@ -63,4 +67,5 @@ class JWTTokenService(TokenService):
             sub=UUID(str(payload["sub"])),
             email=str(payload["email"]),
             jti=str(payload["jti"]),
+            sid=str(payload.get("sid", "")),
         )

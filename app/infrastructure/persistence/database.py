@@ -35,12 +35,16 @@ def init_db() -> None:
         ApprovalRequestModel,
         AuditEventModel,
         CheckoutSessionModel,
+        EmailVerificationTokenModel,
         ExecutionTokenModel,
         InvoiceModel,
+        PasswordResetTokenModel,
         PlanModel,
         SubscriptionModel,
         UsageRecordModel,
+        UserMFAModel,
         UserModel,
+        UserSessionModel,
         WebhookEventModel,
     )
 

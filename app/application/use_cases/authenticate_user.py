@@ -9,6 +9,7 @@ from app.domain.exceptions.domain_errors import (
     InactiveUserError,
 )
 from app.domain.repositories.user_repository import UserRepository
+from app.domain.services.identity_services import SessionService
 from app.domain.value_objects.email_address import EmailAddress
 
 
@@ -22,12 +23,16 @@ class AuthenticateUserUseCase:
         token_service: TokenService,
         lockout_threshold: int = 5,
         lockout_duration_minutes: int = 15,
+        session_service: SessionService | None = None,
+        session_ttl_seconds: int = 0,
     ) -> None:
         self._user_repository = user_repository
         self._password_hasher = password_hasher
         self._token_service = token_service
         self._lockout_threshold = lockout_threshold
         self._lockout_duration = timedelta(minutes=lockout_duration_minutes)
+        self._session_service = session_service
+        self._session_ttl_seconds = session_ttl_seconds
 
     async def execute(self, request: LoginRequest) -> AuthResponse:
         email = str(EmailAddress(str(request.email)))
@@ -61,12 +66,22 @@ class AuthenticateUserUseCase:
             raise AuthenticationError("Invalid email or password.")
         user = reset_user
 
+        refresh_token = None
+        if self._session_service is not None and self._session_ttl_seconds > 0:
+            session_id, _ = await self._session_service.create_session(
+                user_id=user.id,
+                ttl_seconds=self._session_ttl_seconds,
+            )
+            refresh_token = session_id
+
         access_token = self._token_service.create_access_token(
             user_id=user.id,
             email=user.email,
+            session_id=refresh_token,
         )
         return AuthResponse(
             access_token=access_token,
+            refresh_token=refresh_token,
             user=UserResponse(
                 id=user.id,
                 email=user.email,

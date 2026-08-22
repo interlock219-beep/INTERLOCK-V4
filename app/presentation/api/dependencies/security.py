@@ -2,10 +2,17 @@ from functools import lru_cache
 from typing import Annotated
 
 from fastapi import Depends
+from sqlalchemy.orm import Session
 
 from app.application.interfaces.execution_token_service import ExecutionTokenService
 from app.application.interfaces.key_manager import KeyManager
 from app.application.interfaces.nonce_store import NonceStore
+from app.domain.services.identity_services import (
+    EmailVerificationService,
+    MFAService,
+    PasswordResetService,
+    SessionService,
+)
 from app.infrastructure.config.settings import Settings, get_settings
 from app.infrastructure.redis.client import RedisClient
 from app.infrastructure.redis.nonce_store import RedisNonceStore
@@ -15,6 +22,7 @@ from app.infrastructure.security.ed25519_execution_token_service import (
 )
 from app.infrastructure.security.env_key_manager import EnvKeyManager
 from app.infrastructure.security.memory_nonce_store import MemoryNonceStore
+from app.presentation.api.dependencies.auth import _get_session
 
 
 @lru_cache
@@ -83,6 +91,54 @@ def get_execution_token_service(
         nonce_store=nonce_store,
         clock_skew_seconds=settings.jwt_clock_skew_seconds,
     )
+
+
+def get_mfa_service(
+    session: Annotated[Session, Depends(_get_session)],
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> MFAService:
+    from app.domain.services.identity_services import PyOTPMFAService
+    from app.infrastructure.persistence.repositories.sqlalchemy_mfa_repository import (
+        SQLAlchemyMFARepository,
+    )
+    return PyOTPMFAService(SQLAlchemyMFARepository(session), issuer_name=settings.mfa_issuer_name)
+
+
+def get_password_reset_service(
+    session: Annotated[Session, Depends(_get_session)],
+) -> PasswordResetService:
+    from app.domain.services.identity_services import DefaultPasswordResetService
+    from app.infrastructure.persistence.repositories.sqlalchemy_password_reset_repository import (
+        SQLAlchemyPasswordResetRepository,
+    )
+    from app.infrastructure.persistence.repositories.sqlalchemy_user_repository import (
+        SQLAlchemyUserRepository,
+    )
+    user_repo = SQLAlchemyUserRepository(session)
+    return DefaultPasswordResetService(SQLAlchemyPasswordResetRepository(session), user_repo)
+
+
+def get_email_verification_service(
+    session: Annotated[Session, Depends(_get_session)],
+) -> EmailVerificationService:
+    from app.domain.services.identity_services import DefaultEmailVerificationService
+    from app.infrastructure.persistence.repositories import (
+        sqlalchemy_email_verification_repository as _email_repo,
+    )
+
+    return DefaultEmailVerificationService(
+        _email_repo.SQLAlchemyEmailVerificationRepository(session)
+    )
+
+
+def get_session_service(
+    session: Annotated[Session, Depends(_get_session)],
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> SessionService:
+    from app.infrastructure.persistence.repositories.sqlalchemy_session_repository import (
+        SQLAlchemySessionService,
+    )
+    return SQLAlchemySessionService(session)
 
 
 def reset_security_dependencies() -> None:

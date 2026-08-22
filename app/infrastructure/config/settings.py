@@ -116,6 +116,16 @@ class Settings(BaseSettings):
     stripe_webhook_secret: str = Field(default="")
     stripe_publishable_key: str = Field(default="")
 
+    mfa_enabled: bool = Field(default=False)
+    mfa_issuer_name: str = Field(default="IntentLock")
+    mfa_backup_codes_count: int = Field(default=10, ge=1, le=20)
+
+    password_reset_token_ttl_seconds: int = Field(default=3600, ge=60, le=86400)
+    email_verification_token_ttl_seconds: int = Field(default=86400, ge=60, le=604800)
+
+    session_ttl_seconds: int = Field(default=604800, ge=60, le=2592000)
+    refresh_token_enabled: bool = Field(default=False)
+
     @field_validator("cors_origins", mode="before")
     @classmethod
     def parse_cors_origins(cls, value: object) -> list[str]:
