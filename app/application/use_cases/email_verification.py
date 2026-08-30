@@ -19,7 +19,7 @@ class RequestEmailVerificationUseCase:
     async def execute(self, email: str) -> str:
         user = await self._user_repository.get_by_email(email)
         if user is None:
-            raise AuthenticationError("User not found.")
+            return "If the account exists, a verification email has been sent."
         token = await self._verification_service.create_token(user.id, self._token_ttl_seconds)
         return token
 

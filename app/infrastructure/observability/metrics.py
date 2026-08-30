@@ -23,6 +23,11 @@ class SecurityMetrics:
         self._execution_tokens_issued: int = 0
         self._execution_tokens_consumed: int = 0
         self._execution_tokens_replayed: int = 0
+        self._causal_graph_queries: dict[str, int] = defaultdict(int)
+        self._containment_cascade_depth: dict[str, int] = defaultdict(int)
+        self._recovery_adapter_calls: dict[str, int] = defaultdict(int)
+        self._blast_radius_calculation_durations: list[float] = []
+        self._recovery_preview_durations: list[float] = []
 
     def increment_authorization_denial(self, reason: str) -> None:
         with self._lock:
@@ -60,6 +65,26 @@ class SecurityMetrics:
         with self._lock:
             self._execution_tokens_replayed += 1
 
+    def increment_causal_graph_query(self, query_type: str) -> None:
+        with self._lock:
+            self._causal_graph_queries[query_type] += 1
+
+    def record_containment_cascade_depth(self, depth: int) -> None:
+        with self._lock:
+            self._containment_cascade_depth[str(depth)] += 1
+
+    def increment_recovery_adapter_call(self, adapter_name: str) -> None:
+        with self._lock:
+            self._recovery_adapter_calls[adapter_name] += 1
+
+    def record_blast_radius_calculation(self, duration_seconds: float) -> None:
+        with self._lock:
+            self._blast_radius_calculation_durations.append(duration_seconds)
+
+    def record_recovery_preview_duration(self, duration_seconds: float) -> None:
+        with self._lock:
+            self._recovery_preview_durations.append(duration_seconds)
+
     def get_metrics_snapshot(self) -> dict[str, Any]:
         with self._lock:
             return {
@@ -79,6 +104,15 @@ class SecurityMetrics:
                 "execution_tokens_issued": self._execution_tokens_issued,
                 "execution_tokens_consumed": self._execution_tokens_consumed,
                 "execution_tokens_replayed": self._execution_tokens_replayed,
+                "causal_graph_queries": dict(self._causal_graph_queries),
+                "causal_graph_queries_total": sum(self._causal_graph_queries.values()),
+                "containment_cascade_depth": dict(self._containment_cascade_depth),
+                "recovery_adapter_calls": dict(self._recovery_adapter_calls),
+                "recovery_adapter_calls_total": sum(self._recovery_adapter_calls.values()),
+                "blast_radius_calculation_durations": list(
+                    self._blast_radius_calculation_durations
+                ),
+                "recovery_preview_durations": list(self._recovery_preview_durations),
             }
 
     def reset(self) -> None:
@@ -92,6 +126,11 @@ class SecurityMetrics:
             self._execution_tokens_issued = 0
             self._execution_tokens_consumed = 0
             self._execution_tokens_replayed = 0
+            self._causal_graph_queries.clear()
+            self._containment_cascade_depth.clear()
+            self._recovery_adapter_calls.clear()
+            self._blast_radius_calculation_durations.clear()
+            self._recovery_preview_durations.clear()
 
 
 metrics = SecurityMetrics()

@@ -16,6 +16,7 @@ import {
   X,
   Bell,
   Search,
+  Crosshair,
 } from "lucide-react"
 import { useAuth } from "@/components/AuthProvider"
 
@@ -25,7 +26,21 @@ const navigation = [
   { name: "Billing", href: "/dashboard/billing", icon: CreditCard },
   { name: "API Keys", href: "/dashboard/api-keys", icon: Key },
   { name: "Settings", href: "/dashboard/settings", icon: Settings },
+  { name: "Control Center", href: "/dashboard/control-center", icon: Crosshair, prefix: "/dashboard/control-center" },
 ]
+
+function getPageTitle(pathname: string) {
+  const match = navigation.find(
+    (n) => pathname === n.href || (n.prefix && pathname.startsWith(n.prefix))
+  )
+  return match?.name || "Dashboard"
+}
+
+function isNavActive(pathname: string, href: string, prefix?: string) {
+  if (pathname === href) return true
+  if (prefix && pathname.startsWith(prefix)) return true
+  return false
+}
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const [sidebarOpen, setSidebarOpen] = useState(false)
@@ -48,7 +63,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                 key={item.name}
                 href={item.href}
                 className={`flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors ${
-                  pathname === item.href
+                  isNavActive(pathname, item.href, item.prefix)
                     ? "bg-cyan-500/10 text-cyan-400"
                     : "text-intent-muted hover:text-intent-text hover:bg-white/5"
                 }`}
@@ -77,7 +92,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                 key={item.name}
                 href={item.href}
                 className={`flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors ${
-                  pathname === item.href
+                  isNavActive(pathname, item.href, item.prefix)
                     ? "bg-cyan-500/10 text-cyan-400"
                     : "text-intent-muted hover:text-intent-text hover:bg-white/5"
                 }`}
@@ -118,7 +133,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                 >
                   <Menu className="w-5 h-5" />
                 </button>
-                <h1 className="text-lg font-semibold">{navigation.find((n) => n.href === pathname)?.name || "Dashboard"}</h1>
+                <h1 className="text-lg font-semibold">{getPageTitle(pathname)}</h1>
               </div>
               <div className="flex items-center gap-3">
                 <button className="p-2 rounded-lg hover:bg-white/5 text-intent-muted">

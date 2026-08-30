@@ -17,6 +17,8 @@ os.environ.setdefault("APP_ENV", "test")
 os.environ.setdefault("DEBUG", "true")
 os.environ.setdefault("COMPLIANCE_SECRET_KEY", "test-compliance-secret-key")
 os.environ.setdefault("STRIPE_WEBHOOK_SECRET", "whsec_test")
+os.environ.setdefault("AUTHORIZATION_REQUIRE_TENANT", "false")
+os.environ.setdefault("AUTHORIZATION_DEFAULT_DENY", "false")
 
 from app.infrastructure.config.settings import get_settings  # noqa: E402
 from app.infrastructure.logging.audit_logger import LOG_PATH  # noqa: E402

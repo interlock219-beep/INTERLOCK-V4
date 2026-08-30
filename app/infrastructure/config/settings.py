@@ -29,7 +29,7 @@ class Settings(BaseSettings):
     jwt_clock_skew_seconds: int = Field(default=30, ge=0, le=300)
 
     execution_key_path: str | None = None
-    execution_token_ttl_seconds: int = Field(default=1, ge=1, le=60)
+    execution_token_ttl_seconds: int = Field(default=30, ge=1, le=60)
 
     key_dir: str | None = None
 
@@ -52,6 +52,7 @@ class Settings(BaseSettings):
     rate_limit_login_per_minute: int = Field(default=5, ge=1)
     rate_limit_register_per_minute: int = Field(default=5, ge=1)
     rate_limit_intent_per_minute: int = Field(default=60, ge=1)
+    rate_limit_recovery_per_minute: int = Field(default=10, ge=1)
 
     hitl_ttl_seconds: int = Field(default=300, ge=30, le=3600)
     hitl_approver_roles: list[str] = Field(default_factory=lambda: ["admin", "operator"])
@@ -72,12 +73,12 @@ class Settings(BaseSettings):
 
     authorization_denied_tools: list[str] = Field(default_factory=list)
     authorization_hitl_tools: list[str] = Field(default_factory=list)
-    authorization_require_tenant: bool = Field(default=False)
+    authorization_require_tenant: bool = Field(default=True)
     authorization_allowed_services: list[str] | None = Field(default=None)
     authorization_allowed_actions: list[str] | None = Field(default=None)
     authorization_allowed_resources: list[str] | None = Field(default=None)
     authorization_expiry_seconds: int = Field(default=3600, ge=60, le=86400)
-    authorization_default_deny: bool = Field(default=False)
+    authorization_default_deny: bool = Field(default=True)
     authorization_role_actions: dict[str, list[str]] = Field(default_factory=dict)
 
     trusted_proxies: list[str] = Field(default_factory=list)
@@ -125,6 +126,8 @@ class Settings(BaseSettings):
 
     session_ttl_seconds: int = Field(default=604800, ge=60, le=2592000)
     refresh_token_enabled: bool = Field(default=False)
+
+    recovery_adapter_names: list[str] = Field(default_factory=list)
 
     @field_validator("cors_origins", mode="before")
     @classmethod

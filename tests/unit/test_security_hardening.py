@@ -179,6 +179,7 @@ def test_policy_simulation_returns_decision(client: TestClient) -> None:
         json={
             "agent_id": "agent-1",
             "proposed_tool": "search",
+            "tenant_id": "tenant-1",
             "confidence": 1.0,
             "risk_score": 0.0,
         },

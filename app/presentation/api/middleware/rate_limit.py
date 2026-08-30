@@ -36,6 +36,14 @@ RATE_LIMITS = {
     "/api/v1/auth/register": "rate_limit_register_per_minute",
     "/api/v1/intent/verify": "rate_limit_intent_per_minute",
     "/api/v1/intent/execute": "rate_limit_intent_per_minute",
+    "/recovery/evidence": "rate_limit_recovery_per_minute",
+    "/recovery/evidence/{evidence_id}": "rate_limit_recovery_per_minute",
+    "/recovery/executions": "rate_limit_recovery_per_minute",
+    "/recovery/executions/{execution_id}": "rate_limit_recovery_per_minute",
+    "/recovery/plan/{plan_id}": "rate_limit_recovery_per_minute",
+    "/recovery/plan": "rate_limit_recovery_per_minute",
+    "/recovery/plan/{plan_id}/simulate": "rate_limit_recovery_per_minute",
+    "/recovery/plan/{plan_id}/execute": "rate_limit_recovery_per_minute",
 }
 
 WINDOW_SECONDS = 60

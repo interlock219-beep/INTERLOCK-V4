@@ -5,6 +5,8 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel
 
 from app.application.interfaces.execution_token_service import ExecutionTokenService
+from app.domain.entities.agent import AgentStatus
+from app.domain.entities.protected_action import ActionStatus, ProtectedAction
 from app.domain.exceptions.domain_errors import (
     ApprovalRequiredError,
     AuthorizationError,
@@ -19,7 +21,14 @@ from app.domain.value_objects.authorization_decision import AuthorizationDecisio
 from app.infrastructure.config.settings import get_settings
 from app.infrastructure.logging.audit_logger import log_verification
 from app.infrastructure.observability.metrics import metrics
-from app.presentation.api.dependencies.auth import CurrentUser
+from app.infrastructure.persistence.database import SessionLocal
+from app.infrastructure.persistence.repositories.sqlalchemy_agent_repository import (
+    SQLAlchemyAgentRepository,
+)
+from app.infrastructure.persistence.repositories.sqlalchemy_protected_action_repository import (
+    SQLAlchemyProtectedActionRepository,
+)
+from app.presentation.api.dependencies.auth import CurrentUser, get_user_tenant_id
 from app.presentation.api.dependencies.security import get_execution_token_service
 
 router = APIRouter(prefix="/intent", tags=["Intent"])
@@ -31,6 +40,7 @@ _policy_engine = CentralPolicyEngine.from_file()
 
 class ExecuteRequest(BaseModel):
     execution_token: str
+    agent_id: str | None = None
 
 
 def _extract_jti(token: str) -> str | None:
@@ -211,6 +221,47 @@ async def execute_intent(
             detail="Token subject does not match authenticated user.",
         )
 
+    token_agent_id = str(payload.get("agent_id", ""))
+    if body.agent_id and token_agent_id and token_agent_id != body.agent_id:
+        log_verification(
+            agent_id=body.agent_id,
+            proposed_tool=str(payload.get("tool", "")),
+            tool_arguments={},
+            verification_status="AGENT_MISMATCH",
+            rejection_reason="Token agent_id does not match request agent_id.",
+            correlation_id=correlation_id,
+            jti=str(payload.get("jti", "")) or None,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token agent_id does not match request agent_id.",
+        )
+
+    agent_id_for_check = body.agent_id or token_agent_id
+    if agent_id_for_check:
+        db_session = SessionLocal()
+        try:
+            agent_repo = SQLAlchemyAgentRepository(db_session)
+            agent = await agent_repo.get_by_agent_id(
+                get_user_tenant_id(current_user), agent_id_for_check
+            )
+            if agent is not None and agent.status == AgentStatus.REVOKED:
+                log_verification(
+                    agent_id=agent_id_for_check,
+                    proposed_tool=str(payload.get("tool", "")),
+                    tool_arguments={},
+                    verification_status="AGENT_REVOKED",
+                    rejection_reason="Agent has been revoked.",
+                    correlation_id=correlation_id,
+                    jti=str(payload.get("jti", "")) or None,
+                )
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Agent has been revoked.",
+                )
+        finally:
+            db_session.close()
+
     log_verification(
         agent_id=str(payload.get("agent_id", payload.get("sub", ""))),
         proposed_tool=str(payload.get("tool", "")),
@@ -221,6 +272,30 @@ async def execute_intent(
         jti=str(payload.get("jti", "")) or None,
     )
     metrics.increment_execution_tokens_consumed()
+
+    db_session = SessionLocal()
+    try:
+        action_repo = SQLAlchemyProtectedActionRepository(db_session)
+        execution_action = ProtectedAction(
+            action_id=f"act-{__import__('secrets').token_hex(12)}",
+            tenant_id=get_user_tenant_id(current_user),
+            actor_user_id=current_user.id,
+            agent_id=str(payload.get("agent_id", payload.get("sub", ""))),
+            authority_grant_id=None,
+            tool=str(payload.get("tool", "")),
+            resource="",
+            action_type="execution",
+            correlation_id=correlation_id,
+            status=ActionStatus.EXECUTED,
+        )
+        await action_repo.save(execution_action)
+        db_session.commit()
+    except Exception:
+        db_session.rollback()
+        raise
+    finally:
+        db_session.close()
+
     return {"status": "executed", "agent_id": str(payload.get("agent_id", payload.get("sub", "")))}
 
 

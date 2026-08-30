@@ -54,6 +54,7 @@ def _make_authz_service(**overrides: object) -> AuthorizationService:
         "authorization_denied_tools": [],
         "authorization_hitl_tools": [],
         "authorization_require_tenant": False,
+        "authorization_default_deny": False,
     }
     defaults.update(overrides)
 
@@ -68,17 +69,21 @@ def _make_authz_service(**overrides: object) -> AuthorizationService:
 
 @pytest.mark.asyncio
 async def test_authorized_action_permitted(client: TestClient, auth_token: str) -> None:
-    response = client.post(
-        "/api/v1/intent/verify",
-        json={
-            "user_prompt": "normal prompt",
-            "agent_id": "agent-1",
-            "reasoning_step": "normal",
-            "proposed_tool": "search",
-            "tool_arguments": {"query": "test"},
-        },
-        headers={"Authorization": f"Bearer {auth_token}"},
+    mock_service = _make_authz_service(
+        authorization_default_deny=False,
     )
+    with patch("app.presentation.api.v1.routes.intent._authz_service", mock_service):
+        response = client.post(
+            "/api/v1/intent/verify",
+            json={
+                "user_prompt": "normal prompt",
+                "agent_id": "agent-1",
+                "reasoning_step": "normal",
+                "proposed_tool": "search",
+                "tool_arguments": {"query": "test"},
+            },
+            headers={"Authorization": f"Bearer {auth_token}"},
+        )
     assert response.status_code == 200
     body = response.json()
     assert body["is_valid"] is True

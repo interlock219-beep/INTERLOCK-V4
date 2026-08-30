@@ -68,7 +68,7 @@ def test_tool_argument_validator_path_traversal_rejected() -> None:
 
 def test_tool_argument_validator_absolute_path_rejected_when_not_allowed() -> None:
     with pytest.raises(ToolSecurityError, match="Absolute paths are not allowed"):
-        VALIDATOR.validate_path("/etc/passwd", allow_absolute=False)
+        VALIDATOR.validate_path("C:\\etc\\passwd", allow_absolute=False)
 
 
 def test_tool_argument_validator_absolute_path_accepted_when_allowed() -> None:

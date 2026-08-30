@@ -54,5 +54,5 @@ class RefreshTokenUseCase:
         return {
             "access_token": access_token,
             "refresh_token": new_session_id,
-            "token_type": "bearer",
+            "token_type": "bearer",  # nosec B105 - standard OAuth2 token_type value
         }

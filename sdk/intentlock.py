@@ -244,6 +244,77 @@ class IntentLockGuard:
         except URLError as exc:
             raise SecurityError(f"{action.capitalize()} request failed: {exc}") from exc
 
+    def rollback_session(self, session_id: str) -> dict[str, Any]:
+        """Request surgical rollback of an agent session."""
+        return self._post_json(f"/api/v1/agent-sessions/{session_id}/rollback", {})
+
+    def rollback_preview(self, session_id: str) -> dict[str, Any]:
+        """Preview the recovery plan for an agent session without executing."""
+        return self._post_json(f"/api/v1/agent-sessions/{session_id}/rollback/preview", {})
+
+    def rollback_to_action(self, action_id: str) -> dict[str, Any]:
+        """Request rollback to a specific action."""
+        return self._post_json(f"/api/v1/actions/{action_id}/rollback", {})
+
+    def rollback_resource(self, resource_id: str, session_id: str) -> dict[str, Any]:
+        """Request rollback of a specific resource within a session."""
+        return self._post_json(
+            f"/api/v1/resources/{resource_id}/rollback",
+            {"session_id": session_id},
+        )
+
+    def freeze_session(self, session_id: str) -> dict[str, Any]:
+        """Freeze an agent session to stop new actions."""
+        return self._post_json(f"/api/v1/agent-sessions/{session_id}/freeze", {})
+
+    def kill_agent(self, agent_id: str) -> dict[str, Any]:
+        """Kill an agent and revoke all its authority."""
+        return self._post_json(f"/api/v1/agents/{agent_id}/kill", {})
+
+    def revoke_agent_tokens(self, agent_id: str) -> dict[str, Any]:
+        """Revoke all outstanding execution tokens for an agent."""
+        return self._post_json(f"/api/v1/agents/{agent_id}/revoke", {})
+
+    def get_recovery_status(self, job_id: str) -> dict[str, Any]:
+        """Get the status of a recovery job."""
+        return self._get_json(f"/api/v1/recovery/{job_id}")
+
+    def get_incident(self, incident_id: str) -> dict[str, Any]:
+        """Get incident details."""
+        return self._get_json(f"/api/v1/incident/{incident_id}")
+
+    def _post_json(self, path: str, payload: dict[str, Any]) -> dict[str, Any]:
+        url = f"{self.base_url.rsplit('/', 1)[0]}{path}"
+        body = json.dumps(payload).encode("utf-8")
+        request = Request(  # noqa: S310
+            _validate_gateway_url(url),
+            data=body,
+            headers={**self._auth_headers(), "Content-Type": "application/json"},
+            method="POST",
+        )
+        try:
+            with urlopen(request, timeout=10) as response:  # nosec B310  # noqa: S310
+                return json.loads(response.read().decode("utf-8"))  # type: ignore[no-any-return]
+        except HTTPError as exc:
+            raise SecurityError(f"Request failed: {exc.code}") from exc
+        except URLError as exc:
+            raise SecurityError(f"Request failed: {exc}") from exc
+
+    def _get_json(self, path: str) -> dict[str, Any]:
+        url = f"{self.base_url.rsplit('/', 1)[0]}{path}"
+        request = Request(  # noqa: S310
+            _validate_gateway_url(url),
+            headers=self._auth_headers(),
+            method="GET",
+        )
+        try:
+            with urlopen(request, timeout=10) as response:  # nosec B310  # noqa: S310
+                return json.loads(response.read().decode("utf-8"))  # type: ignore[no-any-return]
+        except HTTPError as exc:
+            raise SecurityError(f"Request failed: {exc.code}") from exc
+        except URLError as exc:
+            raise SecurityError(f"Request failed: {exc}") from exc
+
 
 def guard_tool(
     intent_lock_client: IntentLockGuard,

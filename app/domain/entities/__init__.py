@@ -1,3 +1,13 @@
+from app.domain.entities.agent import (
+    Agent,
+    AgentEnvironment,
+    AgentStatus,
+    AgentType,
+    RegistrationMethod,
+    RiskClassification,
+    TrustLevel,
+)
+from app.domain.entities.authority_grant import AuthorityGrant, AuthorityScope, AuthorityStatus
 from app.domain.entities.billing_entities import (
     BillingInterval,
     CheckoutSession,
@@ -9,15 +19,108 @@ from app.domain.entities.billing_entities import (
     UsageRecord,
     WebhookEvent,
 )
+from app.domain.entities.containment_event import (
+    ContainmentEvent,
+    ContainmentMode,
+    ContainmentStatus,
+)
+from app.domain.entities.discovery_event import DiscoveryEvent, DiscoverySource, DiscoveryStatus
+from app.domain.entities.execution_token import ExecutionToken, TokenStatus
+from app.domain.entities.identity_provider import (
+    IdentityProvider,
+    IdentityProviderStatus,
+    IdentityProviderType,
+)
+from app.domain.entities.incident_timeline_event import (
+    IncidentTimelineEvent,
+    TimelineEventType,
+)
+from app.domain.entities.protected_action import ActionStatus, ProtectedAction, Reversibility
+from app.domain.entities.recovery_plan import RecoveryOutcome, RecoveryPlan, RecoveryStatus
+from app.domain.entities.sso_state import SSOProviderType, SSOState, SSOStateStatus
+from app.domain.entities.surgical_recovery_types import (
+    AdapterCapability,
+    CompensationAction,
+    CompensationResult,
+    CompensationType,
+    ConflictResult,
+    ConflictStatus,
+    DriftResult,
+    DriftStatus,
+    ExecutionState,
+    PreconditionResult,
+    RecoveryAdapterType,
+    RecoveryEvidence,
+    RecoveryExecution,
+    RollbackImpact,
+    SimulationLimitation,
+    StopCondition,
+    VerificationResult,
+)
+from app.domain.entities.user import User
+from app.domain.entities.user_mfa import UserMFA
+from app.domain.entities.user_session import UserSession
 
 __all__ = [
+    "ActionStatus",
+    "Agent",
+    "AgentEnvironment",
+    "AgentStatus",
+    "AgentType",
+    "RegistrationMethod",
+    "AuthorityGrant",
+    "AuthorityScope",
+    "AuthorityStatus",
     "BillingInterval",
     "CheckoutSession",
+    "ContainmentEvent",
+    "ContainmentMode",
+    "ContainmentStatus",
+    "DiscoveryEvent",
+    "DiscoverySource",
+    "DiscoveryStatus",
+    "ExecutionToken",
+    "IdentityProvider",
+    "IdentityProviderStatus",
+    "IdentityProviderType",
+    "IncidentTimelineEvent",
+    "TimelineEventType",
     "Invoice",
     "Plan",
     "PlanTier",
+    "ProtectedAction",
+    "RecoveryOutcome",
+    "RecoveryPlan",
+    "RecoveryStatus",
+    "Reversibility",
+    "RollbackImpact",
+    "SimulationLimitation",
+    "StopCondition",
+    "VerificationResult",
+    "AdapterCapability",
+    "CompensationAction",
+    "CompensationResult",
+    "CompensationType",
+    "ConflictResult",
+    "ConflictStatus",
+    "DriftResult",
+    "DriftStatus",
+    "ExecutionState",
+    "PreconditionResult",
+    "RecoveryAdapterType",
+    "RecoveryEvidence",
+    "RecoveryExecution",
+    "RiskClassification",
+    "SSOProviderType",
+    "SSOState",
+    "SSOStateStatus",
     "Subscription",
     "SubscriptionStatus",
+    "TokenStatus",
+    "TrustLevel",
     "UsageRecord",
+    "User",
+    "UserMFA",
+    "UserSession",
     "WebhookEvent",
 ]

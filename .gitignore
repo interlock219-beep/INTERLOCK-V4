@@ -88,3 +88,14 @@ coverage_debug.json
 coverage_direct.json
 coverage_manual.json
 coverage_swap.json
+
+# Kilo workspace artifacts
+.kilo/
+
+# Stray file copies
+F/
+
+# Static analysis reports
+bandit_app.json
+mypy_report.txt
+mypy_report_partial.txt

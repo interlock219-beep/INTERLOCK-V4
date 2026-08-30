@@ -207,4 +207,40 @@ def require_hitl_approver(
     return current_user
 
 
+def require_recovery_executor(
+    current_user: CurrentUser,
+    settings: Annotated[Settings, Depends(get_app_settings)],
+) -> UserResponse:
+    """Ensure the authenticated user is authorized to execute recovery plans.
+
+    Returns the current user when authorized.
+    Raises 403 when the user's role is not in the configured recovery executor set.
+    """
+    recovery_roles = getattr(settings, "recovery_executor_roles", ["admin", "operator"])
+    if current_user.role not in recovery_roles:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Insufficient permissions to execute recovery plans.",
+        )
+    return current_user
+
+
+def get_user_tenant_id(current_user: CurrentUser) -> str:
+    """Return the current user's tenant ID, enforcing tenant assignment.
+
+    Raises 403 if the user has no tenant assignment to prevent cross-tenant access.
+    When authorization_require_tenant is disabled, returns an empty string instead
+    so that repository queries return no rows rather than raising.
+    """
+    if not current_user.tenant_id:
+        settings = get_settings()
+        if not settings.authorization_require_tenant:
+            return ""
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Tenant assignment required for this operation.",
+        )
+    return current_user.tenant_id
+
+
 

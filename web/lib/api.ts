@@ -71,6 +71,157 @@ export interface RecordUsageResult {
   resource_type?: string
 }
 
+export interface Agent {
+  agent_id: string
+  tenant_id: string
+  name: string
+  description: string
+  agent_type: string
+  status: string
+  trust_level: string
+  risk_classification: string
+  parent_agent_id: string | null
+  model_provider: string | null
+  model_name: string | null
+  environment: string
+  version: string
+  creator: string | null
+  registration_method: string
+  root_human_sponsor: string | null
+  owner_user_id: string | null
+  connected_tools: string[]
+  expires_at: string | null
+  last_activity_at: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface AuthorityGrant {
+  grant_id: string
+  tenant_id: string
+  grantor_agent_id: string
+  grantee_agent_id: string
+  scope: string
+  resource: string
+  conditions: Record<string, string>
+  expires_at: string | null
+  delegation_depth: number
+  parent_authority_id: string | null
+  root_authority_id: string | null
+  status: string
+  revoked_at: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface GrantLineage {
+  grant_id: string
+  root_authority_id: string | null
+  ancestors: AuthorityGrant[]
+  descendants_count: number
+  descendants: AuthorityGrant[]
+}
+
+export interface BlastRadius {
+  agent_id: string
+  status: string
+  risk_classification: string
+  direct_authorities: number
+  child_agents: string[]
+  child_agents_count: number
+  affected_resources: Record<string, string[]>
+  blast_radius_score: number
+  active_sessions: unknown[]
+  active_sessions_count: number
+  active_execution_tokens: unknown[]
+  active_execution_tokens_count: number
+  pending_approvals: unknown[]
+  pending_approvals_count: number
+  pending_actions: unknown[]
+  pending_actions_count: number
+}
+
+export interface ContainmentRequest {
+  target_agent_id: string
+  mode: string
+  target_authority_id?: string
+  reason: string
+  dry_run: boolean
+}
+
+export interface ContainmentResult {
+  containment_id: string
+  tenant_id: string
+  target_agent_id: string
+  target_authority_id: string | null
+  mode: string
+  status: string
+  dry_run: boolean
+  affected_agent_ids: string[]
+  affected_authority_ids: string[]
+  affected_session_ids: string[]
+  affected_token_ids: string[]
+  affected_action_ids: string[]
+  result_details: Record<string, string>
+  created_at: string
+  completed_at: string | null
+}
+
+export interface RecoverySimulation {
+  plan_id: string
+  affected_actions_count: number
+  irreversible_actions: string[]
+  approval_required_actions: string[]
+  recovery_order: string[]
+  topological_order: string[]
+  estimated_blast_radius: number
+  connector_availability: string
+  warnings: string[]
+  adapter_results: Record<string, unknown>
+  surgical_simulation_results: Record<string, unknown>
+}
+
+export interface RecoveryPlan {
+  plan_id: string
+  tenant_id: string
+  incident_action_id: string
+  status: string
+  outcome: string
+  simulation_result: Record<string, unknown>
+  steps: Record<string, string>[]
+  approved_by: string | null
+  executed_by: string | null
+  created_at: string
+  updated_at: string
+  executed_at: string | null
+}
+
+export interface ActionEntry {
+  action_id: string
+  tenant_id: string
+  agent_id: string
+  tool: string
+  resource: string
+  action_type: string
+  status: string
+  risk_score: number
+  reversibility: string
+  authority_grant_id: string | null
+  correlation_id: string
+  parent_action_id: string | null
+  workflow_id: string | null
+  decision_reason: string
+  created_at: string
+  evaluated_at: string | null
+  executed_at: string | null
+}
+
+export interface ActionGraph {
+  action_id: string
+  upstream: Record<string, unknown>[]
+  downstream: Record<string, unknown>[]
+}
+
 export class ApiError extends Error {
   constructor(public status: number, message: string) {
     super(message)
@@ -158,5 +309,49 @@ export const api = {
   },
   activity: {
     list: () => request<ActivityEvent[]>("/activity/me"),
+  },
+  agents: {
+    list: () => request<{ items: Agent[] }>("/agents/").then((r) => r.items),
+    get: (agentId: string) => request<Agent>(`/agents/${encodeURIComponent(agentId)}`),
+    update: (agentId: string, data: { status?: string; trust_level?: string }) =>
+      request<Agent>(`/agents/${encodeURIComponent(agentId)}`, {
+        method: "PATCH",
+        body: JSON.stringify(data),
+      }),
+  },
+  authority: {
+    list: () => request<{ items: AuthorityGrant[] }>("/authority/").then((r) => r.items),
+    getLineage: (grantId: string) => request<GrantLineage>(`/authority/${encodeURIComponent(grantId)}/lineage`),
+  },
+  control: {
+    getBlastRadius: (agentId: string) =>
+      request<BlastRadius>(
+        `/control/containment/agent/${encodeURIComponent(agentId)}`
+      ),
+    createContainment: (data: ContainmentRequest) =>
+      request<ContainmentResult>("/control/containment", {
+        method: "POST",
+        body: JSON.stringify(data),
+      }),
+    simulateRecovery: (data: { incident_action_id: string; recovery_steps?: Record<string, string>[] }) =>
+      request<RecoverySimulation>("/control/recovery/simulate", {
+        method: "POST",
+        body: JSON.stringify(data),
+      }),
+    executeRecovery: (data: { plan_id: string; approved_by: string }) =>
+      request<RecoveryPlan>("/control/recovery/execute", {
+        method: "POST",
+        body: JSON.stringify(data),
+      }),
+    getRecoveryPlan: (planId: string) => request<RecoveryPlan>(`/control/recovery/${encodeURIComponent(planId)}`),
+  },
+  actions: {
+    list: () => request<{ items: ActionEntry[] }>("/actions/").then((r) => r.items),
+    getUpstream: (actionId: string) =>
+      request<ActionGraph>(`/actions/${encodeURIComponent(actionId)}/upstream`),
+    getDownstream: (actionId: string) =>
+      request<ActionGraph>(`/actions/${encodeURIComponent(actionId)}/downstream`),
+    getGraph: (actionId: string) =>
+      request<ActionGraph>(`/actions/${encodeURIComponent(actionId)}/graph`),
   },
 }
