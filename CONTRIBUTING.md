@@ -11,13 +11,14 @@ cd interlock-v4
 
 # 2. Create and activate a virtual environment (Python 3.11+)
 python -m venv .venv
-.venv\Scripts\activate
+.venv\Scripts\activate     # Windows
+source .venv/bin/activate  # macOS/Linux
 
 # 3. Install dependencies
 pip install -e ".[dev,security]"
 
 # 4. Configure environment
-copy .env.example .env
+cp .env.example .env
 ```
 
 ## Running tests
@@ -58,6 +59,7 @@ alembic current
 - [ ] Consider security implications of your change
 - [ ] Update documentation if you change behavior or add features
 - [ ] Do not commit secrets, tokens, or credentials
+- [ ] Do not commit runtime data (`*.db`, `logs/`, `keys/`, `.env`)
 
 ## Code of conduct
 
