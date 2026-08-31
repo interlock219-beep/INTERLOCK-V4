@@ -13,6 +13,10 @@ import pytest
 
 from app.domain.entities.agent import Agent, AgentStatus, AgentType
 from app.domain.entities.agent_session import AgentSession, AgentSessionStatus
+from app.domain.entities.causal_state_types import (
+    ConfidenceLevel,
+    VerificationStatus,
+)
 from app.domain.entities.protected_action import (
     ActionStatus,
     ProtectedAction,
@@ -497,3 +501,83 @@ async def test_base_recovery_adapter_does_not_claim_fake_success() -> None:
     )
     assert result.success is False
     assert result.execution_state.value == "requires_manual_action"
+
+
+# ---------------------------------------------------------------------------
+# R8: _determine_final_status must not default to RECOVERED
+# ---------------------------------------------------------------------------
+
+
+def _make_verification(status: VerificationStatus, level: ConfidenceLevel) -> Any:
+    return type("V", (), {"verification_status": status, "confidence_level": level})()
+
+
+@pytest.mark.asyncio
+async def test_determine_final_status_recovered_requires_verification() -> None:
+    """Regression: a completed plan may only be RECOVERED when verified.
+
+    Before the fix, _determine_final_status returned RECOVERED whenever
+    plan_status was COMPLETED, regardless of whether independent verification
+    actually passed. It also defaulted to RECOVERED when execution_result was
+    empty (dry run). Both paths could falsely report a session as recovered.
+    """
+    from app.domain.entities.agent_session import AgentSessionStatus
+    from app.domain.entities.causal_state_types import (
+        ConfidenceLevel,
+        VerificationStatus,
+    )
+    from app.domain.entities.recovery_plan import RecoveryStatus
+    from app.domain.services.session_rollback_service import SessionRollbackService
+
+    service = SessionRollbackService(
+        action_repository=None,
+        session_repository=None,
+        plan_repository=None,
+        incident_repository=None,
+        evidence_repository=None,
+        execution_repository=None,
+        durable_execution_repository=None,
+        checkpoint_repository=None,
+        changeset_repository=None,
+        graph_repository=None,
+        confidence_repository=None,
+        report_repository=None,
+        containment_repository=None,
+        adapters=[],
+    )
+
+    verified = _make_verification(
+        VerificationStatus.EXECUTED_AND_VERIFIED, ConfidenceLevel.HIGH_CONFIDENCE
+    )
+    not_verified = _make_verification(
+        VerificationStatus.EXECUTED_NOT_VERIFIED, ConfidenceLevel.LOW_CONFIDENCE
+    )
+    manual = _make_verification(
+        VerificationStatus.MANUAL_VERIFICATION_REQUIRED,
+        ConfidenceLevel.INSUFFICIENT_EVIDENCE,
+    )
+
+    # Completed + verified -> RECOVERED
+    assert service._determine_final_status(
+        verified, {"plan_status": RecoveryStatus.COMPLETED.value}
+    ) == AgentSessionStatus.RECOVERED
+
+    # Completed but not verified -> PARTIALLY_RECOVERED, never RECOVERED
+    assert service._determine_final_status(
+        not_verified, {"plan_status": RecoveryStatus.COMPLETED.value}
+    ) == AgentSessionStatus.PARTIALLY_RECOVERED
+
+    # Failed plan -> RECOVERY_FAILED
+    assert service._determine_final_status(
+        verified, {"plan_status": RecoveryStatus.FAILED.value}
+    ) == AgentSessionStatus.RECOVERY_FAILED
+
+    # Dry run (empty execution_result) + verified -> RECOVERY_FAILED, never RECOVERED
+    assert service._determine_final_status(
+        verified, {}
+    ) == AgentSessionStatus.RECOVERY_FAILED
+
+    # Dry run + manual verification required -> PARTIALLY_RECOVERED
+    assert service._determine_final_status(
+        manual, {}
+    ) == AgentSessionStatus.PARTIALLY_RECOVERED

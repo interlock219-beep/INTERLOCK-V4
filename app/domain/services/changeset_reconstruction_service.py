@@ -388,7 +388,6 @@ class ChangeSetReconstructionService:
         evidence_map: dict[str, RecoveryEvidence],
     ) -> list[dict[str, Any]]:
         unrelated: list[dict[str, Any]] = []
-        action_ids = {a.action_id for a in actions}
 
         for action in actions:
             evidence = evidence_map.get(action.action_id)
@@ -399,11 +398,6 @@ class ChangeSetReconstructionService:
                     "action_id": action.action_id,
                     "reason": "different_agent",
                     "agent_id": evidence.agent_id,
-                })
-            if action.action_id not in action_ids:
-                unrelated.append({
-                    "action_id": action.action_id,
-                    "reason": "outside_causal_chain",
                 })
 
         return unrelated

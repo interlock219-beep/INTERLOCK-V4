@@ -247,9 +247,10 @@ class RecoveryPlanningService:
                         break
 
         all_succeeded = all(
-            state in ("succeeded", "unknown_external_outcome")
-            for state in execution_states.values()
-        ) if execution_states else False
+            result.get("execution_state") in ("succeeded", "unknown_external_outcome")
+            and result.get("verification_passed") is True
+            for result in execution_results.values()
+        ) if execution_results else False
 
         plan = RecoveryPlan(
             plan_id=plan.plan_id,

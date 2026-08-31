@@ -9,6 +9,7 @@ final state.
 from __future__ import annotations
 
 import secrets
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
 
@@ -16,6 +17,7 @@ from app.domain.entities.agent_session import AgentSession, AgentSessionStatus
 from app.domain.entities.causal_state_types import (
     AIChangeSet,
     CausalStateGraph,
+    ConfidenceLevel,
     VerificationStatus,
 )
 from app.domain.entities.containment_event import ContainmentMode
@@ -65,6 +67,30 @@ from app.infrastructure.persistence.repositories.sqlalchemy_execution_token_repo
 from app.infrastructure.persistence.repositories.sqlalchemy_protected_action_repository import (
     SQLAlchemyProtectedActionRepository,
 )
+
+
+@dataclass
+class _VerificationResult:
+    verification_status: VerificationStatus
+    confidence_level: ConfidenceLevel
+    evidence_completeness: float
+
+
+@dataclass
+class _RecoveryReport:
+    report_id: str
+    tenant_id: str
+    plan_id: str
+    incident_id: str
+    ai_changes_recovered: list[str]
+    ai_changes_failed: list[str]
+    unrelated_changes_preserved: list[str]
+    manual_recovery_required: list[str]
+    verification_status: VerificationStatus
+    confidence_level: ConfidenceLevel
+    resource_results: dict[str, Any]
+    summary: str
+    limitations: list[str]
 
 
 class SessionRollbackService:
@@ -522,11 +548,11 @@ class SessionRollbackService:
         elif confidence.level.value == "low_confidence":
             verification_status = VerificationStatus.EXECUTED_NOT_VERIFIED
 
-        return type("VerificationResult", (), {
-            "verification_status": verification_status,
-            "confidence_level": confidence.level,
-            "evidence_completeness": confidence.evidence_completeness,
-        })()
+        return _VerificationResult(
+            verification_status=verification_status,
+            confidence_level=confidence.level,
+            evidence_completeness=confidence.evidence_completeness,
+        )
 
     async def _produce_report(
         self,
@@ -555,37 +581,39 @@ class SessionRollbackService:
             if a.reversibility == Reversibility.MANUALLY_RECOVERABLE
         ]
 
-        report = type("RecoveryReport", (), {
-            "report_id": report_id,
-            "tenant_id": tenant_id,
-            "plan_id": plan.plan_id,
-            "incident_id": incident.incident_id,
-            "ai_changes_recovered": ai_changes_recovered,
-            "ai_changes_failed": ai_changes_failed,
-            "unrelated_changes_preserved": [],
-            "manual_recovery_required": manual_recovery_required,
-            "verification_status": verification.verification_status,
-            "confidence_level": verification.confidence_level,
-            "resource_results": simulation.get("resource_simulations", {}),
-            "summary": (
+        return _RecoveryReport(
+            report_id=report_id,
+            tenant_id=tenant_id,
+            plan_id=plan.plan_id,
+            incident_id=incident.incident_id,
+            ai_changes_recovered=ai_changes_recovered,
+            ai_changes_failed=ai_changes_failed,
+            unrelated_changes_preserved=[],
+            manual_recovery_required=manual_recovery_required,
+            verification_status=verification.verification_status,
+            confidence_level=verification.confidence_level,
+            resource_results=simulation.get("resource_simulations", {}),
+            summary=(
                 f"Recovered {len(ai_changes_recovered)} of {len(actions)} actions. "
                 f"{len(ai_changes_failed)} irreversible, "
                 f"{len(manual_recovery_required)} manual."
             ),
-            "limitations": [],
-        })()
-        return report
+            limitations=[],
+        )
 
     def _determine_final_status(
         self, verification: Any, execution_result: dict[str, Any]
     ) -> AgentSessionStatus:
-        if execution_result.get("plan_status") == RecoveryStatus.COMPLETED.value:
-            return AgentSessionStatus.RECOVERED
-        if execution_result.get("plan_status") == RecoveryStatus.FAILED.value:
+        plan_status = execution_result.get("plan_status")
+        if plan_status == RecoveryStatus.FAILED.value:
             return AgentSessionStatus.RECOVERY_FAILED
+        if plan_status == RecoveryStatus.COMPLETED.value:
+            if verification.verification_status == VerificationStatus.EXECUTED_AND_VERIFIED:
+                return AgentSessionStatus.RECOVERED
+            return AgentSessionStatus.PARTIALLY_RECOVERED
         if verification.verification_status == VerificationStatus.MANUAL_VERIFICATION_REQUIRED:
             return AgentSessionStatus.PARTIALLY_RECOVERED
-        return AgentSessionStatus.RECOVERED
+        return AgentSessionStatus.RECOVERY_FAILED
 
     @staticmethod
     def _compute_session_blast_radius(
