@@ -1,6 +1,6 @@
 # Compliance Readiness Matrix
 
-**Repository:** IntentLock V4  
+**Repository:** Interlock V4  
 **Date:** 2026-08-21  
 **Reviewer:** Kilo (AI-assisted code review)  
 **Scope:** Evidence preparation for SOC 2, ISO 27001, financial services vendor security, and healthcare security requirements.
@@ -9,7 +9,7 @@
 
 ## Purpose
 
-This matrix evaluates IntentLock against control categories relevant to SOC 2 (Trust Services Criteria), ISO 27001 (A.9–A.15), financial services vendor security programs, and healthcare security requirements. It is **evidence preparation for future audits and customer security questionnaires**. It does NOT claim compliance, certification, or attestation against any framework.
+This matrix evaluates Interlock V4 against control categories relevant to SOC 2 (Trust Services Criteria), ISO 27001 (A.9–A.15), financial services vendor security programs, and healthcare security requirements. It is **evidence preparation for future audits and customer security questionnaires**. It does NOT claim compliance, certification, or attestation against any framework.
 
 ---
 

@@ -1,4 +1,4 @@
-# FINAL STATUS — IntentLock V4 Security Hardening
+# FINAL STATUS — Interlock V4 Security Hardening
 
 **Date:** 2026-08-16  
 **Repository:** `F:\Desktop_Data_2026\Desktop\INTERLOCK V4`  
@@ -45,7 +45,7 @@
 | Secret exposure scan in container | Docker verification pending CI |
 | Container restart / volume cleanup | Docker verification pending CI |
 | Safety scan | CLI incompatibility with pinned typer; resolved by version pin but not re-run in this session |
-| Git history cleanup | Procedure documented in `docs/operations/GIT_HISTORY_REMEDIATION.md`; not executed (requires team approval) |
+| Git history cleanup | Out of scope; runtime files removed from working tree and index, but history rewrite is not performed by this repository |
 | Independent security assessment | Not performed |
 
 ---
@@ -66,7 +66,7 @@
 ## 4. IMMEDIATE ACTIONS
 
 1. **Push branch to trigger Docker CI** — Execute `.github/workflows/docker-verify.yml` on GitHub Actions and confirm all checks PASS.
-2. **Purge runtime files from git history** — Execute `docs/operations/GIT_HISTORY_REMEDIATION.md` after written approval from repository maintainer, security team, and all active contributors.
+2. **Note on git history** — Runtime files have been removed from the working tree and index, but rewriting historical commits is intentionally out of scope for this repository.
 3. **Re-run Safety scan** — Confirm `safety check` reports 0 vulnerabilities with `safety>=3.7,<3.8` in `requirements-dev.in`.
 4. **Mock `LOG_PATH` in isolated audit tests** — Prevent shared-state pollution in partial test runs.
 5. **Correct any remaining documentation drift** — Ensure all reports reflect authenticated intent endpoints.
@@ -84,4 +84,4 @@
 
 ---
 
-*This document is the final status summary for the IntentLock V4 security hardening effort. No application code was modified unless an actual security defect was discovered.*
+*This document is the final status summary for the Interlock V4 security hardening effort. No application code was modified unless an actual security defect was discovered.*

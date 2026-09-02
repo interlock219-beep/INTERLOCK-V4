@@ -1,4 +1,4 @@
-# IntentLock V4 — Final Independent Repository Audit
+# Interlock V4 — Final Independent Repository Audit
 
 **Date:** 2026-08-16  
 **Reviewer:** Kilo (AI-assisted code review)  
@@ -54,7 +54,7 @@
 | **Stateless JWT access tokens** | **Acceptable as documented design; requires deployment-specific decision or remediation for production** | JWT access tokens rely on signature validation and short expiration (default 30 min, max 24h). No server-side replay protection. This is a known architectural trade-off documented in the codebase. Execution tokens have nonce-based replay protection. High-value deployments should consider opaque access tokens or short TTLs with refresh tokens. |
 | **Docker verification pending** | **Blocks full production readiness declaration** | `Dockerfile` and `docker-compose.yml` have been reviewed for hardening (non-root user, tmpfs, Redis AUTH, parameterized secrets, healthchecks, `no-new-privileges`). A CI workflow (`.github/workflows/docker-verify.yml`) is defined but has **not executed** because Docker Engine is unavailable on this review machine. Production readiness cannot be fully claimed until the workflow passes on a Docker-enabled runner. |
 | **Independent security assessment pending** | **Out of scope; not a release blocker but recommended** | This review is AI-assisted. Independent professional security assessment is recommended for high-assurance deployments but is not a prerequisite for releasing a proof-of-concept or internal tool. |
-| **Regulatory compliance assessment pending** | **Out of scope; not a release blocker but required for regulated industries** | No assessment for HIPAA, PCI-DSS, SOC 2, or other regulatory frameworks has been performed. IntentLock does not claim compliance with any regulated standard. Regulated-industry deployments must obtain independent compliance validation. |
+| **Regulatory compliance assessment pending** | **Out of scope; not a release blocker but required for regulated industries** | No assessment for HIPAA, PCI-DSS, SOC 2, or other regulatory frameworks has been performed. Interlock V4 does not claim compliance with any regulated standard. Regulated-industry deployments must obtain independent compliance validation. |
 
 ---
 
@@ -161,7 +161,7 @@ Limitations:
 
 ### F. Claims That Are Safe to Make Publicly
 
-- IntentLock V4 implements a proof-of-intent authorization gateway with Ed25519 execution tokens and JWT access tokens.
+- Interlock V4 implements a control plane for AI-agent actions with Ed25519 execution tokens and JWT access tokens.
 - The codebase achieves 99.92% statement coverage and 99.59% branch coverage with 760 passing tests.
 - Static analysis (Ruff, MyPy, Bandit, Semgrep) reports no issues.
 - Dependency scanning (pip-audit) reports 0 known vulnerabilities.

@@ -1,6 +1,6 @@
 # Developer Onboarding
 
-Use this checklist to get a new developer productive with IntentLock in their first week.
+Use this checklist to get a new developer productive with Interlock V4 in their first week.
 
 ## Day 1: Environment setup
 

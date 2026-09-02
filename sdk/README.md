@@ -1,18 +1,18 @@
-# IntentLock SDK
+# Interlock V4 SDK
 
-Python SDK and LangChain wrapper for the IntentLock proof-of-intent authorization gateway.
+Python SDK and LangChain wrapper for the Interlock V4 control plane for AI-agent actions.
 
 ## Installation
 
 ```bash
-pip install intentlock
+pip install interlock
 ```
 
 For development:
 
 ```bash
-git clone https://github.com/interlock677-debug/intentlock.git
-cd intentlock
+git clone <repository-url>
+cd interlock-v4
 pip install -e ".[dev,security]"
 ```
 
@@ -37,7 +37,7 @@ try:
     result = client.consume_execution_token(token)
     print("Intent verified and token consumed:", result)
 except SecurityError as exc:
-    print(f"IntentLock denied execution: {exc}")
+    print(f"Interlock denied execution: {exc}")
 ```
 
 ## Protect tools with the decorator

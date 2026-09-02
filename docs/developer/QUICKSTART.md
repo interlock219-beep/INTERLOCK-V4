@@ -1,6 +1,6 @@
 # Developer Quickstart
 
-Get IntentLock running locally in 5 minutes.
+Get Interlock V4 running locally in 5 minutes.
 
 ## Prerequisites
 
@@ -15,14 +15,14 @@ Get IntentLock running locally in 5 minutes.
 python -m venv .venv
 .venv\Scripts\activate
 
-pip install intentlock
+pip install interlock
 ```
 
 ## Option B: Clone and install editable
 
 ```bash
-git clone https://github.com/interlock677-debug/intentlock.git
-cd intentlock
+git clone <repository-url>
+cd interlock-v4
 
 python -m venv .venv
 .venv\Scripts\activate

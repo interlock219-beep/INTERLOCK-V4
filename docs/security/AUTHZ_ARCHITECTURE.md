@@ -1,13 +1,13 @@
-# IntentLock Authorization Architecture
+# Interlock V4 Authorization Architecture
 
-**Document:** Authorization architecture, identity management, and access control design for IntentLock V4.
+**Document:** Authorization architecture, identity management, and access control design for Interlock V4.
 **Status:** Reflects the current codebase as of 2026-08-21.
 
 ---
 
 ## 1. Identity and Access Management Overview
 
-IntentLock authenticates users via HS256 JWT access tokens and authorizes actions via an explicit `AuthorizationService`. The system does not currently delegate authentication to an external identity provider. Authentication and authorization are enforced at the API layer through FastAPI dependencies.
+Interlock V4 authenticates users via HS256 JWT access tokens and authorizes actions via an explicit `AuthorizationService`. The system does not currently delegate authentication to an external identity provider. Authentication and authorization are enforced at the API layer through FastAPI dependencies.
 
 | Layer | Mechanism |
 |-------|-----------|

@@ -1,4 +1,4 @@
-# SECURITY ASSURANCE REPORT — IntentLock V4
+# SECURITY ASSURANCE REPORT — Interlock V4
 
 **Date:** 2026-08-16  
 **Reviewer:** Kilo (AI-assisted code review)  
@@ -9,7 +9,7 @@
 
 ## 1. SCOPE
 
-This review covers the complete IntentLock V4 repository including:
+This review covers the complete Interlock V4 repository including:
 - `app/` — FastAPI presentation layer, domain services, infrastructure adapters
 - `sdk/` — Python SDK and LangChain wrapper
 - `tests/` — Unit, integration, adversarial security tests, and performance benchmarks
@@ -24,7 +24,7 @@ This review covers the complete IntentLock V4 repository including:
 
 ## 2. ARCHITECTURE REVIEWED
 
-IntentLock implements a layered FastAPI architecture:
+Interlock V4 implements a layered FastAPI architecture:
 ```
 FastAPI presentation -> application use cases -> domain services -> infrastructure adapters
 ```
@@ -502,7 +502,7 @@ This review was conducted using AI-assisted static analysis, automated testing, 
 
 ## 17. CONCLUSION
 
-This AI-assisted security assurance review identified 8 security findings across the IntentLock V4 codebase. All findings were reproduced, remediated with minimal changes, and verified with regression tests. The codebase now achieves 99.92% statement coverage and 99.59% branch coverage with 760 passing tests (5 skipped on Windows for platform-specific performance thresholds). Reproducible dependency locking has been added via `requirements.txt` and `requirements-dev.txt` (pip-tools). CI/CD pipelines with automated security scanning (pip-audit, Bandit, Semgrep, Safety) and SBOM generation are configured. A Docker verification workflow has been added to CI.
+This AI-assisted security assurance review identified 8 security findings across the Interlock V4 codebase. All findings were reproduced, remediated with minimal changes, and verified with regression tests. The codebase now achieves 82.51% statement coverage with 1609 passing tests (2 test-isolation failures, 6 skipped) on the current verified run; the historical 99.92% / 760-test figures documented in earlier sections of this report reflect the snapshot at which the 8 findings were remediated. Reproducible dependency locking has been added via `requirements.txt` and `requirements-dev.txt` (pip-tools). CI/CD pipelines with automated security scanning (pip-audit, Bandit, Semgrep, Safety) and SBOM generation are configured. A Docker verification workflow has been added to CI.
 
 **STATUS: SUITABLE FOR PRODUCTION WITH DOCUMENTED LIMITATIONS**
 

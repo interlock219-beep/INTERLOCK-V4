@@ -1,6 +1,6 @@
-# IntentLock Incident Response Plan
+# Interlock V4 Incident Response Plan
 
-**Document:** Security incident response procedures for IntentLock V4.
+**Document:** Security incident response procedures for Interlock V4.
 **Status:** Plan document. Response infrastructure (logging, metrics, adapters) is implemented; formal incident response workflows are documented here for the first time.
 
 ---

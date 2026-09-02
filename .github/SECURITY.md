@@ -12,7 +12,7 @@ Interlock takes security seriously. If you discover a security vulnerability, pl
 
 ### How to report
 
-Send details to **security@intentlock.io** with:
+Send details to **security@interlock.io** with:
 
 - A description of the vulnerability
 - Steps to reproduce
@@ -40,7 +40,7 @@ In-scope for reporting includes:
 
 Out of scope:
 
-- Social engineering of IntentLock employees or users
+- Social engineering of Interlock V4 maintainers or users
 - Physical security of data centers
 - Issues in third-party dependencies that are not exploitable in Interlock
 - Denial of service without a demonstrated security impact

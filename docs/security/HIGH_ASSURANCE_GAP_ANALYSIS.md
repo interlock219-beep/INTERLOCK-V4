@@ -1,4 +1,4 @@
-# IntentLock — High-Assurance Gap Analysis
+# Interlock V4 — High-Assurance Gap Analysis
 
 **Date:** 2026-08-22  
 **Reviewer:** Kilo (AI-assisted)  
@@ -9,7 +9,7 @@
 
 ## 1. SCOPE
 
-This document evaluates IntentLock V4 against the requirements for high-assurance, regulated, critical-infrastructure, government, and defense-oriented deployment. It does **not** claim or certify IntentLock as defense-certified, government-certified, military-approved, or authorized for classified systems.
+This document evaluates Interlock V4 against the requirements for high-assurance, regulated, critical-infrastructure, government, and defense-oriented deployment. It does **not** claim or certify Interlock V4 as defense-certified, government-certified, military-approved, or authorized for classified systems.
 
 **Out of scope:** Independent penetration testing, formal code audit, regulatory certification, government authorization.
 
@@ -17,7 +17,7 @@ This document evaluates IntentLock V4 against the requirements for high-assuranc
 
 ## 2. EXECUTIVE SUMMARY
 
-IntentLock V4 has a solid security foundation with 848 passing tests, comprehensive adversarial test coverage, tenant isolation, RBAC, HITL approvals, audit logging with hash-chain integrity, and Docker hardening. However, several gaps remain for high-assurance deployment readiness:
+Interlock V4 has a solid security foundation with comprehensive adversarial test coverage, tenant isolation, RBAC, HITL approvals, audit logging with hash-chain integrity, and Docker hardening. However, several gaps remain for high-assurance deployment readiness. The most recent verified test run in this environment reports 1609 passed, 2 failed (test-isolation artifacts), 6 skipped with 82.51% statement coverage; see [Release Baseline](../operations/RELEASE_BASELINE.md) for the current test count.
 
 | Category | Status |
 |----------|--------|
@@ -165,4 +165,4 @@ IntentLock V4 has a solid security foundation with 848 passing tests, comprehens
 
 ---
 
-*This document is part of the IntentLock high-assurance security documentation package.*
+*This document is part of the Interlock V4 high-assurance security documentation package.*

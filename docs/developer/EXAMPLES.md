@@ -1,6 +1,6 @@
 # Developer Examples
 
-Advanced usage patterns for the IntentLock SDK and gateway.
+Advanced usage patterns for the Interlock V4 SDK and gateway.
 
 ## Contents
 
@@ -17,7 +17,7 @@ Advanced usage patterns for the IntentLock SDK and gateway.
 
 ## Multi-agent workflows
 
-Each agent can have its own `IntentLockGuard` with a distinct `agent_id`.
+Each agent can have its own guard client (the SDK's `IntentLockGuard` class) with a distinct `agent_id`.
 
 ```python
 from sdk.intentlock import IntentLockGuard, SecurityError
@@ -207,7 +207,7 @@ try:
     )
     result = client.consume_execution_token(token)
 except SecurityError as exc:
-    print(f"IntentLock blocked the action: {exc}")
+    print(f"Interlock blocked the action: {exc}")
 except (HTTPError, URLError) as exc:
     print(f"Network error: {exc}")
 ```
@@ -226,12 +226,12 @@ config = {
         "execute_url": "http://localhost:8000/api/v1/intent/execute",
     },
     "staging": {
-        "base_url": "https://intentlock.staging.example.com/api/v1/intent/verify",
-        "execute_url": "https://intentlock.staging.example.com/api/v1/intent/execute",
+        "base_url": "https://interlock.staging.example.com/api/v1/intent/verify",
+        "execute_url": "https://interlock.staging.example.com/api/v1/intent/execute",
     },
     "production": {
-        "base_url": "https://intentlock.prod.example.com/api/v1/intent/verify",
-        "execute_url": "https://intentlock.prod.example.com/api/v1/intent/execute",
+        "base_url": "https://interlock.prod.example.com/api/v1/intent/verify",
+        "execute_url": "https://interlock.prod.example.com/api/v1/intent/execute",
     },
 }
 

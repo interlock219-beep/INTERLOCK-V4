@@ -1,4 +1,4 @@
-# IntentLock Threat Model
+# Interlock V4 Threat Model
 
 **Date:** 2026-08-21  
 **Repository:** `F:\Desktop_Data_2026\Desktop\INTERLOCK V4`  
@@ -49,7 +49,7 @@
 | Gateway → Database | SQLAlchemy ORM, connection pooling, PostgreSQL credentials | Durable persistence of users, approvals, audit events, execution token records |
 | Gateway → External (LLM/Tools) | SDK enforces single-use semantics before tool invocation | SDK validates gateway response, then invokes wrapped local tool; gateway does not directly execute business logic |
 
-**Note on deployment topology:** The architecture assumes TLS termination at an upstream load balancer. The IntentLock gateway itself does not serve TLS in the example Docker Compose configuration. Network segmentation, firewall rules, and service mesh policies are deployment responsibilities.
+**Note on deployment topology:** The architecture assumes TLS termination at an upstream load balancer. The Interlock V4 gateway itself does not serve TLS in the example Docker Compose configuration. Network segmentation, firewall rules, and service mesh policies are deployment responsibilities.
 
 ---
 
@@ -228,7 +228,7 @@
 ### 4.7 Webhook / External Attacks
 
 #### W1: Webhook Spoofing / Replay
-- **Threat description:** An attacker intercepts or spoofs webhook callbacks from the IntentLock gateway to downstream services.
+- **Threat description:** An attacker intercepts or spoofs webhook callbacks from the Interlock V4 gateway to downstream services.
 - **Attack scenario:** Attacker sends forged webhook payloads to approval or integration endpoints.
 - **Risk:** Medium
 - **Impact:** Fraudulent approval decisions; false audit events.
@@ -339,7 +339,7 @@
 | PCI-DSS | If used in payment flows | Network segmentation (deployment responsibility); strong cryptography (Ed25519, HS256); access control; audit trails |
 | HIPAA | If used in healthcare workflows | Access control; audit logging; encryption at rest (deployment responsibility for PostgreSQL disk encryption); integrity controls (hash-chain) |
 
-**Note:** IntentLock is an authorization gateway, not a data store. It does not store PII, PHI, or payment data by design. Compliance posture depends on deployment configuration, database encryption, and log retention policies.
+**Note:** Interlock V4 is a control plane, not a data store. It does not store PII, PHI, or payment data by design. Compliance posture depends on deployment configuration, database encryption, and log retention policies.
 
 ---
 
@@ -353,4 +353,4 @@
 
 ---
 
-*This document is part of the IntentLock security documentation set. Review quarterly or after significant architectural changes.*
+*This document is part of the Interlock V4 security documentation set. Review quarterly or after significant architectural changes.*

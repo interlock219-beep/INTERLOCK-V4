@@ -1,7 +1,7 @@
 # Security Hardening Roadmap
 
 **Date:** 2026-08-16
-**Repository:** IntentLock V4
+**Repository:** Interlock V4
 **Status:** Active roadmap — items are not completed unless marked otherwise
 
 ---
@@ -51,13 +51,8 @@ Push a branch to trigger `.github/workflows/docker-verify.yml` and capture the G
 - Team re-sync of local clones
 - Verification that files are absent from all commits
 
-### Action
-Execute `docs/operations/GIT_HISTORY_REMEDIATION.md` after obtaining explicit approval from:
-1. Repository maintainer
-2. Security team
-3. All active contributors
-
-**Do NOT execute without written approval.**
+### Note
+Git history rewrite is not performed by this repository. Historical commits that contain runtime files remain in history; downstream consumers who require their removal must perform the rewrite in their own fork.
 
 ---
 
@@ -173,7 +168,7 @@ Schedule a formal threat modeling session before the next major release.
 8. **Image Signing** — Sign Docker images and enforce verification in deployment
 
 ### Action
-Create an `ENTERPRISE_DEPLOYMENT.md` with environment-specific hardening steps.
+Create an enterprise deployment guide with environment-specific hardening steps.
 
 ---
 
@@ -216,6 +211,6 @@ Do not claim HIPAA, PCI, SOC 2, or any regulatory compliance without a completed
 
 ## Important Disclaimers
 
-- IntentLock V4 is **not** "10/10 secure", "certified", "bank-grade", "HIPAA compliant", "PCI compliant", or "SOC 2 compliant" without independent evidence.
+- Interlock V4 is **not** "10/10 secure", "certified", "bank-grade", "HIPAA compliant", "PCI compliant", or "SOC 2 compliant" without independent evidence.
 - This roadmap does not guarantee security outcomes. Implementation must be validated through testing and independent assessment.
 - All timeline estimates are subject to change based on resource availability and emerging threats.

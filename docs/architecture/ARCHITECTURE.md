@@ -1,8 +1,8 @@
-# IntentLock 4.0 Architecture
+# Interlock V4 Architecture
 
 ## Components
 
-IntentLock uses a layered Python design:
+Interlock V4 uses a layered Python design:
 
 ```text
 FastAPI presentation -> application use cases/ports -> domain services -> infrastructure adapters
@@ -18,7 +18,7 @@ FastAPI presentation -> application use cases/ports -> domain services -> infras
 
 ```
 ┌─────────────┐     ┌──────────────┐     ┌─────────────┐
-│   Agent     │────▶│  IntentLock  │────▶│   Redis     │
+│   Agent     │────▶│  Interlock   │────▶│   Redis     │
 │   / Tool    │     │   Gateway    │     │  (nonce)    │
 └─────────────┘     └──────┬───────┘     └─────────────┘
                            │

@@ -1,13 +1,13 @@
-# IntentLock Tenant Isolation
+# Interlock V4 Tenant Isolation
 
-**Document:** Multi-tenant data model, isolation enforcement, and boundary controls for IntentLock V4.
+**Document:** Multi-tenant data model, isolation enforcement, and boundary controls for Interlock V4.
 **Status:** Reflects the current codebase as of 2026-08-21.
 
 ---
 
 ## 1. Multi-Tenant Data Model
 
-Tenant isolation in IntentLock is implemented at the application and database schema level. The tenant identifier (`tenant_id`, String(64), nullable) is stored on the following tables:
+Tenant isolation in Interlock V4 is implemented at the application and database schema level. The tenant identifier (`tenant_id`, String(64), nullable) is stored on the following tables:
 
 | Table | Column | Nullable | Indexed | Description |
 |-------|--------|----------|---------|-------------|

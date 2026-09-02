@@ -1,4 +1,4 @@
-# IntentLock V4 — Final Production Readiness Plan & Verification Matrix
+# Interlock V4 — Final Production Readiness Plan & Verification Matrix
 
 **Date:** 2026-08-16  
 **Reviewer:** Kilo (AI-assisted code review)  
