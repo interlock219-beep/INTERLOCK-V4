@@ -32,6 +32,14 @@
     @apply bg-clip-text text-transparent bg-gradient-to-r from-cyan-400 to-cyan-200;
   }
 
+  .gradient-text-emerald {
+    @apply bg-clip-text text-transparent bg-gradient-to-r from-emerald-300 to-emerald-500;
+  }
+
+  .interlock-glow {
+    @apply absolute inset-0 rounded-3xl bg-emerald-500/15 blur-3xl opacity-60;
+  }
+
   .glow-border {
     @apply relative;
   }
