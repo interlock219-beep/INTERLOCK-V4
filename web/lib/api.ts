@@ -196,6 +196,18 @@ export interface RecoveryPlan {
   executed_at: string | null
 }
 
+export interface Incident {
+  incident_id: string
+  agent_id: string
+  agent_name: string
+  severity: string
+  status: string
+  description: string
+  created_at: string
+  updated_at: string
+  blast_radius: string[]
+}
+
 export interface ActionEntry {
   action_id: string
   tenant_id: string

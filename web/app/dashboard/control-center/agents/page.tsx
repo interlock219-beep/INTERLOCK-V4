@@ -55,8 +55,8 @@ function getRiskConfig(risk: number) {
   return riskConfig.find((r) => risk >= r.min && risk < r.max) || riskConfig[riskConfig.length - 1]
 }
 
-function getRiskScore(agent: Agent): number {
-  return riskClassificationToScore(agent.risk_classification)
+function getRiskScore(agent: Agent): { min: number; max: number; label: string; color: string } {
+  return getRiskConfig(riskClassificationToScore(agent.risk_classification))
 }
 
 function formatRelativeTime(timestamp: string) {
@@ -101,9 +101,8 @@ export default function AgentsPage() {
       return false
     }
     if (riskFilter !== "all") {
-      const riskLevel = riskFilter.toLowerCase()
-      const riskConf = getRiskConfig(agent.risk)
-      if (riskConf.label.toLowerCase() !== riskLevel) {
+      const riskConf = getRiskScore(agent)
+      if (riskConf.label.toLowerCase() !== riskFilter.toLowerCase()) {
         return false
       }
     }

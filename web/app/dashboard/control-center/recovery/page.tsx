@@ -78,9 +78,9 @@ export default function RecoveryPage() {
     return true
   })
 
-  const getReversibility = (simulation: RecoverySimulation): "reversible" | "irreversible" | "unknown" => {
-    if (simulation.irreversible_actions.length > 0) return "irreversible"
-    if (simulation.approval_required_actions.length > 0) return "unknown"
+  const getReversibility = (action: ActionEntry): "reversible" | "irreversible" | "unknown" => {
+    if (action.reversibility === "irreversible") return "irreversible"
+    if (action.reversibility === "unknown") return "unknown"
     return "reversible"
   }
 
@@ -304,7 +304,7 @@ export default function RecoveryPage() {
                 </div>
                 <div className="p-3 rounded-lg bg-white/5">
                   <p className="text-xs text-intent-muted mb-1">Risk</p>
-                  <p className="text-sm capitalize">{selectedAction.risk}</p>
+                  <p className="text-sm capitalize">{selectedAction.risk_score}</p>
                 </div>
               </div>
 
