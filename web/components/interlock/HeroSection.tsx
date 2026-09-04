@@ -14,7 +14,7 @@ export function HeroSection() {
   return (
     <section
       id="hero"
-      className="relative flex min-h-screen flex-col items-center justify-between overflow-hidden px-6 pt-28 pb-24 sm:pt-32 sm:pb-28"
+      className="relative flex min-h-screen flex-col items-center justify-between overflow-hidden px-5 pt-24 pb-20 sm:px-6 sm:pt-32 sm:pb-28"
     >
       <Velaris className="absolute inset-0" />
       <div className="absolute inset-0 bg-[linear-gradient(rgba(16,185,129,0.02)_1px,transparent_1px),linear-gradient(90deg,rgba(16,185,129,0.02)_1px,transparent_1px)] bg-[size:60px_60px]" />
@@ -35,7 +35,7 @@ export function HeroSection() {
         <motion.h1
           {...headline}
           transition={{ duration: 0.8, delay: 0.1 }}
-          className="text-5xl sm:text-6xl md:text-8xl font-extrabold tracking-tight leading-[1.05] mb-6"
+          className="text-3xl sm:text-6xl md:text-8xl font-extrabold tracking-tight leading-[1.05] mb-5 sm:mb-6"
         >
           UNDO THE AGENT.
         </motion.h1>
@@ -45,7 +45,7 @@ export function HeroSection() {
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.8, delay: 0.25 }}
           className={cn(
-            "mx-auto mb-10 max-w-2xl text-lg md:text-xl text-intent-muted",
+            "mx-auto mb-8 max-w-2xl text-base sm:text-lg md:text-xl text-intent-muted",
             "leading-relaxed",
           )}
         >
@@ -57,10 +57,10 @@ export function HeroSection() {
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.8, delay: 0.4 }}
-          className="flex flex-col sm:flex-row items-center justify-center gap-4"
+          className="flex flex-col sm:flex-row items-center justify-center gap-3 sm:gap-4"
         >
           <a
-            href="mailto:interlock677@gmail.com"
+            href="/demo"
             className="inline-flex items-center justify-center gap-2 w-full sm:w-auto px-8 py-4 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-black font-semibold transition-colors"
           >
             Request a Demo
@@ -107,7 +107,7 @@ export function HeroSection() {
         </motion.div>
       </div>
 
-      <div className="absolute -bottom-24 left-1/2 -translate-x-1/2 w-80 h-80 bg-emerald-500/10 rounded-full blur-[120px] opacity-30" />
+      <div className="absolute -bottom-16 sm:-bottom-24 left-1/2 -translate-x-1/2 w-64 h-64 sm:w-80 sm:h-80 bg-emerald-500/10 rounded-full blur-[120px] opacity-30" />
     </section>
   )
 }

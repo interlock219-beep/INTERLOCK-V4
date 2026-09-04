@@ -12,7 +12,7 @@ const navLinks = [
   { label: "Security", href: "#security" },
   {
     label: "Documentation",
-    href: "https://github.com/interlock677-debug/intentlock/tree/master/docs/INDEX.md",
+    href: "https://github.com/interlock219-beep/INTERLOCK-V4/tree/master/docs/INDEX.md",
     external: true,
   },
 ]
@@ -57,7 +57,7 @@ export function Navbar() {
 
           <div className="hidden md:flex items-center gap-3">
             <a
-              href="mailto:interlock677@gmail.com"
+              href="/demo"
               className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-black text-sm font-medium transition-colors"
             >
               Request Demo
@@ -101,7 +101,7 @@ export function Navbar() {
               ))}
               <div className="pt-3 border-t border-white/10">
                 <a
-                  href="mailto:interlock677@gmail.com"
+                  href="/demo"
                   className="flex items-center justify-center gap-2 w-full px-5 py-2.5 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-black text-sm font-medium transition-colors"
                   onClick={() => setOpen(false)}
                 >

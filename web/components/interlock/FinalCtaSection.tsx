@@ -42,14 +42,14 @@ export function FinalCtaSection() {
           className="flex flex-col sm:flex-row items-center justify-center gap-4"
         >
           <a
-            href="mailto:interlock677@gmail.com"
+            href="/demo"
             className="inline-flex items-center justify-center gap-2 w-full sm:w-auto px-8 py-4 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-black font-semibold transition-colors"
           >
             Request an Interlock demo
             <ArrowRight className="h-4 w-4" />
           </a>
           <a
-            href="https://github.com/interlock677-debug/intentlock/blob/master/docs/architecture/ARCHITECTURE.md"
+            href="https://github.com/interlock219-beep/INTERLOCK-V4/blob/master/docs/architecture/ARCHITECTURE.md"
             target="_blank"
             rel="noopener noreferrer"
             className="inline-flex items-center justify-center gap-2 w-full sm:w-auto px-8 py-4 rounded-xl border border-white/10 hover:border-emerald-500/30 text-intent-text font-medium transition-colors"

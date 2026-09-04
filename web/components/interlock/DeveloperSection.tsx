@@ -25,10 +25,10 @@ const langChainLines = [
 ]
 
 const resources = [
-  { label: "Quickstart", href: "https://github.com/interlock677-debug/intentlock/blob/master/docs/developer/QUICKSTART.md", icon: Rocket },
-  { label: "Examples", href: "https://github.com/interlock677-debug/intentlock/blob/master/docs/developer/EXAMPLES.md", icon: Terminal },
-  { label: "SDK reference", href: "https://github.com/interlock677-debug/intentlock/blob/master/sdk/README.md", icon: BookOpen },
-  { label: "Architecture", href: "https://github.com/interlock677-debug/intentlock/blob/master/docs/architecture/ARCHITECTURE.md", icon: Github },
+  { label: "Quickstart", href: "https://github.com/interlock219-beep/INTERLOCK-V4/blob/master/docs/developer/QUICKSTART.md", icon: Rocket },
+  { label: "Examples", href: "https://github.com/interlock219-beep/INTERLOCK-V4/blob/master/docs/developer/EXAMPLES.md", icon: Terminal },
+  { label: "SDK reference", href: "https://github.com/interlock219-beep/INTERLOCK-V4/blob/master/sdk/README.md", icon: BookOpen },
+  { label: "Architecture", href: "https://github.com/interlock219-beep/INTERLOCK-V4/blob/master/docs/architecture/ARCHITECTURE.md", icon: Github },
 ]
 
 export function DeveloperSection() {

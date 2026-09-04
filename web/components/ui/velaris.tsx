@@ -156,9 +156,19 @@ export function Velaris({ className }: VelarisProps) {
   const rafRef = useRef<number>(0)
   const observerRef = useRef<ResizeObserver | null>(null)
   const reducedRef = useRef(false)
+  const isMobileRef = useRef(false)
   const [mounted, setMounted] = useState(false)
 
   useEffect(() => setMounted(true), [])
+
+  useEffect(() => {
+    const checkMobile = () => {
+      isMobileRef.current = window.innerWidth < 640
+    }
+    checkMobile()
+    window.addEventListener("resize", checkMobile)
+    return () => window.removeEventListener("resize", checkMobile)
+  }, [])
 
   useEffect(() => {
     if (!mounted || !containerRef.current) return
@@ -297,8 +307,11 @@ export function Velaris({ className }: VelarisProps) {
         reduced ? 1 : Math.cos(t * 0.12) * 0.08 + 0.996,
       )
       gl.uniform1f(handles.focalLoc, 6)
-      gl.uniform1f(handles.scaleLoc, 0.42)
-      gl.uniform1f(handles.pointSizeLoc, reduced ? 0 : 56)
+      const isMobile = isMobileRef.current
+      const scale = isMobile ? 0.28 : 0.42
+      const pointSize = reduced ? 0 : isMobile ? 32 : 56
+      gl.uniform1f(handles.scaleLoc, scale)
+      gl.uniform1f(handles.pointSizeLoc, pointSize)
 
       gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT)
 
@@ -311,14 +324,16 @@ export function Velaris({ className }: VelarisProps) {
       const nodeColor = [0.16, 0.7, 0.58]
 
       gl.uniform1i(handles.pointsLoc, 0)
+      const edgeAlpha = reduced ? 0.12 : isMobile ? 0.1 : 0.22
       gl.uniform3fv(handles.colorLoc, edgeColor)
-      gl.uniform1f(handles.alphaLoc, reduced ? 0.12 : 0.22)
+      gl.uniform1f(handles.alphaLoc, edgeAlpha)
       gl.bindVertexArray(handles.edgeVao)
       gl.drawArrays(gl.LINES, 0, handles.edgeCount)
 
       gl.uniform1i(handles.pointsLoc, 1)
       gl.uniform3fv(handles.colorLoc, nodeColor)
-      gl.uniform1f(handles.alphaLoc, reduced ? 0.4 : 0.7)
+      const nodeAlpha = reduced ? 0.4 : isMobile ? 0.35 : 0.7
+      gl.uniform1f(handles.alphaLoc, nodeAlpha)
       gl.bindVertexArray(handles.nodeVao)
       gl.drawArrays(gl.POINTS, 0, handles.nodeCount)
 

@@ -74,7 +74,7 @@ export function Footer() {
           </p>
           <div className="flex items-center gap-6">
             <a
-              href="https://github.com/interlock677-debug/intentlock"
+              href="https://github.com/interlock219-beep/INTERLOCK-V4"
               target="_blank"
               rel="noopener noreferrer"
               className="text-intent-muted hover:text-intent-text transition-colors"
@@ -83,7 +83,7 @@ export function Footer() {
               <Github className="w-5 h-5" />
             </a>
             <a
-              href="mailto:interlock677@gmail.com"
+              href="https://mail.google.com/mail/?view=cm&fs=1&to=interlock677@gmail.com&su=Interlock%20V4%20Inquiry&body=Hi%20Interlock%20team%2C%0A%0AI%20have%20a%20question%20about%20Interlock%20V4.%0A%0ABest%2C%0A%5BName%5D"
               className="text-intent-muted hover:text-intent-text transition-colors"
               aria-label="Email"
             >

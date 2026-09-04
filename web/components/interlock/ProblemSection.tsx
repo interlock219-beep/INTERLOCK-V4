@@ -62,7 +62,7 @@ export function ProblemSection() {
             <motion.div
               key={m.label}
               variants={item}
-              className="flex flex-col items-center gap-3 rounded-xl bg-white/[0.03] border border-white/5 p-5 text-center"
+              className="flex flex-col items-center gap-3 rounded-xl bg-white/[0.03] border border-white/5 p-4 sm:p-5 text-center"
             >
               <div className="flex h-10 w-10 items-center justify-center rounded-lg border border-emerald-500/20 bg-emerald-500/10">
                 <m.icon className="h-5 w-5 text-emerald-400" />

@@ -10,10 +10,10 @@ const columns: Record<string, { label: string; href: string; external: boolean }
     { label: "Security", href: "#security", external: false },
   ],
   Documentation: [
-    { label: "Quickstart", href: "https://github.com/interlock677-debug/intentlock/blob/master/docs/developer/QUICKSTART.md", external: true },
-    { label: "SDK reference", href: "https://github.com/interlock677-debug/intentlock/blob/master/sdk/README.md", external: true },
-    { label: "Architecture", href: "https://github.com/interlock677-debug/intentlock/blob/master/docs/architecture/ARCHITECTURE.md", external: true },
-    { label: "Threat model", href: "https://github.com/interlock677-debug/intentlock/blob/master/docs/security/SECURITY_ASSURANCE_REPORT.md", external: true },
+    { label: "Quickstart", href: "https://github.com/interlock219-beep/INTERLOCK-V4/blob/master/docs/developer/QUICKSTART.md", external: true },
+    { label: "SDK reference", href: "https://github.com/interlock219-beep/INTERLOCK-V4/blob/master/sdk/README.md", external: true },
+    { label: "Architecture", href: "https://github.com/interlock219-beep/INTERLOCK-V4/blob/master/docs/architecture/ARCHITECTURE.md", external: true },
+    { label: "Threat model", href: "https://github.com/interlock219-beep/INTERLOCK-V4/blob/master/docs/security/SECURITY_ASSURANCE_REPORT.md", external: true },
   ],
 }
 
@@ -62,7 +62,7 @@ export function Footer() {
           </p>
           <div className="flex items-center gap-6">
             <a
-              href="https://github.com/interlock677-debug/intentlock"
+              href="https://github.com/interlock219-beep/INTERLOCK-V4"
               target="_blank"
               rel="noopener noreferrer"
               className="text-intent-muted hover:text-emerald-300 transition-colors"
@@ -71,7 +71,7 @@ export function Footer() {
               <Github className="h-5 w-5" />
             </a>
             <a
-              href="mailto:interlock677@gmail.com"
+              href="https://mail.google.com/mail/?view=cm&fs=1&to=interlock677@gmail.com&su=Interlock%20V4%20Inquiry&body=Hi%20Interlock%20team%2C%0A%0AI%20have%20a%20question%20about%20Interlock%20V4.%0A%0ABest%2C%0A%5BName%5D"
               className="text-intent-muted hover:text-emerald-300 transition-colors"
               aria-label="Email"
             >

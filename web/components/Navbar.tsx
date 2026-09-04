@@ -11,7 +11,7 @@ const navLinks = [
   { label: 'Security', href: '#evidence' },
   { label: 'Developers', href: '#developers' },
   { label: 'Pricing', href: '#pricing' },
-  { label: 'GitHub', href: 'https://github.com/interlock677-debug/intentlock', external: true },
+  { label: 'GitHub', href: 'https://github.com/interlock219-beep/INTERLOCK-V4', external: true },
 ]
 
 export function Navbar() {

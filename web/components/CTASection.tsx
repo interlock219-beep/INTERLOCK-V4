@@ -36,7 +36,7 @@ export function CTASection() {
               <ArrowRight className="w-4 h-4" />
             </a>
             <a
-              href="https://github.com/interlock677-debug/intentlock"
+              href="https://github.com/interlock219-beep/INTERLOCK-V4"
               target="_blank"
               rel="noopener noreferrer"
               className="inline-flex items-center gap-2 px-8 py-4 rounded-xl glass-panel hover:border-cyan-500/30 font-medium transition-all duration-200"

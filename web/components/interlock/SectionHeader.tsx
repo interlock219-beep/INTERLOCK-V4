@@ -25,7 +25,7 @@ export function SectionHeader({
       viewport={{ once: true }}
       transition={{ duration: 0.6 }}
       className={cn(
-        "mb-16",
+        "mb-12 sm:mb-16",
         align === "center" ? "mx-auto max-w-3xl text-center" : "max-w-3xl",
         className,
       )}
@@ -44,7 +44,7 @@ export function SectionHeader({
         {title}
       </h2>
       {description && (
-        <p className="text-lg text-intent-muted leading-relaxed text-balance">
+        <p className="text-base sm:text-lg text-intent-muted leading-relaxed text-balance">
           {description}
         </p>
       )}

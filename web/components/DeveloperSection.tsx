@@ -7,7 +7,7 @@ const developerLinks = [
   { label: 'Documentation', href: '/docs', icon: FileText },
   { label: 'Quickstart', href: '/docs/developer/QUICKSTART.md', icon: Rocket },
   { label: 'Examples', href: '/docs/developer/EXAMPLES.md', icon: Terminal },
-  { label: 'GitHub', href: 'https://github.com/interlock677-debug/intentlock', icon: Github },
+  { label: 'GitHub', href: 'https://github.com/interlock219-beep/INTERLOCK-V4', icon: Github },
 ]
 
 export function DeveloperSection() {
