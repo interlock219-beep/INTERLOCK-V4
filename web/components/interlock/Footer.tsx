@@ -71,7 +71,7 @@ export function Footer() {
               <Github className="h-5 w-5" />
             </a>
             <a
-              href="https://mail.google.com/mail/?view=cm&fs=1&to=interlock677@gmail.com&su=Interlock%20V4%20Inquiry&body=Hi%20Interlock%20team%2C%0A%0AI%20have%20a%20question%20about%20Interlock%20V4.%0A%0ABest%2C%0A%5BName%5D"
+              href="https://mail.google.com/mail/?view=cm&fs=1&to=interlock219@gmail.com&su=Interlock%20V4%20Inquiry&body=Hi%20Interlock%20team%2C%0A%0AI%20have%20a%20question%20about%20Interlock%20V4.%0A%0ABest%2C%0A%5BName%5D"
               className="text-intent-muted hover:text-emerald-300 transition-colors"
               aria-label="Email"
             >

@@ -419,7 +419,7 @@ export default function DemoPage() {
                 </p>
                 <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
                   <a
-                    href="https://mail.google.com/mail/?view=cm&fs=1&to=interlock677@gmail.com&su=Interlock%20V4%20Demo%20Request&body=Hi%2C%0A%0AI'd%20like%20to%20schedule%20a%20live%20Interlock%20V4%20demo.%0A%0AName%3A%0ACompany%3A%0ARole%3A%0A%0AI'm%20interested%20in%20learning%20how%20Interlock%20can%20help%20secure%20and%20recover%20AI-agent%20actions.%0A%0ABest%2C%0A%5BName%5D"
+                    href="https://mail.google.com/mail/?view=cm&fs=1&to=interlock219@gmail.com&su=Interlock%20V4%20Demo%20Request&body=Hi%2C%0A%0AI'd%20like%20to%20schedule%20a%20live%20Interlock%20V4%20demo.%0A%0AName%3A%0ACompany%3A%0ARole%3A%0A%0AI'm%20interested%20in%20learning%20how%20Interlock%20can%20help%20secure%20and%20recover%20AI-agent%20actions.%0A%0ABest%2C%0A%5BName%5D"
                     className="inline-flex items-center justify-center gap-2 w-full sm:w-auto px-8 py-4 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-black font-semibold transition-colors"
                   >
                     Book a Live Demo
