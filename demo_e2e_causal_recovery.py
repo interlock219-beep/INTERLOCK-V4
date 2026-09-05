@@ -728,7 +728,18 @@ async def run_demo() -> None:
 
     subheading("Step 21: FINAL RESULT — AI Incident Time Machine")
     print("")
-    print("  RESULT: AI-caused changes were recovered where supported.")
+    if report.verification_status.value == "executed_and_verified":
+        print("  RESULT: RECOVERED — AI-caused changes were recovered and independently verified.")
+    elif report.verification_status.value == "executed_not_verified":
+        print("  RESULT: PARTIALLY_RECOVERED — Compensation executed but independent verification was inconclusive.")
+        print("  The system did NOT claim full recovery because verification did not confirm the final state.")
+    elif report.verification_status.value == "execution_failed":
+        print("  RESULT: RECOVERY_FAILED — One or more compensation steps failed.")
+    elif report.verification_status.value == "manual_verification_required":
+        print("  RESULT: PARTIALLY_RECOVERED — Human verification required before declaring recovery complete.")
+    else:
+        print(f"  RESULT: {report.verification_status.value.upper()} — Final state uncertain.")
+    print("")
     print("  The recovery executed in reverse dependency order:")
     print("    1. Cancel Subscription (leaf node)")
     print("    2. Revoke API Key")
