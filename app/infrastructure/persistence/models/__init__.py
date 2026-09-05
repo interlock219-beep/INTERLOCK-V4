@@ -48,6 +48,7 @@ __all__ = [
     "ExecutionTokenModel",
     "IdentityProviderModel",
     "InvoiceModel",
+    "PlanModel",
     "SSOStateModel",
     "SubscriptionModel",
     "UsageRecordModel",

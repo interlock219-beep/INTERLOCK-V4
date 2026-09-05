@@ -6,7 +6,6 @@ from sqlalchemy.orm import Session
 
 from app.application.dto.api_key import (
     ApiKeyListResponse,
-    ApiKeyResponse,
     CreateApiKeyRequest,
     CreateApiKeyResponse,
 )

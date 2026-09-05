@@ -9,14 +9,9 @@ Tests verify that customer API credentials:
 
 from __future__ import annotations
 
-import hashlib
 from datetime import UTC, datetime, timedelta
-from uuid import uuid4
 
-import pytest
 from fastapi.testclient import TestClient
-
-from app.domain.exceptions.domain_errors import ApiKeyError
 
 
 def _register(client: TestClient, email: str, tenant_id: str | None = None) -> tuple[str, str]:
@@ -304,7 +299,6 @@ def test_api_key_created_with_30_day_duration(client: TestClient) -> None:
 
 
 def test_timezone_aware_timestamp_handling(client: TestClient) -> None:
-    from unittest.mock import patch
 
     _, token = _register(client, "apikey-tz@example.com")
     key_id, raw_secret = _create_api_key(client, token, expires_in_days=7)

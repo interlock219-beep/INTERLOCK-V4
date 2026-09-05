@@ -1,7 +1,8 @@
 from datetime import UTC, datetime
-from uuid import UUID, uuid4
+from uuid import UUID
 
 from sqlalchemy import select
+from sqlalchemy.orm import Session
 
 from app.domain.entities.api_key import ApiKey
 from app.domain.repositories.api_key_repository import ApiKeyRepository
@@ -9,12 +10,12 @@ from app.infrastructure.persistence.models.api_key_model import ApiKeyModel
 
 
 class SQLAlchemyApiKeyRepository(ApiKeyRepository):
-    def __init__(self, session) -> None:
+    def __init__(self, session: Session) -> None:
         self._session = session
 
     @staticmethod
-    def _utcnow() -> datetime:
-        return datetime.now(UTC)
+    def _ensure_utc(value: datetime) -> datetime:
+        return value if value.tzinfo is not None else value.replace(tzinfo=UTC)
 
     def _to_entity(self, model: ApiKeyModel) -> ApiKey:
         return ApiKey(
@@ -24,11 +25,11 @@ class SQLAlchemyApiKeyRepository(ApiKeyRepository):
             user_id=model.user_id,
             tenant_id=model.tenant_id,
             name=model.name,
-            expires_at=model.expires_at if model.expires_at.tzinfo is not None else model.expires_at.replace(tzinfo=UTC),
-            created_at=model.created_at if model.created_at.tzinfo is not None else model.created_at.replace(tzinfo=UTC),
-            last_used_at=model.last_used_at if model.last_used_at is None or model.last_used_at.tzinfo is not None else model.last_used_at.replace(tzinfo=UTC),
+            expires_at=self._ensure_utc(model.expires_at),
+            created_at=self._ensure_utc(model.created_at),
+            last_used_at=model.last_used_at,
             revoked=model.revoked,
-            revoked_at=model.revoked_at if model.revoked_at is None or model.revoked_at.tzinfo is not None else model.revoked_at.replace(tzinfo=UTC) if model.revoked_at is not None else None,
+            revoked_at=model.revoked_at,
         )
 
     async def create(self, api_key: ApiKey) -> ApiKey:

@@ -6,8 +6,6 @@ from app.application.dto.api_key import ApiKeyResponse, CreateApiKeyRequest, Cre
 from app.domain.entities.api_key import ApiKey
 from app.domain.exceptions.domain_errors import (
     ApiKeyError,
-    ApiKeyExpiredError,
-    ApiKeyRevokedError,
     AuthenticationError,
 )
 from app.domain.repositories.api_key_repository import ApiKeyRepository

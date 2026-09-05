@@ -14,7 +14,6 @@ from app.application.use_cases.authenticate_user import AuthenticateUserUseCase
 from app.application.use_cases.get_current_user import GetCurrentUserUseCase
 from app.application.use_cases.refresh_token import RefreshTokenUseCase
 from app.application.use_cases.register_user import RegisterUserUseCase
-from app.domain.entities.api_key import ApiKey
 from app.domain.exceptions.domain_errors import (
     AccountLockedError,
     ApiKeyExpiredError,
