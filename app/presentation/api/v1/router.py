@@ -15,6 +15,7 @@ from app.presentation.api.v1.routes import (
 from app.presentation.api.v1.routes.actions import router as actions_router
 from app.presentation.api.v1.routes.agent_sessions import router as agent_sessions_router
 from app.presentation.api.v1.routes.agents import router as agents_router
+from app.presentation.api.v1.routes.api_keys import router as api_keys_router
 from app.presentation.api.v1.routes.authority import router as authority_router
 from app.presentation.api.v1.routes.control import router as control_router
 from app.presentation.api.v1.routes.discover import router as discover_router
@@ -50,3 +51,4 @@ api_v1_router.include_router(control_router)
 api_v1_router.include_router(incident_router)
 api_v1_router.include_router(incidents_router)
 api_v1_router.include_router(webhook_router)
+api_v1_router.include_router(api_keys_router)

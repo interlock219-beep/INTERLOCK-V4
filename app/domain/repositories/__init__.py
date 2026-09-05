@@ -1,4 +1,5 @@
 from app.domain.repositories.agent_repository import AgentRepository
+from app.domain.repositories.api_key_repository import ApiKeyRepository
 from app.domain.repositories.authority_grant_repository import AuthorityGrantRepository
 from app.domain.repositories.billing_repositories import (
     CheckoutRepository,
@@ -29,6 +30,7 @@ from app.domain.repositories.user_repository import UserRepository
 
 __all__ = [
     "AgentRepository",
+    "ApiKeyRepository",
     "AuthorityGrantRepository",
     "CheckoutRepository",
     "ContainmentRepository",

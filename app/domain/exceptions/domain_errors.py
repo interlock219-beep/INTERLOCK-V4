@@ -52,3 +52,15 @@ class ApprovalRequiredError(DomainError):
 
 class WebhookError(DomainError):
     """Raised when a webhook callback fails validation."""
+
+
+class ApiKeyError(DomainError):
+    """Raised when an API key credential fails validation."""
+
+
+class ApiKeyExpiredError(ApiKeyError):
+    """Raised when an API key has passed its expiration timestamp."""
+
+
+class ApiKeyRevokedError(ApiKeyError):
+    """Raised when an API key has been manually revoked."""

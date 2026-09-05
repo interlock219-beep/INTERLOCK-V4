@@ -1,8 +1,9 @@
 from collections.abc import Generator
+from datetime import UTC, datetime
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, Header, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session
 
@@ -13,17 +14,24 @@ from app.application.use_cases.authenticate_user import AuthenticateUserUseCase
 from app.application.use_cases.get_current_user import GetCurrentUserUseCase
 from app.application.use_cases.refresh_token import RefreshTokenUseCase
 from app.application.use_cases.register_user import RegisterUserUseCase
+from app.domain.entities.api_key import ApiKey
 from app.domain.exceptions.domain_errors import (
     AccountLockedError,
+    ApiKeyExpiredError,
+    ApiKeyRevokedError,
     AuthenticationError,
     InactiveUserError,
     UserNotFoundError,
 )
+from app.domain.repositories.api_key_repository import ApiKeyRepository
 from app.domain.repositories.user_repository import UserRepository
 from app.domain.services.identity_services import SessionService
 from app.domain.services.password_policy import PasswordPolicy
 from app.infrastructure.config.settings import Settings, get_settings
 from app.infrastructure.persistence.database import SessionLocal
+from app.infrastructure.persistence.repositories.sqlalchemy_api_key_repository import (
+    SQLAlchemyApiKeyRepository,
+)
 from app.infrastructure.persistence.repositories.sqlalchemy_user_repository import (
     SQLAlchemyUserRepository,
 )
@@ -53,6 +61,12 @@ def get_user_repository(
     session: Annotated[Session, Depends(_get_session)],
 ) -> UserRepository:
     return SQLAlchemyUserRepository(session)
+
+
+def get_api_key_repository(
+    session: Annotated[Session, Depends(_get_session)],
+) -> ApiKeyRepository:
+    return SQLAlchemyApiKeyRepository(session)
 
 
 def get_password_hasher(settings: Annotated[Settings, Depends(get_app_settings)]) -> PasswordHasher:
@@ -121,35 +135,72 @@ def get_authenticate_user_use_case(
     )
 
 
+async def _validate_api_key(
+    raw_key: str,
+    api_key_repository: ApiKeyRepository,
+) -> UUID:
+    import hashlib
+
+    key_hash = hashlib.sha256(raw_key.encode("utf-8")).hexdigest()
+    api_key = await api_key_repository.get_by_key_hash(key_hash)
+
+    if api_key is None:
+        raise AuthenticationError("Invalid API key.")
+
+    if api_key.revoked:
+        raise ApiKeyRevokedError("API key has been revoked.")
+
+    now = datetime.now(UTC)
+    expires_at = api_key.expires_at
+    if expires_at.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=UTC)
+    if now >= expires_at:
+        raise ApiKeyExpiredError("API credential expired.")
+
+    return api_key.user_id
+
+
 async def get_current_user_id(
     credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(_bearer_scheme)],
     token_service: Annotated[TokenService, Depends(get_token_service)],
     session_service: Annotated[SessionService, Depends(get_session_service_dependency)],
+    api_key_repository: Annotated[ApiKeyRepository, Depends(get_api_key_repository)],
+    x_api_key: Annotated[str | None, Header()] = None,
 ) -> UUID:
-    if credentials is None or credentials.scheme.lower() != "bearer":
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Missing or invalid authorization header.",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
+    if credentials is not None and credentials.scheme.lower() == "bearer":
+        try:
+            payload = token_service.decode_access_token(credentials.credentials)
+        except AuthenticationError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail=str(exc),
+                headers={"WWW-Authenticate": "Bearer"},
+            ) from exc
 
-    try:
-        payload = token_service.decode_access_token(credentials.credentials)
-    except AuthenticationError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail=str(exc),
-            headers={"WWW-Authenticate": "Bearer"},
-        ) from exc
+        if payload.sid and not await session_service.is_session_active(payload.sid):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Session has been revoked or expired.",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
 
-    if payload.sid and not await session_service.is_session_active(payload.sid):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Session has been revoked or expired.",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
+        return payload.sub
 
-    return payload.sub
+    if x_api_key is not None:
+        try:
+            return await _validate_api_key(x_api_key, api_key_repository)
+        except (AuthenticationError, ApiKeyExpiredError, ApiKeyRevokedError) as exc:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail=str(exc),
+                headers={"WWW-Authenticate": "Bearer"},
+            ) from exc
+
+    raise HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Missing or invalid authorization header.",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
 
 
 CurrentUserId = Annotated[UUID, Depends(get_current_user_id)]
@@ -241,6 +292,7 @@ def get_user_tenant_id(current_user: CurrentUser) -> str:
             detail="Tenant assignment required for this operation.",
         )
     return current_user.tenant_id
+
 
 
 

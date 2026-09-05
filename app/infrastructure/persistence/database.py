@@ -34,6 +34,7 @@ def init_db() -> None:
     from app.infrastructure.persistence.models import (  # noqa: F401
         AgentModel,
         AgentSessionModel,
+        ApiKeyModel,
         ApprovalRequestModel,
         AuditEventModel,
         AuthorityGrantModel,

@@ -2,6 +2,7 @@
 
 from app.infrastructure.persistence.models.agent_model import AgentModel
 from app.infrastructure.persistence.models.agent_session_model import AgentSessionModel
+from app.infrastructure.persistence.models.api_key_model import ApiKeyModel
 from app.infrastructure.persistence.models.approval_request_model import ApprovalRequestModel
 from app.infrastructure.persistence.models.audit_event_model import AuditEventModel
 from app.infrastructure.persistence.models.authority_grant_model import AuthorityGrantModel
@@ -36,6 +37,7 @@ from app.infrastructure.persistence.models.user_model import UserModel
 __all__ = [
     "AgentModel",
     "AgentSessionModel",
+    "ApiKeyModel",
     "ApprovalRequestModel",
     "AuditEventModel",
     "AuthorityGrantModel",
@@ -46,7 +48,6 @@ __all__ = [
     "ExecutionTokenModel",
     "IdentityProviderModel",
     "InvoiceModel",
-    "PlanModel",
     "SSOStateModel",
     "SubscriptionModel",
     "UsageRecordModel",
@@ -62,3 +63,4 @@ __all__ = [
     "WebhookEventModel",
     "IncidentModel",
 ]
+
