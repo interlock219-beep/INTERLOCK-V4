@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import secrets
 from datetime import UTC, datetime
+from threading import Lock
 from typing import Any
 
 from app.domain.entities.causal_state_types import (
@@ -46,6 +47,8 @@ class DistributedRecoveryOrchestrator:
         self._evidence_repo = evidence_repository
         self._execution_repo = execution_repository
         self._adapters = adapters or []
+        self._execution_locks: dict[str, Lock] = {}
+        self._global_lock = Lock()
 
     async def create_durable_plan(
         self,
@@ -83,6 +86,36 @@ class DistributedRecoveryOrchestrator:
         return steps
 
     async def execute_durable_plan(
+        self,
+        tenant_id: str,
+        plan_id: str,
+        stop_conditions: list[str] | None = None,
+    ) -> dict[str, Any]:
+        """Execute a durable recovery plan with interruption survival."""
+        with self._global_lock:
+            if plan_id in self._execution_locks:
+                return {
+                    "plan_id": plan_id,
+                    "status": "already_running",
+                    "message": "Recovery plan is already being executed",
+                }
+            self._execution_locks[plan_id] = Lock()
+
+        plan_lock = self._execution_locks.get(plan_id)
+        if plan_lock is None:
+            return {
+                "plan_id": plan_id,
+                "status": "error",
+                "message": "Failed to acquire execution lock",
+            }
+        try:
+            with plan_lock:
+                return await self._do_execute_durable_plan(tenant_id, plan_id, stop_conditions)
+        finally:
+            with self._global_lock:
+                self._execution_locks.pop(plan_id, None)
+
+    async def _do_execute_durable_plan(
         self,
         tenant_id: str,
         plan_id: str,

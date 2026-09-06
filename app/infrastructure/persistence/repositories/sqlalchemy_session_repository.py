@@ -37,14 +37,15 @@ class SQLAlchemySessionService(SessionService):
         import secrets
 
         session_id = secrets.token_urlsafe(32)
-        expires_at = datetime.now(UTC) + timedelta(seconds=ttl_seconds)
+        now = datetime.now(UTC)
+        expires_at = now + timedelta(seconds=ttl_seconds)
         session = UserSession(
             session_id=session_id,
             user_id=user_id,
             device_info=device_info,
             ip_address=ip_address,
-            created_at=datetime.now(UTC),
-            last_used_at=datetime.now(UTC),
+            created_at=now,
+            last_used_at=now,
             expires_at=expires_at,
         )
         model = UserSessionModel(
@@ -62,7 +63,9 @@ class SQLAlchemySessionService(SessionService):
 
     async def validate_session(self, session_id: str) -> UUID | None:
         model = self._session.scalar(
-            select(UserSessionModel).where(UserSessionModel.session_id == session_id)
+            select(UserSessionModel)
+            .where(UserSessionModel.session_id == session_id)
+            .with_for_update()
         )
         now = self._utcnow()
         if model is None or model.revoked or self._compare_expires_at(model.expires_at, now):
@@ -130,10 +133,16 @@ class SQLAlchemySessionService(SessionService):
 
     async def touch_session(self, session_id: str) -> None:
         model = self._session.scalar(
-            select(UserSessionModel).where(UserSessionModel.session_id == session_id)
+            select(UserSessionModel)
+            .where(UserSessionModel.session_id == session_id)
+            .with_for_update()
         )
         if model is not None and not model.revoked:
-            model.last_used_at = datetime.now(UTC)
+            now = datetime.now(UTC)
+            if model.expires_at < now:
+                return
+            model.last_used_at = now
+            model.expires_at = now + timedelta(seconds=getattr(self, '_ttl_seconds', 3600))
             self._session.flush()
 
     async def cleanup_expired(self) -> int:

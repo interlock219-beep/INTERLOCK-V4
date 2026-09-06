@@ -87,7 +87,8 @@ class SQLAlchemyRecoveryEvidenceRepository(RecoveryEvidenceRepository):
 
     async def save(self, evidence: RecoveryEvidence) -> RecoveryEvidence:
         stmt = select(RecoveryEvidenceModel).where(
-            RecoveryEvidenceModel.evidence_id == evidence.evidence_id
+            RecoveryEvidenceModel.evidence_id == evidence.evidence_id,
+            RecoveryEvidenceModel.tenant_id == evidence.tenant_id,
         )
         model = self._session.scalar(stmt)
         if model is None:

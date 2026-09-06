@@ -346,21 +346,6 @@ class FilesystemRecoveryAdapter(RecoveryAdapter):
                     },
                 )
 
-        if (
-            before_snapshot
-            and before_snapshot.get("hash")
-            and current_hash == before_snapshot["hash"]
-        ):
-            return DriftResult(
-                status=DriftStatus.NO_DRIFT,
-                current_state={"hash": current_hash, "path": file_path_str},
-            )
-
-        return DriftResult(
-            status=DriftStatus.NO_DRIFT,
-            current_state={"hash": current_hash, "path": file_path_str},
-        )
-
         if action_type in ("delete",):
             if full_path.exists():
                 current_hash = self._compute_file_hash(full_path)

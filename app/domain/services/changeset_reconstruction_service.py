@@ -65,9 +65,14 @@ class ChangeSetReconstructionService:
                 root_cause=f"Root action {root_action_id} not found",
             )
 
-        descendants, _ = await self._action_repo.list_descendants(
+        descendants, total = await self._action_repo.list_descendants(
             tenant_id, root_action_id, limit=1000, offset=0
         )
+        if total > 1000:
+            return self._empty_changeset(
+                tenant_id, incident_id, agent_id, root_action_id, correlation_id,
+                root_cause=f"Root action {root_action_id} has too many descendants ({total})",
+            )
         all_actions = [root_action] + descendants
 
         evidence_map = await self._collect_evidence(tenant_id, all_actions)
@@ -127,9 +132,16 @@ class ChangeSetReconstructionService:
                 root_action_id=root_action_id,
             )
 
-        descendants, _ = await self._action_repo.list_descendants(
+        descendants, total = await self._action_repo.list_descendants(
             tenant_id, root_action_id, limit=1000, offset=0
         )
+        if total > 1000:
+            return CausalStateGraph(
+                graph_id=f"graph-{secrets.token_hex(12)}",
+                tenant_id=tenant_id,
+                incident_id=incident_id,
+                root_action_id=root_action_id,
+            )
         all_actions = [root_action] + descendants
         evidence_map = await self._collect_evidence(tenant_id, all_actions)
 

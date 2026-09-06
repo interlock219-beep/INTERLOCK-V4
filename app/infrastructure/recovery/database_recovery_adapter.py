@@ -512,6 +512,48 @@ class DatabaseRecoveryAdapter(RecoveryAdapter):
                                 },
                             )
 
+            if action_type == "insert":
+                primary_key = compensation_payload.get("primary_key", "id")
+                if not self._validate_column_name(primary_key):
+                    return ConflictResult(status=ConflictStatus.NO_CONFLICT)
+                row_data = compensation_payload.get("row_data", {})
+                if row_data and primary_key in row_data:
+                    pk_value = row_data[primary_key]
+                    cursor = conn.execute(
+                        f"SELECT * FROM {table_name} WHERE {primary_key} = ?",  # noqa: B608  # nosec B608  # safe: table/column validated, values parameterized
+                        (pk_value,),
+                    )
+                    if cursor.fetchone():
+                        return ConflictResult(
+                            status=ConflictStatus.CONCURRENT_MUTATION,
+                            details={
+                                "reason": "Inserted row already exists (concurrent insert)",
+                                "table": table_name,
+                                "primary_key": pk_value,
+                            },
+                        )
+
+            if action_type == "delete":
+                primary_key = compensation_payload.get("primary_key", "id")
+                if not self._validate_column_name(primary_key):
+                    return ConflictResult(status=ConflictStatus.NO_CONFLICT)
+                row_data = compensation_payload.get("before_state", {}).get("row_data", {})
+                if row_data and primary_key in row_data:
+                    pk_value = row_data[primary_key]
+                    cursor = conn.execute(
+                        f"SELECT * FROM {table_name} WHERE {primary_key} = ?",  # noqa: B608  # nosec B608  # safe: table/column validated, values parameterized
+                        (pk_value,),
+                    )
+                    if not cursor.fetchone():
+                        return ConflictResult(
+                            status=ConflictStatus.CONCURRENT_MUTATION,
+                            details={
+                                "reason": "Deleted row was already removed (concurrent delete)",
+                                "table": table_name,
+                                "primary_key": pk_value,
+                            },
+                        )
+
             conn.close()
         except Exception:
             return ConflictResult(

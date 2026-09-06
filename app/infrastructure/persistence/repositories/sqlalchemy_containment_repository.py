@@ -214,7 +214,10 @@ class SQLAlchemyRecoveryPlanRepository(RecoveryPlanRepository):
         return [self._to_entity(m) for m in models], total
 
     async def save(self, plan: RecoveryPlan) -> RecoveryPlan:
-        stmt = select(RecoveryPlanModel).where(RecoveryPlanModel.plan_id == plan.plan_id)
+        stmt = select(RecoveryPlanModel).where(
+            RecoveryPlanModel.plan_id == plan.plan_id,
+            RecoveryPlanModel.tenant_id == plan.tenant_id,
+        )
         model = self._session.scalar(stmt)
         if model is None:
             model = RecoveryPlanModel(

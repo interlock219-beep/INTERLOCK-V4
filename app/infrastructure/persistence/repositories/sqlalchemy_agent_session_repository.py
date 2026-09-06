@@ -21,9 +21,13 @@ class SQLAlchemyAgentSessionRepository(AgentSessionRepository):
     async def get_by_session_id(
         self, tenant_id: str, session_id: str
     ) -> AgentSession | None:
-        stmt = select(AgentSessionModel).where(
-            AgentSessionModel.tenant_id == tenant_id,
-            AgentSessionModel.session_id == session_id,
+        stmt = (
+            select(AgentSessionModel)
+            .where(
+                AgentSessionModel.tenant_id == tenant_id,
+                AgentSessionModel.session_id == session_id,
+            )
+            .with_for_update()
         )
         model = self._session.scalar(stmt)
         return self._to_entity(model) if model else None
@@ -81,7 +85,8 @@ class SQLAlchemyAgentSessionRepository(AgentSessionRepository):
 
     async def save(self, session: AgentSession) -> AgentSession:
         stmt = select(AgentSessionModel).where(
-            AgentSessionModel.session_id == session.session_id
+            AgentSessionModel.session_id == session.session_id,
+            AgentSessionModel.tenant_id == session.tenant_id,
         )
         model = self._session.scalar(stmt)
         if model is None:
@@ -126,7 +131,8 @@ class SQLAlchemyAgentSessionRepository(AgentSessionRepository):
         if model is None:
             return None
         model.status = status.value
-        model.ended_at = ended_at or datetime.now(UTC)
+        if ended_at is not None:
+            model.ended_at = ended_at
         self._session.flush()
         return self._to_entity(model)
 

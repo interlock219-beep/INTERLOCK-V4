@@ -54,9 +54,12 @@ from app.domain.services.recovery_confidence_model import RecoveryConfidenceMode
 from app.domain.services.recovery_planning_service import RecoveryPlanningService
 from app.domain.services.recovery_simulation_engine import RecoverySimulationEngine
 from app.infrastructure.logging.audit_logger import log_security_event
-from app.infrastructure.persistence.database import SessionLocal
+from app.infrastructure.persistence.database import get_db_session
 from app.infrastructure.persistence.repositories.sqlalchemy_agent_repository import (
     SQLAlchemyAgentRepository,
+)
+from app.infrastructure.persistence.repositories.sqlalchemy_agent_session_repository import (
+    SQLAlchemyAgentSessionRepository,
 )
 from app.infrastructure.persistence.repositories.sqlalchemy_authority_grant_repository import (
     SQLAlchemyAuthorityGrantRepository,
@@ -125,6 +128,7 @@ class SessionRollbackService:
         report_repository: RecoveryReportRepository,
         containment_repository: ContainmentRepository,
         adapters: list[RecoveryAdapter] | None = None,
+        session_factory: Any = None,
     ) -> None:
         self._action_repo = action_repository
         self._session_repo = session_repository
@@ -140,6 +144,7 @@ class SessionRollbackService:
         self._report_repo = report_repository
         self._containment_repo = containment_repository
         self._adapters = adapters or []
+        self._session_factory = session_factory
 
     async def undo_agent(
         self,
@@ -150,75 +155,69 @@ class SessionRollbackService:
         dry_run: bool = False,
         stop_conditions: list[str] | None = None,
     ) -> dict[str, Any]:
-        """Execute the full \"UNDO AGENT\" workflow for a session."""
-        session = await self._session_repo.get_by_session_id(tenant_id, session_id)
-        if session is None:
-            raise ValueError("Session not found")
+        """Execute the full "UNDO AGENT" workflow for a session."""
+        if self._session_factory is None:
+            raise RuntimeError("session_factory is required for rollback workflow")
 
-        if session.status == AgentSessionStatus.ROLLING_BACK:
-            raise ValueError("Rollback already in progress")
+        with self._session_factory() as session:
+            session_repo = SQLAlchemyAgentSessionRepository(session)
+            session = await session_repo.get_by_session_id(tenant_id, session_id)
+            if session is None:
+                raise ValueError("Session not found")
 
-        # Step 1: Freeze session
-        await self._session_repo.update_status(
-            tenant_id, session_id, AgentSessionStatus.FROZEN
-        )
-        log_security_event(
-            "session_frozen_for_rollback",
-            tenant_id=tenant_id,
-            session_id=session_id,
-            agent_id=session.agent_id,
-        )
+            if session.status == AgentSessionStatus.ROLLING_BACK:
+                raise ValueError("Rollback already in progress")
 
-        # Step 2: Contain agent
-        containment = await self._contain_agent(tenant_id, session.agent_id, initiated_by, dry_run)
-
-        # Step 3: Create incident
-        incident = await self._create_incident(tenant_id, session, initiated_by)
-
-        # Step 4: Discover all session actions
-        actions = await self._discover_session_actions(tenant_id, session_id)
-
-        # Step 5: Build changeset and graph
-        changeset = await self._build_changeset(  # noqa: F841
-            tenant_id, incident.incident_id, session, actions
-        )
-        graph = await self._build_causal_graph(  # noqa: F841
-            tenant_id, incident.incident_id, session, actions
-        )
-
-        # Step 6: Generate recovery plan
-        plan = await self._generate_recovery_plan(
-            tenant_id, session, actions, incident, stop_conditions
-        )
-
-        # Step 7: Simulate
-        simulation = await self._simulate_plan(tenant_id, plan, actions)
-
-        # Step 8: Execute if not dry_run
-        execution_result = {}
-        if not dry_run:
-            execution_result = await self._execute_recovery(
-                tenant_id, plan, actions, incident, initiated_by
+            await session_repo.update_status(
+                tenant_id, session_id, AgentSessionStatus.FROZEN
+            )
+            log_security_event(
+                "session_frozen_for_rollback",
+                tenant_id=tenant_id,
+                session_id=session_id,
+                agent_id=session.agent_id,
             )
 
-        # Step 9: Verify
-        verification = await self._verify_recovery(tenant_id, plan, actions)
+            containment = await self._contain_agent(tenant_id, session.agent_id, initiated_by, dry_run)
 
-        # Step 10: Produce report
-        report = await self._produce_report(
-            tenant_id, plan, incident, actions, simulation, execution_result, verification
-        )
+            incident = await self._create_incident(tenant_id, session, initiated_by)
 
-        # Update session status
-        final_status = self._determine_final_status(verification, execution_result)
-        await self._session_repo.update_status(
-            tenant_id, session_id, final_status,
-            ended_at=datetime.now(UTC) if final_status in (
-                AgentSessionStatus.RECOVERED,
-                AgentSessionStatus.PARTIALLY_RECOVERED,
-                AgentSessionStatus.RECOVERY_FAILED,
-            ) else None,
-        )
+            actions = await self._discover_session_actions(tenant_id, session_id)
+
+            changeset = await self._build_changeset(
+                tenant_id, incident.incident_id, session, actions
+            )
+            graph = await self._build_causal_graph(
+                tenant_id, incident.incident_id, session, actions
+            )
+
+            plan = await self._generate_recovery_plan(
+                tenant_id, session, actions, incident, stop_conditions
+            )
+
+            simulation = await self._simulate_plan(tenant_id, plan, actions)
+
+            execution_result = {}
+            if not dry_run:
+                execution_result = await self._execute_recovery(
+                    tenant_id, plan, actions, incident, initiated_by
+                )
+
+            verification = await self._verify_recovery(tenant_id, plan, actions)
+
+            report = await self._produce_report(
+                tenant_id, plan, incident, actions, simulation, execution_result, verification
+            )
+
+            final_status = self._determine_final_status(verification, execution_result)
+            await session_repo.update_status(
+                tenant_id, session_id, final_status,
+                ended_at=datetime.now(UTC) if final_status in (
+                    AgentSessionStatus.RECOVERED,
+                    AgentSessionStatus.PARTIALLY_RECOVERED,
+                    AgentSessionStatus.RECOVERY_FAILED,
+                ) else None,
+            )
 
         return {
             "session_id": session_id,
@@ -323,8 +322,9 @@ class SessionRollbackService:
     async def _contain_agent(
         self, tenant_id: str, agent_id: str, initiated_by: str, dry_run: bool
     ) -> Any:
-        session = SessionLocal()
-        try:
+        if self._session_factory is None:
+            raise RuntimeError("session_factory is required for containment")
+        with self._session_factory() as session:
             agent_repo = SQLAlchemyAgentRepository(session)
             grant_repo = SQLAlchemyAuthorityGrantRepository(session)
             action_repo = SQLAlchemyProtectedActionRepository(session)
@@ -345,8 +345,6 @@ class SessionRollbackService:
                 reason="Session rollback — agent containment",
                 dry_run=dry_run,
             )
-        finally:
-            session.close()
 
     async def _create_incident(
         self, tenant_id: str, session: AgentSession, initiated_by: str
@@ -372,7 +370,11 @@ class SessionRollbackService:
         actions, _ = await self._action_repo.list_by_agent(
             tenant_id, session.agent_id, limit=5000, offset=0
         )
-        return [a for a in actions if a.status not in (ActionStatus.CONTAINED,)]
+        return [
+            a for a in actions
+            if a.status not in (ActionStatus.CONTAINED,)
+            and a.correlation_id == session.correlation_id
+        ]
 
     async def _build_changeset(
         self,
@@ -381,7 +383,10 @@ class SessionRollbackService:
         session: AgentSession,
         actions: list[ProtectedAction],
     ) -> AIChangeSet:
-        root_action_id = actions[0].action_id if actions else ""
+        root_action_id = next(
+            (a.action_id for a in actions if not a.parent_action_id),
+            actions[0].action_id if actions else "",
+        )
         service = ChangeSetReconstructionService(
             self._action_repo,
             self._evidence_repo,
@@ -405,6 +410,10 @@ class SessionRollbackService:
     ) -> CausalStateGraph | None:
         if not actions:
             return None
+        root_action_id = next(
+            (a.action_id for a in actions if not a.parent_action_id),
+            actions[0].action_id,
+        )
         service = ChangeSetReconstructionService(
             self._action_repo,
             self._evidence_repo,
@@ -414,7 +423,7 @@ class SessionRollbackService:
         return await service.build_causal_state_graph(
             tenant_id=tenant_id,
             incident_id=incident_id,
-            root_action_id=actions[0].action_id,
+            root_action_id=root_action_id,
         )
 
     async def _generate_recovery_plan(
@@ -430,13 +439,15 @@ class SessionRollbackService:
             self._plan_repo,
             adapters=self._adapters,
         )
-        root_action_id = actions[0].action_id if actions else ""
+        root_action_id = next(
+            (a.action_id for a in actions if not a.parent_action_id),
+            actions[0].action_id if actions else "",
+        )
         plan = await planning_service.create_plan(
             tenant_id=tenant_id,
             incident_action_id=root_action_id,
             recovery_steps=[],
         )
-        # Update plan with incident linkage
         updated = RecoveryPlan(
             plan_id=plan.plan_id,
             tenant_id=plan.tenant_id,

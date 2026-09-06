@@ -216,7 +216,6 @@ class RecoveryPlanningService:
             tenant_id, plan.incident_action_id, limit=1000, offset=0
         )
         affected = [action] + descendants
-        # Execute in topological order (children before parents)
         ordered = self._order_actions_by_topological(affected, plan.topological_order)
 
         execution_results: dict[str, dict[str, Any]] = {}
@@ -278,7 +277,28 @@ class RecoveryPlanningService:
             root_action_id=plan.root_action_id,
             affected_action_ids=plan.affected_action_ids,
         )
-        plan = await self._plan_repo.save(plan)
+        plan = await self._plan_repo.update_status(
+            tenant_id, plan.plan_id, RecoveryStatus.EXECUTING,
+            outcome=plan.outcome.value,
+            simulation_result=plan.simulation_result,
+            steps=plan.steps,
+            approved_by=plan_approved_by,
+            executed_by=executed_by,
+            plan_version=plan.plan_version,
+            plan_hash=plan.plan_hash,
+            topological_order=plan.topological_order,
+            dependency_graph_reference=plan.dependency_graph_reference,
+            execution_status="executing",
+            approval_policy=plan.approval_policy,
+            approval_threshold=plan.approval_threshold,
+            stop_conditions=plan.stop_conditions,
+            compensation_summary=plan.compensation_summary,
+            incident_id=plan.incident_id,
+            root_action_id=plan.root_action_id,
+            affected_action_ids=plan.affected_action_ids,
+        )
+        if plan is None:
+            raise ValueError("Failed to update plan status to EXECUTING")
 
         updated_simulation = dict(plan.simulation_result)
         updated_simulation["execution_results"] = execution_results

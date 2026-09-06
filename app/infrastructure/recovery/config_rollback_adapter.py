@@ -116,7 +116,7 @@ class ConfigRollbackAdapter(RecoveryAdapter):
             return rev
         if evidence.before_state_reference:
             return RevEnum.CONDITIONALLY_REVERSIBLE
-        return RevEnum.CONDITIONALLY_REVERSIBLE
+        return RevEnum.UNKNOWN
 
     async def simulate(
         self,

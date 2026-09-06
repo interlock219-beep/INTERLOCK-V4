@@ -1,6 +1,6 @@
 from collections.abc import Generator
 from datetime import UTC, datetime
-from typing import Annotated
+from typing import Annotated, Any
 from uuid import UUID
 
 from fastapi import Depends, Header, HTTPException, status
@@ -238,6 +238,24 @@ def get_refresh_token_use_case(
         session_service,
         session_ttl_seconds=settings.session_ttl_seconds,
     )
+
+
+def require_role(
+    allowed_roles: list[str],
+) -> Any:
+    """Ensure the authenticated user holds one of the allowed roles.
+
+    Returns the current user when authorized.
+    Raises 403 when the user's role is not in the allowed set.
+    """
+    def _check(current_user: CurrentUser) -> UserResponse:
+        if current_user.role not in allowed_roles:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Insufficient permissions for this operation.",
+            )
+        return current_user
+    return _check
 
 
 def require_hitl_approver(

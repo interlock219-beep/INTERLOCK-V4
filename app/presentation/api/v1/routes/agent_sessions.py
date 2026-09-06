@@ -12,9 +12,11 @@ from app.infrastructure.persistence.database import SessionLocal
 from app.infrastructure.persistence.repositories.sqlalchemy_agent_session_repository import (
     SQLAlchemyAgentSessionRepository,
 )
-from app.presentation.api.dependencies.auth import CurrentUser, get_user_tenant_id
+from app.presentation.api.dependencies.auth import CurrentUser, get_user_tenant_id, require_role
 
 router = APIRouter(tags=["Agent Sessions"])
+
+_session_admin = Depends(require_role(["admin", "operator"]))
 
 
 def _get_session() -> Generator[Session, None, None]:
@@ -39,6 +41,7 @@ def _get_session_repo(
     "/",
     response_model=dict[str, Any],
     status_code=status.HTTP_201_CREATED,
+    dependencies=[_session_admin],
 )
 async def create_agent_session(
     body: dict[str, Any],
@@ -47,7 +50,7 @@ async def create_agent_session(
 ) -> dict[str, Any]:
     import secrets
 
-    session_id = body.get("session_id") or f"ses-{secrets.token_hex(12)}"
+    session_id = f"ses-{secrets.token_hex(12)}"
     existing = await repo.get_by_session_id(get_user_tenant_id(current_user), session_id)
     if existing:
         raise HTTPException(status_code=409, detail="Session already exists")
@@ -111,6 +114,7 @@ async def get_agent_session(
 @router.post(
     "/{session_id}/freeze",
     response_model=dict[str, Any],
+    dependencies=[_session_admin],
 )
 async def freeze_agent_session(
     session_id: str,
@@ -147,6 +151,7 @@ async def freeze_agent_session(
 @router.post(
     "/{session_id}/rollback",
     response_model=dict[str, Any],
+    dependencies=[_session_admin],
 )
 async def rollback_agent_session(
     session_id: str,
@@ -177,6 +182,7 @@ async def rollback_agent_session(
 @router.post(
     "/{session_id}/rollback/preview",
     response_model=dict[str, Any],
+    dependencies=[_session_admin],
 )
 async def preview_agent_session_rollback(
     session_id: str,
