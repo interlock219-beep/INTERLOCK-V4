@@ -99,3 +99,18 @@ F/
 bandit_app.json
 mypy_report.txt
 mypy_report_partial.txt
+
+# Runtime artifacts / debug outputs
+tmp_containment_validation/
+audit_trail.jsonl
+interlock_creds.json
+test_credentials*.json
+test_results.json
+experiment_results.json
+baseline_phase4.json
+openapi_snapshot.json
+pytest_*.txt
+temp_pytest*.txt
+collect.txt
+out.txt
+covdiag.txt

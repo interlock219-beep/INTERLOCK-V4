@@ -75,6 +75,7 @@ async def create_action(
         workflow_id=body.workflow_id,
         tool_arguments=body.tool_arguments,
         before_state_ref=body.before_state_ref,
+        before_state_snapshot=body.before_state_snapshot,
         status=ActionStatus.PENDING,
         created_at=datetime.now(UTC),
     )
@@ -189,8 +190,45 @@ async def evaluate_action(
         tenant_id=action.tenant_id,
         action=action.action_type,
         resource=action.resource,
+        user_role=current_user.role,
     )
     from app.domain.models.intent import AgentActionDAG
+
+    authority_grants = []
+    if action.authority_grant_id:
+        from app.infrastructure.persistence.repositories.sqlalchemy_authority_grant_repository import (  # noqa: E501
+            SQLAlchemyAuthorityGrantRepository,
+        )
+        grant_repo = SQLAlchemyAuthorityGrantRepository(repo._session)  # type: ignore[attr-defined]
+        grant_entity = await grant_repo.get_by_grant_id(action.tenant_id, action.authority_grant_id)
+        if grant_entity:
+            authority_grants = [{
+                "grant_id": grant_entity.grant_id,
+                "scope": grant_entity.scope.value,
+                "resource": grant_entity.resource,
+                "expires_at": (
+                    grant_entity.expires_at.isoformat()
+                    if grant_entity.expires_at else None
+                ),
+                "status": grant_entity.status.value,
+            }]
+    else:
+        from app.infrastructure.persistence.repositories.sqlalchemy_authority_grant_repository import (  # noqa: E501
+            SQLAlchemyAuthorityGrantRepository,
+        )
+        grant_repo = SQLAlchemyAuthorityGrantRepository(repo._session)  # type: ignore[attr-defined]
+        active_grants, _ = await grant_repo.list_by_grantee(action.tenant_id, action.agent_id)
+        for g in active_grants:
+            if g.status.value == "active":
+                authority_grants.append({
+                    "grant_id": g.grant_id,
+                    "scope": g.scope.value,
+                    "resource": g.resource,
+                    "expires_at": (
+                        g.expires_at.isoformat() if g.expires_at else None
+                    ),
+                    "status": g.status.value,
+                })
 
     dag = AgentActionDAG(
         user_prompt="",
@@ -202,7 +240,7 @@ async def evaluate_action(
         action=action.action_type,
         resource=action.resource,
     )
-    result = control.evaluate_protected_action(ctx, dag)
+    result = control.evaluate_protected_action(ctx, dag, authority_grants=authority_grants)
     final_status = ActionStatus.PERMITTED if result["decision"] == "allow" else ActionStatus.DENIED
     if result["decision"] == "require_hitl":
         final_status = ActionStatus.REQUIRES_APPROVAL
@@ -311,6 +349,126 @@ async def get_incident_graph(
         edges=[GraphEdge(**e) for e in graph["edges"]],
     )
 
+
+
+@router.patch(
+    "/{action_id}/execution",
+    response_model=ProtectedActionResponse,
+)
+async def update_action_execution(
+    action_id: str,
+    body: dict[str, Any],
+    current_user: CurrentUser,
+    repo: Annotated[ProtectedActionRepository, Depends(_get_action_repository)],
+) -> ProtectedActionResponse:
+    from app.domain.entities.protected_action import ActionStatus
+    action = await repo.get_by_action_id(get_user_tenant_id(current_user), action_id)
+    if action is None:
+        raise HTTPException(status_code=404, detail="Action not found")
+
+    after_state_ref = body.get("after_state_ref")
+    after_state_snapshot = body.get("after_state_snapshot")
+    new_status_str = body.get("status")
+    new_status = ActionStatus(new_status_str) if new_status_str else None
+    decision_reason = body.get("decision_reason")
+
+    updated = await repo.update_execution_result(
+        get_user_tenant_id(current_user),
+        action_id,
+        after_state_ref=after_state_ref,
+        after_state_snapshot=after_state_snapshot,
+        status=new_status,
+        decision_reason=decision_reason,
+    )
+    if updated is None:
+        raise HTTPException(status_code=404, detail="Action not found")
+
+    log_security_event(
+        "protected_action_updated",
+        tenant_id=updated.tenant_id,
+        action_id=updated.action_id,
+        agent_id=updated.agent_id,
+    )
+    return ProtectedActionResponse(
+        action_id=updated.action_id,
+        tenant_id=updated.tenant_id,
+        agent_id=updated.agent_id,
+        tool=updated.tool,
+        resource=updated.resource,
+        action_type=updated.action_type,
+        status=updated.status.value,
+        risk_score=updated.risk_score,
+        reversibility=updated.reversibility.value,
+        authority_grant_id=updated.authority_grant_id,
+        correlation_id=updated.correlation_id,
+        parent_action_id=updated.parent_action_id,
+        workflow_id=updated.workflow_id,
+        decision_reason=updated.decision_reason,
+        created_at=updated.created_at,
+        evaluated_at=updated.evaluated_at,
+        executed_at=updated.executed_at,
+    )
+
+
+@router.post(
+    "/{action_id}/capture-after-state",
+    response_model=ProtectedActionResponse,
+)
+async def capture_after_state(
+    action_id: str,
+    body: dict[str, Any],
+    current_user: CurrentUser,
+    repo: Annotated[ProtectedActionRepository, Depends(_get_action_repository)],
+) -> ProtectedActionResponse:
+    import hashlib
+    import json
+    action = await repo.get_by_action_id(get_user_tenant_id(current_user), action_id)
+    if action is None:
+        raise HTTPException(status_code=404, detail="Action not found")
+
+    after_snapshot = body.get("after_state_snapshot")
+
+    state_hash = None
+    after_state_ref = None
+    if after_snapshot is not None:
+        raw = json.dumps(after_snapshot, sort_keys=True, default=str).encode()
+        state_hash = hashlib.sha256(raw).hexdigest()
+        after_state_ref = f"delta:{state_hash}"
+
+    updated = await repo.update_execution_result(
+        get_user_tenant_id(current_user),
+        action_id,
+        after_state_ref=after_state_ref,
+        after_state_snapshot=after_snapshot,
+    )
+    if updated is None:
+        raise HTTPException(status_code=404, detail="Action not found")
+
+    log_security_event(
+        "protected_action_after_state_captured",
+        tenant_id=updated.tenant_id,
+        action_id=updated.action_id,
+        agent_id=updated.agent_id,
+    )
+    return ProtectedActionResponse(
+        action_id=updated.action_id,
+        tenant_id=updated.tenant_id,
+        agent_id=updated.agent_id,
+        tool=updated.tool,
+        resource=updated.resource,
+        action_type=updated.action_type,
+        status=updated.status.value,
+        risk_score=updated.risk_score,
+        reversibility=updated.reversibility.value,
+        authority_grant_id=updated.authority_grant_id,
+        correlation_id=updated.correlation_id,
+        parent_action_id=updated.parent_action_id,
+        workflow_id=updated.workflow_id,
+        decision_reason=updated.decision_reason,
+        created_at=updated.created_at,
+        evaluated_at=updated.evaluated_at,
+        executed_at=updated.executed_at,
+    )
 
 @router.post(
     "/{action_id}/rollback",

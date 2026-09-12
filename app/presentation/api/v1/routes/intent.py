@@ -6,6 +6,7 @@ from pydantic import BaseModel
 
 from app.application.interfaces.execution_token_service import ExecutionTokenService
 from app.domain.entities.agent import AgentStatus
+from app.domain.entities.agent_session import AgentSessionStatus
 from app.domain.entities.protected_action import ActionStatus, ProtectedAction
 from app.domain.exceptions.domain_errors import (
     ApprovalRequiredError,
@@ -24,6 +25,9 @@ from app.infrastructure.observability.metrics import metrics
 from app.infrastructure.persistence.database import SessionLocal
 from app.infrastructure.persistence.repositories.sqlalchemy_agent_repository import (
     SQLAlchemyAgentRepository,
+)
+from app.infrastructure.persistence.repositories.sqlalchemy_agent_session_repository import (
+    SQLAlchemyAgentSessionRepository,
 )
 from app.infrastructure.persistence.repositories.sqlalchemy_protected_action_repository import (
     SQLAlchemyProtectedActionRepository,
@@ -145,11 +149,13 @@ async def verify_intent(
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=result.reason)
 
     settings = get_settings()
+    tenant_id = agent_action.tenant_id or current_user.tenant_id
     ephemeral_token = execution_token_service.create_execution_token(
         agent_id=agent_action.agent_id,
         tool=agent_action.proposed_tool,
         ttl_seconds=settings.execution_token_ttl_seconds,
         subject=str(current_user.id),
+        tenant_id=tenant_id,
     )
     metrics.increment_execution_tokens_issued()
     token_jti = _extract_jti(ephemeral_token)
@@ -179,10 +185,10 @@ async def execute_intent(
     current_user: CurrentUser,
     execution_token_service: Annotated[ExecutionTokenService, Depends(get_execution_token_service)],
 ) -> dict[str, str]:
-    """Execute an action using a verified ephemeral token.
+    """Log execution intent for a verified ephemeral token.
 
-    The token is atomically consumed on first use. Replay attempts are
-    rejected. This endpoint enforces single-use semantics.
+    This endpoint performs an authoritative containment check AND
+    consumes the token.  The token cannot be reused after this call.
     """
     correlation_id = getattr(request.state, "correlation_id", "")
 
@@ -221,6 +227,26 @@ async def execute_intent(
             detail="Token subject does not match authenticated user.",
         )
 
+    token_tenant_id = payload.get("tenant_id")
+    if (
+        token_tenant_id
+        and current_user.tenant_id
+        and str(token_tenant_id) != str(current_user.tenant_id)
+    ):
+        log_verification(
+            agent_id=str(payload.get("agent_id", payload.get("sub", ""))),
+            proposed_tool=str(payload.get("tool", "")),
+            tool_arguments={},
+            verification_status="TENANT_MISMATCH",
+            rejection_reason="Token tenant does not match authenticated user tenant.",
+            correlation_id=correlation_id,
+            jti=str(payload.get("jti", "")) or None,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Token tenant does not match authenticated user tenant.",
+        )
+
     token_agent_id = str(payload.get("agent_id", ""))
     if body.agent_id and token_agent_id and token_agent_id != body.agent_id:
         log_verification(
@@ -245,19 +271,23 @@ async def execute_intent(
             agent = await agent_repo.get_by_agent_id(
                 get_user_tenant_id(current_user), agent_id_for_check
             )
-            if agent is not None and agent.status == AgentStatus.REVOKED:
+            if agent is not None and agent.status in (
+                AgentStatus.REVOKED,
+                AgentStatus.QUARANTINED,
+                AgentStatus.SUSPENDED,
+            ):
                 log_verification(
                     agent_id=agent_id_for_check,
                     proposed_tool=str(payload.get("tool", "")),
                     tool_arguments={},
-                    verification_status="AGENT_REVOKED",
-                    rejection_reason="Agent has been revoked.",
+                    verification_status=f"AGENT_{agent.status.value.upper()}",
+                    rejection_reason=f"Agent is {agent.status.value}.",
                     correlation_id=correlation_id,
                     jti=str(payload.get("jti", "")) or None,
                 )
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
-                    detail="Agent has been revoked.",
+                    detail=f"Agent is {agent.status.value}.",
                 )
         finally:
             db_session.close()
@@ -297,6 +327,165 @@ async def execute_intent(
         db_session.close()
 
     return {"status": "executed", "agent_id": str(payload.get("agent_id", payload.get("sub", "")))}
+
+
+@router.post("/authorize-mutation")
+async def authorize_mutation(
+    request: Request,
+    body: dict[str, Any],
+    current_user: CurrentUser,
+    execution_token_service: Annotated[ExecutionTokenService, Depends(get_execution_token_service)],
+) -> dict[str, str]:
+    """Authoritative pre-mutation gate.
+
+    Performs a final containment check immediately before the local
+    filesystem mutation.  If an ``execution_token`` is provided, it is
+    verified and consumed; otherwise the gate relies on the caller's
+    authenticated identity and the supplied ``agent_id``/``session_id``.
+
+    Request body:
+        execution_token: str | None
+        agent_id: str | None
+        session_id: str | None
+    """
+    correlation_id = getattr(request.state, "correlation_id", "")
+    execution_token = body.get("execution_token")
+    request_agent_id = body.get("agent_id")
+    request_session_id = body.get("session_id")
+
+    payload: dict[str, Any] = {}
+    token_jti: str | None = None
+
+    if execution_token:
+        try:
+            payload = execution_token_service.verify_execution_token(execution_token)
+        except ExecutionTokenError as exc:
+            metrics.increment_execution_tokens_replayed()
+            token_jti = _extract_jti(execution_token)
+            log_verification(
+                agent_id="unknown",
+                proposed_tool="unknown",
+                tool_arguments={},
+                verification_status="MUTATION_BLOCKED",
+                rejection_reason=str(exc),
+                correlation_id=correlation_id,
+                jti=token_jti,
+            )
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail=str(exc),
+            ) from exc
+
+        token_subject = str(payload.get("sub", ""))
+        if token_subject != str(current_user.id):
+            log_verification(
+                agent_id=str(payload.get("agent_id", payload.get("sub", ""))),
+                proposed_tool=str(payload.get("tool", "")),
+                tool_arguments={},
+                verification_status="MUTATION_BLOCKED",
+                rejection_reason="Token subject does not match authenticated user.",
+                correlation_id=correlation_id,
+                jti=str(payload.get("jti", "")) or None,
+            )
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Token subject does not match authenticated user.",
+            )
+
+    token_agent_id = str(payload.get("agent_id", ""))
+    agent_id_for_check = request_agent_id or token_agent_id
+    if agent_id_for_check:
+        db_session = SessionLocal()
+        try:
+            agent_repo = SQLAlchemyAgentRepository(db_session)
+            agent = await agent_repo.get_by_agent_id(
+                get_user_tenant_id(current_user), agent_id_for_check
+            )
+            if agent is not None and agent.status in (
+                AgentStatus.REVOKED,
+                AgentStatus.QUARANTINED,
+                AgentStatus.SUSPENDED,
+            ):
+                log_verification(
+                    agent_id=agent_id_for_check,
+                    proposed_tool=str(payload.get("tool", "")),
+                    tool_arguments={},
+                    verification_status=f"MUTATION_BLOCKED_{agent.status.value.upper()}",
+                    rejection_reason=f"Agent is {agent.status.value}.",
+                    correlation_id=correlation_id,
+                    jti=str(payload.get("jti", "")) or None,
+                )
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail=f"Agent is {agent.status.value}.",
+                )
+        finally:
+            db_session.close()
+
+    if request_session_id:
+        db_session = SessionLocal()
+        try:
+            session_repo = SQLAlchemyAgentSessionRepository(db_session)
+            session = await session_repo.get_by_session_id(
+                get_user_tenant_id(current_user), request_session_id
+            )
+            if session is not None:
+                if session.tenant_id != get_user_tenant_id(current_user):
+                    log_verification(
+                        agent_id=agent_id_for_check or token_agent_id,
+                        proposed_tool=str(payload.get("tool", "")),
+                        tool_arguments={},
+                        verification_status="MUTATION_BLOCKED_SESSION_TENANT_MISMATCH",
+                        rejection_reason="Session tenant does not match authenticated user tenant.",
+                        correlation_id=correlation_id,
+                        jti=str(payload.get("jti", "")) or None,
+                    )
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        detail="Session tenant does not match authenticated user tenant.",
+                    )
+                if agent_id_for_check and session.agent_id != agent_id_for_check:
+                    log_verification(
+                        agent_id=agent_id_for_check or token_agent_id,
+                        proposed_tool=str(payload.get("tool", "")),
+                        tool_arguments={},
+                        verification_status="MUTATION_BLOCKED_SESSION_AGENT_MISMATCH",
+                        rejection_reason="Session agent does not match the requested agent.",
+                        correlation_id=correlation_id,
+                        jti=str(payload.get("jti", "")) or None,
+                    )
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        detail="Session agent does not match the requested agent.",
+                    )
+                if session.status == AgentSessionStatus.FROZEN:
+                    log_verification(
+                        agent_id=agent_id_for_check or token_agent_id,
+                        proposed_tool=str(payload.get("tool", "")),
+                        tool_arguments={},
+                        verification_status="MUTATION_BLOCKED_SESSION_FROZEN",
+                        rejection_reason="Session is frozen.",
+                        correlation_id=correlation_id,
+                        jti=str(payload.get("jti", "")) or None,
+                    )
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        detail="Session is frozen.",
+                    )
+        finally:
+            db_session.close()
+
+    log_verification(
+        agent_id=agent_id_for_check or token_agent_id,
+        proposed_tool=str(payload.get("tool", "")),
+        tool_arguments={},
+        verification_status="MUTATION_AUTHORIZED",
+        rejection_reason="",
+        correlation_id=correlation_id,
+        jti=str(payload.get("jti", "")) or None,
+    )
+
+    return {"status": "mutation_authorized"}
 
 
 class SimulateRequest(BaseModel):

@@ -13,6 +13,7 @@ NEVER blindly overwrites newer legitimate changes.
 
 from __future__ import annotations
 
+import base64
 import contextlib
 import hashlib
 import json
@@ -114,6 +115,7 @@ class FilesystemRecoveryAdapter(RecoveryAdapter):
         self,
         action: ProtectedAction,
         execution_context: dict[str, Any] | None = None,
+        before_snapshot: dict[str, Any] | None = None,
     ) -> RecoveryEvidence:
         payload_str = json.dumps(action.tool_arguments, sort_keys=True, default=str)
         evidence_hash = hashlib.sha256(
@@ -121,23 +123,22 @@ class FilesystemRecoveryAdapter(RecoveryAdapter):
         ).hexdigest()
 
         base_path = self._get_base_path(execution_context)
-        before_ref = action.before_state_ref
         after_ref = action.after_state_ref
-        before_snapshot = None
         after_snapshot = None
+        file_path_str = self._extract_file_path(action.resource)
 
         if base_path and base_path.exists():
             file_path = self._resolve_file_path(action.resource, base_path)
-            before_snapshot = self._capture_file_snapshot(file_path)
+            if before_snapshot is None:
+                before_snapshot = self._capture_file_snapshot(file_path)
             after_snapshot = self._capture_file_snapshot(file_path)
-
-        file_path_str = self._extract_file_path(action.resource)
 
         compensation_payload = {
             "operation": self._determine_compensation_operation(action),
             "target": action.resource,
             "base_path": str(base_path) if base_path else None,
             "file_path": file_path_str,
+            "new_path": action.tool_arguments.get("new_path"),
             "before_snapshot": before_snapshot,
             "after_snapshot": after_snapshot,
         }
@@ -306,9 +307,8 @@ class FilesystemRecoveryAdapter(RecoveryAdapter):
                 details={"reason": "Cannot extract file path from resource"},
             )
 
-        full_path = base_path / file_path_str
+        full_path = self._resolve_file_path(action.resource, base_path)
         compensation_payload = evidence.compensation_payload
-        before_snapshot = compensation_payload.get("before_snapshot")
         after_snapshot = compensation_payload.get("after_snapshot")
 
         action_type = action.action_type.lower()
@@ -390,7 +390,7 @@ class FilesystemRecoveryAdapter(RecoveryAdapter):
         if not file_path_str:
             return ConflictResult(status=ConflictStatus.NO_CONFLICT)
 
-        full_path = base_path / file_path_str
+        full_path = self._resolve_file_path(action.resource, base_path)
         compensation_payload = evidence.compensation_payload
         before_snapshot = compensation_payload.get("before_snapshot")
         after_snapshot = compensation_payload.get("after_snapshot")
@@ -506,10 +506,93 @@ class FilesystemRecoveryAdapter(RecoveryAdapter):
                 error=f"Filesystem recovery failed: {str(e)}",
             )
 
+    @staticmethod
+    def _build_byte_exact_verification(
+        action_id: str,
+        current_bytes: bytes,
+        current_hash: str,
+        full_path: Path,
+        before_snapshot: dict[str, Any] | None,
+    ) -> VerificationResult:
+        expected_hash = before_snapshot.get("hash") if before_snapshot else None
+        expected_size = before_snapshot.get("size") if before_snapshot else None
+        expected_raw_len = (
+            before_snapshot.get("raw_bytes_length") if before_snapshot else None
+        )
+        checks_passed: list[str] = []
+        checks_failed: list[str] = []
+
+        if expected_hash:
+            if current_hash == expected_hash:
+                checks_passed.append("hash_match")
+            else:
+                checks_failed.append("hash_mismatch")
+
+        if expected_size is not None:
+            if full_path.stat().st_size == expected_size:
+                checks_passed.append("size_match")
+            else:
+                checks_failed.append("size_mismatch")
+
+        if expected_raw_len is not None:
+            if len(current_bytes) == expected_raw_len:
+                checks_passed.append("raw_bytes_length_match")
+            else:
+                checks_failed.append("raw_bytes_length_mismatch")
+
+        content_b64 = before_snapshot.get("content_b64") if before_snapshot else None
+        if content_b64 is not None:
+            expected_bytes = base64.b64decode(content_b64)
+            if current_bytes == expected_bytes:
+                checks_passed.append("byte_exact_match")
+            else:
+                checks_failed.append("byte_exact_mismatch")
+
+        if not expected_hash:
+            checks_failed.append("no_expected_hash")
+
+        verified = len(checks_failed) == 0 and len(checks_passed) > 0
+        return VerificationResult(
+            action_id=action_id,
+            verified=verified,
+            details={
+                "reason": (
+                    "Independent byte-exact verification passed"
+                    if verified
+                    else f"Independent verification failed: {checks_failed}"
+                ),
+                "hash": current_hash,
+                "expected_hash": expected_hash,
+                "size": full_path.stat().st_size,
+                "expected_size": expected_size,
+                "raw_bytes_length": len(current_bytes),
+                "expected_raw_bytes_length": expected_raw_len,
+                "checks_passed": checks_passed,
+                "checks_failed": checks_failed,
+                "byte_exact": True,
+            },
+        )
+
     async def verify(
         self,
         compensation: CompensationAction,
     ) -> VerificationResult:
+        """Independent verification of a completed compensation.
+
+        RECOVERED is allowed ONLY IF:
+        1. The real filesystem is inspected after execution
+        2. The resulting bytes exactly match the immutable before-state
+        3. The resulting cryptographic hash exactly matches the before-state hash
+        4. Relevant metadata checks pass where supported
+        5. All required verification checks explicitly return passed=True
+
+        Never infer success from:
+        - plan completion
+        - adapter return value alone
+        - status field alone
+        - matching normalized text
+        - matching file size alone
+        """
         payload = compensation.compensation_payload
         base_path_str = payload.get("base_path")
         base_path = Path(base_path_str) if base_path_str else None
@@ -531,7 +614,7 @@ class FilesystemRecoveryAdapter(RecoveryAdapter):
                 details={"reason": "No file path in compensation payload"},
             )
 
-        full_path = base_path / file_path_str
+        full_path = self._resolve_file_path(payload.get("file_path", ""), base_path)
         operation = payload.get("operation", "unknown")
 
         try:
@@ -543,33 +626,11 @@ class FilesystemRecoveryAdapter(RecoveryAdapter):
                         details={"reason": f"File does not exist after recovery: {file_path_str}"},
                     )
 
+                # Independent byte-exact verification.
+                current_bytes = full_path.read_bytes()
                 current_hash = self._compute_file_hash(full_path)
-                expected_hash = before_snapshot.get("hash") if before_snapshot else None
-
-                if expected_hash:
-                    if current_hash == expected_hash:
-                        return VerificationResult(
-                            action_id=compensation.action_id,
-                            verified=True,
-                            details={
-                                "reason": "File content matches expected hash",
-                                "hash": current_hash,
-                            },
-                        )
-                    return VerificationResult(
-                        action_id=compensation.action_id,
-                        verified=False,
-                        details={
-                            "reason": "File content does not match expected hash",
-                            "expected_hash": expected_hash,
-                            "current_hash": current_hash,
-                        },
-                    )
-
-                return VerificationResult(
-                    action_id=compensation.action_id,
-                    verified=False,
-                    details={"reason": "Cannot verify: no expected hash available"},
+                return self._build_byte_exact_verification(
+                    compensation.action_id, current_bytes, current_hash, full_path, before_snapshot
                 )
 
             elif operation == "delete_file":
@@ -582,7 +643,7 @@ class FilesystemRecoveryAdapter(RecoveryAdapter):
                 return VerificationResult(
                     action_id=compensation.action_id,
                     verified=True,
-                    details={"reason": "File successfully deleted"},
+                    details={"reason": "File successfully deleted", "byte_exact": True},
                 )
 
             elif operation == "restore_deleted_file":
@@ -593,30 +654,10 @@ class FilesystemRecoveryAdapter(RecoveryAdapter):
                         details={"reason": f"File was not restored: {file_path_str}"},
                     )
 
+                current_bytes = full_path.read_bytes()
                 current_hash = self._compute_file_hash(full_path)
-                expected_hash = before_snapshot.get("hash") if before_snapshot else None
-
-                if expected_hash:
-                    if current_hash == expected_hash:
-                        return VerificationResult(
-                            action_id=compensation.action_id,
-                            verified=True,
-                            details={"reason": "Restored file matches expected hash"},
-                        )
-                    return VerificationResult(
-                        action_id=compensation.action_id,
-                        verified=False,
-                        details={
-                            "reason": "Restored file does not match expected hash",
-                            "expected_hash": expected_hash,
-                            "current_hash": current_hash,
-                        },
-                    )
-
-                return VerificationResult(
-                    action_id=compensation.action_id,
-                    verified=True,
-                    details={"reason": "File was restored (content comparison not available)"},
+                return self._build_byte_exact_verification(
+                    compensation.action_id, current_bytes, current_hash, full_path, before_snapshot
                 )
 
             elif operation == "rename_back":
@@ -624,7 +665,7 @@ class FilesystemRecoveryAdapter(RecoveryAdapter):
                     return VerificationResult(
                         action_id=compensation.action_id,
                         verified=True,
-                        details={"reason": "File exists at expected path"},
+                        details={"reason": "File exists at expected path", "byte_exact": True},
                     )
                 return VerificationResult(
                     action_id=compensation.action_id,
@@ -692,29 +733,57 @@ class FilesystemRecoveryAdapter(RecoveryAdapter):
         return self._base_path
 
     def _resolve_file_path(self, resource: str, base_path: Path) -> Path:
-        """Resolve a resource identifier to a full file path."""
+        """Resolve a resource identifier to a contained file path."""
         file_path = self._extract_file_path(resource)
-        if file_path:
-            return base_path / file_path
-        return base_path / resource
+        candidate = base_path / file_path if file_path else base_path / resource
+        self._assert_contained(candidate, base_path)
+        return candidate
 
     def _extract_file_path(self, resource: str) -> str | None:
-        """Extract file path from resource identifier."""
+        """Extract file path from resource identifier, rejecting traversal."""
         if not resource:
             return None
+
+        if ".." in resource:
+            raise ValueError("Path traversal detected in resource identifier")
 
         prefixes = ["file:", "path:", "fs:"]
         for prefix in prefixes:
             if resource.startswith(prefix):
-                return resource[len(prefix):]
+                extracted = resource[len(prefix):]
+                if ".." in extracted:
+                    raise ValueError("Path traversal detected in resource identifier")
+                return extracted
 
         if "/" in resource or "\\" in resource:
             return resource
 
         return resource
 
+    def _assert_contained(self, candidate: Path, base_path: Path) -> None:
+        try:
+            base = base_path.resolve()
+            target = candidate.resolve()
+        except OSError:
+            base = base_path.absolute()
+            target = candidate.absolute()
+        if base != target and base not in target.parents:
+            raise ValueError(
+                f"Resolved path {candidate} is outside base path {base_path}"
+            )
+
     def _capture_file_snapshot(self, file_path: Path) -> dict[str, Any] | None:
-        """Capture a complete snapshot of a file for recovery evidence."""
+        """Capture a BYTE-EXACT snapshot of a file for recovery evidence.
+
+        CRITICAL: Reads the raw bytes from disk and hashes those exact bytes.
+        Never normalizes line endings, encoding, whitespace, or final newlines.
+        Using ``read_text`` previously caused LF-only files to be captured as
+        CRLF (or vice-versa), producing a wrong before-state that the recovery
+        system then restored.
+
+        Returns ``None`` only when the file cannot be reliably captured; the
+        caller must treat a missing snapshot as NOT safely recoverable.
+        """
         try:
             if not file_path.exists():
                 return {
@@ -724,6 +793,8 @@ class FilesystemRecoveryAdapter(RecoveryAdapter):
                     "hash": None,
                     "size": 0,
                     "metadata": None,
+                    "binary": False,
+                    "byte_exact": True,
                 }
 
             stat_result = file_path.stat()
@@ -744,31 +815,38 @@ class FilesystemRecoveryAdapter(RecoveryAdapter):
                     "size": stat_result.st_size,
                     "metadata": metadata,
                     "oversized": True,
+                    "byte_exact": True,
                 }
 
+            # Read the EXACT bytes from disk.  No decoding, no normalization.
+            raw_bytes = file_path.read_bytes()
+            content_hash = hashlib.sha256(raw_bytes).hexdigest()
+            content_b64 = base64.b64encode(raw_bytes).decode("ascii")
+
+            is_binary = False
+            text_content: str | None = None
             try:
-                content = file_path.read_text(encoding="utf-8")
-                return {
-                    "exists": True,
-                    "content": content,
-                    "content_b64": None,
-                    "hash": self._compute_file_hash(file_path),
-                    "size": stat_result.st_size,
-                    "metadata": metadata,
-                }
+                text_content = raw_bytes.decode("utf-8")
+                # If the decoded text re-encodes to the same bytes, we have a
+                # clean UTF-8 text file.  Otherwise treat as binary.
+                if text_content.encode("utf-8") != raw_bytes:
+                    is_binary = True
+                    text_content = None
             except UnicodeDecodeError:
-                import base64
-                raw_bytes = file_path.read_bytes()
-                content_b64 = base64.b64encode(raw_bytes).decode("ascii")
-                return {
-                    "exists": True,
-                    "content": None,
-                    "content_b64": content_b64,
-                    "hash": self._compute_file_hash(file_path),
-                    "size": stat_result.st_size,
-                    "metadata": metadata,
-                    "binary": True,
-                }
+                is_binary = True
+                text_content = None
+
+            return {
+                "exists": True,
+                "content": text_content,
+                "content_b64": content_b64,
+                "raw_bytes_length": len(raw_bytes),
+                "hash": content_hash,
+                "size": stat_result.st_size,
+                "metadata": metadata,
+                "binary": is_binary,
+                "byte_exact": True,
+            }
         except Exception:
             return None
 
@@ -817,7 +895,14 @@ class FilesystemRecoveryAdapter(RecoveryAdapter):
         return CompensationType.REVERSE_OPERATION
 
     def _execute_restore_content(self, payload: dict[str, Any], base_path: Path) -> dict[str, Any]:
-        """Execute content restoration with atomic write."""
+        """Execute content restoration with atomic write.
+
+        CRITICAL: Restores the EXACT before-state bytes.  Uses content_b64
+        (raw bytes) whenever available so that line endings, encoding, BOM,
+        whitespace, and final newlines are preserved byte-for-byte.  Using
+        ``write_text`` previously normalized CRLF->LF and broke exact
+        recovery.
+        """
         file_path_str = payload.get("file_path")
         before_snapshot = payload.get("before_snapshot")
 
@@ -845,7 +930,7 @@ class FilesystemRecoveryAdapter(RecoveryAdapter):
                 "error": "No before content available for restoration",
             }
 
-        full_path = base_path / file_path_str
+        full_path = self._resolve_file_path(file_path_str, base_path)
 
         if not full_path.exists():
             return {
@@ -871,21 +956,63 @@ class FilesystemRecoveryAdapter(RecoveryAdapter):
                     os.utime(full_path, (metadata.get("atime", None), metadata.get("mtime", None)))
 
             temp_path = full_path.with_suffix(full_path.suffix + ".recovery_tmp")
+            if temp_path.exists():
+                temp_path.unlink()
+
+            # ALWAYS prefer the raw bytes (content_b64) when available.
+            # This guarantees byte-exact restoration regardless of encoding,
+            # BOM, or line-ending differences.
             if content_b64 is not None:
-                import base64
                 temp_path.write_bytes(base64.b64decode(content_b64))
+            elif content is not None:
+                try:
+                    encoded = content.encode("utf-8")
+                except Exception as exc:
+                    return {
+                        "success": False,
+                        "execution_state": ExecutionState.FAILED,
+                        "error": (
+                            "Byte-exact restoration impossible: snapshot content "
+                            f"cannot be safely re-encoded: {exc}"
+                        ),
+                    }
+                temp_path.write_bytes(encoded)
             else:
-                temp_path.write_text(content, encoding="utf-8")
+                return {
+                    "success": False,
+                    "execution_state": ExecutionState.FAILED,
+                    "error": "No before content available for restoration",
+                }
+
+            # Atomic replace on the same filesystem.
             temp_path.replace(full_path)
 
             if metadata:
                 with contextlib.suppress(OSError, TypeError):
                     os.chmod(full_path, metadata.get("mode", 0o644))
 
+            # Independent post-write hash check.
+            restored_hash = self._compute_file_hash(full_path)
+            expected_hash = before_snapshot.get("hash")
+            if expected_hash and restored_hash != expected_hash:
+                return {
+                    "success": False,
+                    "execution_state": ExecutionState.FAILED,
+                    "error": (
+                        f"Post-write hash mismatch: expected {expected_hash}, "
+                        f"got {restored_hash}"
+                    ),
+                }
+
             return {
                 "success": True,
                 "execution_state": ExecutionState.SUCCEEDED,
-                "details": {"operation": "restore_content", "file": file_path_str},
+                "details": {
+                    "operation": "restore_content",
+                    "file": file_path_str,
+                    "restored_hash": restored_hash,
+                    "byte_exact": True,
+                },
                 "external_outcome": "content_restored",
             }
         except Exception as e:
@@ -908,7 +1035,7 @@ class FilesystemRecoveryAdapter(RecoveryAdapter):
                 "error": "No file path in payload",
             }
 
-        full_path = base_path / file_path_str
+        full_path = self._resolve_file_path(file_path_str, base_path)
 
         if not full_path.exists():
             return {
@@ -940,7 +1067,12 @@ class FilesystemRecoveryAdapter(RecoveryAdapter):
     def _execute_restore_deleted_file(
         self, payload: dict[str, Any], base_path: Path
     ) -> dict[str, Any]:
-        """Execute restoration of a deleted file."""
+        """Execute restoration of a deleted file.
+
+        CRITICAL: Restores the EXACT before-state bytes using content_b64
+        whenever available so that line endings, encoding, BOM, whitespace,
+        and final newlines are preserved byte-for-byte.
+        """
         file_path_str = payload.get("file_path")
         before_snapshot = payload.get("before_snapshot")
 
@@ -951,14 +1083,29 @@ class FilesystemRecoveryAdapter(RecoveryAdapter):
                 "error": "No file path in payload",
             }
 
-        if not before_snapshot or before_snapshot.get("content") is None:
+        if not before_snapshot or before_snapshot.get("exists", True) is False:
+            return {
+                "success": True,
+                "execution_state": ExecutionState.SUCCEEDED,
+                "details": {
+                    "operation": "restore_deleted_file",
+                    "file": file_path_str,
+                    "note": "File already absent - no restoration needed",
+                },
+                "external_outcome": "file_already_absent",
+            }
+
+        content = before_snapshot.get("content")
+        content_b64 = before_snapshot.get("content_b64")
+
+        if content is None and content_b64 is None:
             return {
                 "success": False,
                 "execution_state": ExecutionState.FAILED,
                 "error": "No before content available for restoration",
             }
 
-        full_path = base_path / file_path_str
+        full_path = self._resolve_file_path(file_path_str, base_path)
 
         if full_path.exists():
             return {
@@ -969,7 +1116,28 @@ class FilesystemRecoveryAdapter(RecoveryAdapter):
 
         try:
             full_path.parent.mkdir(parents=True, exist_ok=True)
-            full_path.write_text(before_snapshot["content"], encoding="utf-8")
+
+            # ALWAYS prefer the raw bytes (content_b64) when available.
+            if content_b64 is not None:
+                full_path.write_bytes(base64.b64decode(content_b64))
+            elif content is not None:
+                try:
+                    full_path.write_bytes(content.encode("utf-8"))
+                except Exception as exc:
+                    return {
+                        "success": False,
+                        "execution_state": ExecutionState.FAILED,
+                        "error": (
+                            "Byte-exact restoration impossible: snapshot content "
+                            f"cannot be safely re-encoded: {exc}"
+                        ),
+                    }
+            else:
+                return {
+                    "success": False,
+                    "execution_state": ExecutionState.FAILED,
+                    "error": "No before content available for restoration",
+                }
 
             metadata = before_snapshot.get("metadata") if self._preserve_metadata else None
             if metadata:
@@ -979,10 +1147,28 @@ class FilesystemRecoveryAdapter(RecoveryAdapter):
                 except (OSError, TypeError):
                     pass
 
+            # Independent post-write hash check.
+            restored_hash = self._compute_file_hash(full_path)
+            expected_hash = before_snapshot.get("hash")
+            if expected_hash and restored_hash != expected_hash:
+                return {
+                    "success": False,
+                    "execution_state": ExecutionState.FAILED,
+                    "error": (
+                        f"Post-write hash mismatch: expected {expected_hash}, "
+                        f"got {restored_hash}"
+                    ),
+                }
+
             return {
                 "success": True,
                 "execution_state": ExecutionState.SUCCEEDED,
-                "details": {"operation": "restore_deleted_file", "file": file_path_str},
+                "details": {
+                    "operation": "restore_deleted_file",
+                    "file": file_path_str,
+                    "restored_hash": restored_hash,
+                    "byte_exact": True,
+                },
                 "external_outcome": "file_restored",
             }
         except Exception as e:
@@ -995,6 +1181,7 @@ class FilesystemRecoveryAdapter(RecoveryAdapter):
     def _execute_rename_back(self, payload: dict[str, Any], base_path: Path) -> dict[str, Any]:
         """Execute rename reversal."""
         file_path_str = payload.get("file_path")
+        new_path_str = payload.get("new_path")
 
         if not file_path_str:
             return {
@@ -1003,18 +1190,35 @@ class FilesystemRecoveryAdapter(RecoveryAdapter):
                 "error": "No file path in payload",
             }
 
-        full_path = base_path / file_path_str
+        old_path = self._resolve_file_path(file_path_str, base_path)
+        new_path = self._resolve_file_path(new_path_str, base_path) if new_path_str else None
 
-        if not full_path.exists():
+        if new_path and new_path.exists():
+            try:
+                new_path.rename(old_path)
+                return {
+                    "success": True,
+                    "execution_state": ExecutionState.SUCCEEDED,
+                    "details": {"operation": "rename_back", "file": file_path_str},
+                    "external_outcome": "renamed_back",
+                }
+            except Exception as e:
+                return {
+                    "success": False,
+                    "execution_state": ExecutionState.FAILED,
+                    "error": f"Failed to rename back: {str(e)}",
+                }
+
+        if old_path.exists():
             return {
-                "success": False,
-                "execution_state": ExecutionState.FAILED,
-                "error": f"File does not exist at expected path: {file_path_str}",
+                "success": True,
+                "execution_state": ExecutionState.SUCCEEDED,
+                "details": {"operation": "rename_back", "file": file_path_str},
+                "external_outcome": "already_at_expected_path",
             }
 
         return {
-            "success": True,
-            "execution_state": ExecutionState.SUCCEEDED,
-            "details": {"operation": "rename_back", "file": file_path_str},
-            "external_outcome": "file_at_expected_path",
+            "success": False,
+            "execution_state": ExecutionState.FAILED,
+            "error": f"File does not exist at expected path: {file_path_str}",
         }

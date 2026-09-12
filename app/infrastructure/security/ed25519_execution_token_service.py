@@ -51,11 +51,12 @@ class Ed25519ExecutionTokenService(ExecutionTokenService):
         tool: str,
         ttl_seconds: int,
         subject: str | None = None,
+        tenant_id: str | None = None,
     ) -> str:
         now = int(time.time())
         key_id = self._key_manager.active_key_id
         header = {"alg": "EdDSA", "typ": "JWT", "kid": key_id}
-        payload = {
+        payload: dict[str, Any] = {
             "sub": subject or agent_id,
             "agent_id": agent_id,
             "type": "execution",
@@ -65,6 +66,8 @@ class Ed25519ExecutionTokenService(ExecutionTokenService):
             "exp": now + ttl_seconds,
             "jti": str(uuid4()),
         }
+        if tenant_id is not None:
+            payload["tenant_id"] = tenant_id
 
         header_segment = _b64url_encode(
             json.dumps(header, separators=(",", ":")).encode("ascii")
@@ -132,6 +135,62 @@ class Ed25519ExecutionTokenService(ExecutionTokenService):
 
         ttl_seconds = max(int(payload["exp"]) - int(time.time()), 1)
         if not self._nonce_store.consume(nonce, ttl_seconds):
+            raise ExecutionTokenError("Token has already been used.")
+
+        return payload
+
+    def peek_execution_token(self, token: str) -> dict[str, Any]:
+        # Extract key ID from the header without verifying the signature.
+        try:
+            header = jwt.get_unverified_header(token)
+        except jwt.PyJWTError:
+            raise ExecutionTokenError("Invalid or expired execution token.") from None
+
+        kid = header.get("kid")
+
+        # Select the verification key based on the key ID.
+        try:
+            if kid is not None:
+                verify_key = self._key_manager.get_verification_key(kid)
+            else:
+                verify_key = self._key_manager.get_verification_key()
+        except KeyError:
+            raise ExecutionTokenError("Unknown key ID.") from None
+
+        # Verify the signature and decode the payload.
+        try:
+            payload = jwt.decode(
+                token,
+                verify_key,
+                algorithms=["EdDSA"],
+                options={
+                    "require": ["sub", "type", "tool", "exp", "iat", "jti"],
+                    "verify_nbf": True,
+                    "verify_exp": False,
+                },
+                leeway=self._clock_skew_seconds,
+            )
+        except jwt.PyJWTError as exc:
+            raise ExecutionTokenError("Invalid or expired execution token.") from exc
+
+        if payload.get("type") != "execution":
+            raise ExecutionTokenError("Invalid token type.")
+
+        tenant_id = payload.get("tenant_id")
+        if tenant_id is not None and not str(tenant_id).strip():
+            raise ExecutionTokenError("Missing tenant binding.")
+
+        nonce = str(payload.get("jti", ""))
+        if not nonce:
+            raise ExecutionTokenError("Missing token nonce.")
+
+        # Strict expiration check — no leeway.
+        if int(payload["exp"]) < int(time.time()):
+            raise ExecutionTokenError("Execution token has expired.")
+
+        # Check that the nonce exists but do NOT consume it.
+        max(int(payload["exp"]) - int(time.time()), 1)
+        if self._nonce_store.is_consumed(nonce):
             raise ExecutionTokenError("Token has already been used.")
 
         return payload

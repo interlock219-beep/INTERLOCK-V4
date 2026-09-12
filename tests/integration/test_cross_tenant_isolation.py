@@ -224,7 +224,7 @@ def test_cross_tenant_cannot_contain_other_tenant_agent(client: TestClient) -> N
         },
         headers=_auth_headers(token_b),
     )
-    assert resp.status_code in (400, 404)
+    assert resp.status_code in (400, 404, 403)
 
 
 def test_cross_tenant_cannot_view_other_tenant_blast_radius(client: TestClient) -> None:
@@ -237,7 +237,7 @@ def test_cross_tenant_cannot_view_other_tenant_blast_radius(client: TestClient) 
         "/api/v1/containment/agent/agent-a",
         headers=_auth_headers(token_b),
     )
-    assert resp.status_code in (400, 404)
+    assert resp.status_code in (400, 404, 403)
 
 
 # ---------------------------------------------------------------------------
@@ -260,7 +260,7 @@ def test_cross_tenant_cannot_simulate_other_tenant_recovery(client: TestClient) 
         },
         headers=_auth_headers(token_b),
     )
-    assert resp.status_code in (400, 404)
+    assert resp.status_code in (400, 404, 403)
 
 
 def test_cross_tenant_cannot_execute_other_tenant_recovery(client: TestClient) -> None:
@@ -286,7 +286,7 @@ def test_cross_tenant_cannot_execute_other_tenant_recovery(client: TestClient) -
         json={"plan_id": plan_id, "approved_by": "admin"},
         headers=_auth_headers(token_b),
     )
-    assert resp.status_code in (400, 404)
+    assert resp.status_code in (400, 404, 403)
 
 
 def test_cross_tenant_cannot_read_other_tenant_recovery_plan(client: TestClient) -> None:
@@ -331,4 +331,4 @@ def test_cross_tenant_cannot_compute_blast_radius_for_other_agent(
         "/api/v1/containment/agent/agent-a",
         headers=_auth_headers(token_b),
     )
-    assert resp.status_code in (400, 404)
+    assert resp.status_code in (400, 404, 403)

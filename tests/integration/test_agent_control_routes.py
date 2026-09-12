@@ -2,7 +2,19 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
+from uuid import uuid4
+
 from fastapi.testclient import TestClient
+
+from app.domain.entities.user import User
+from app.infrastructure.config.settings import get_settings
+from app.infrastructure.persistence.database import SessionLocal
+from app.infrastructure.persistence.repositories.sqlalchemy_user_repository import (
+    SQLAlchemyUserRepository,
+)
+from app.infrastructure.security.bcrypt_password_hasher import BcryptPasswordHasher
+from app.infrastructure.security.jwt_token_service import JWTTokenService
 
 
 def _auth_header(token: str) -> dict[str, str]:
@@ -16,6 +28,45 @@ def _register(client: TestClient, email: str, password: str) -> dict:
     )
     assert response.status_code == 201
     return response.json()
+
+
+async def _create_user_with_role(*, email: str, role: str, tenant_id: str = "tenant-a") -> str:
+    settings = get_settings()
+    session = SessionLocal()
+    try:
+        repo = SQLAlchemyUserRepository(session)
+        user = User(
+            id=uuid4(),
+            email=email,
+            hashed_password=BcryptPasswordHasher(rounds=4).hash("SecurePass1!"),
+            is_active=True,
+            created_at=datetime.now(tz=UTC),
+            role=role,
+            tenant_id=tenant_id,
+        )
+        saved = await repo.save(user)
+        token = JWTTokenService(
+            secret_key=settings.jwt_secret_key,
+            algorithm=settings.jwt_algorithm,
+            expire_minutes=settings.jwt_access_token_expire_minutes,
+            clock_skew_seconds=settings.jwt_clock_skew_seconds,
+        ).create_access_token(user_id=saved.id, email=saved.email)
+        session.commit()
+        return token
+    finally:
+        session.close()
+
+
+async def _create_session_for_user(
+    client: TestClient, token: str, *, agent_id: str = "agent-1"
+) -> str:
+    response = client.post(
+        "/api/v1/agent-sessions",
+        json={"agent_id": agent_id, "intent_id": "intent-1"},
+        headers=_auth_header(token),
+    )
+    assert response.status_code == 201, response.text
+    return response.json()["session_id"]
 
 
 class TestAgentSessionRoutes:
@@ -56,6 +107,55 @@ class TestAgentSessionRoutes:
         response = client.post(
             "/api/v1/agent-sessions/nonexistent/freeze",
             headers=_auth_header(auth["access_token"]),
+        )
+        assert response.status_code == 404
+
+    def test_freeze_session_unauthorized_existing_session(self, client: TestClient) -> None:
+        import asyncio
+
+        token = asyncio.run(_create_user_with_role(email="viewer-session@test.com", role="viewer"))
+        session_id = asyncio.run(_create_session_for_user(client, token))
+
+        response = client.post(
+            f"/api/v1/agent-sessions/{session_id}/freeze",
+            headers=_auth_header(token),
+        )
+        assert response.status_code == 403
+        assert "Insufficient permissions" in response.json()["detail"]
+
+    def test_freeze_session_authorized_existing_session(self, client: TestClient) -> None:
+        import asyncio
+
+        token = asyncio.run(_create_user_with_role(email="admin-session@test.com", role="admin"))
+        session_id = asyncio.run(_create_session_for_user(client, token))
+
+        response = client.post(
+            f"/api/v1/agent-sessions/{session_id}/freeze",
+            headers=_auth_header(token),
+        )
+        assert response.status_code == 200
+        body = response.json()
+        assert body["session_id"] == session_id
+        assert body["status"] == "frozen"
+
+    def test_freeze_session_cross_tenant_not_found(self, client: TestClient) -> None:
+        import asyncio
+
+        owner_token = asyncio.run(
+            _create_user_with_role(
+                email="owner-session@test.com", role="admin", tenant_id="tenant-a"
+            )
+        )
+        other_token = asyncio.run(
+            _create_user_with_role(
+                email="other-session@test.com", role="admin", tenant_id="tenant-b"
+            )
+        )
+        session_id = asyncio.run(_create_session_for_user(client, owner_token))
+
+        response = client.post(
+            f"/api/v1/agent-sessions/{session_id}/freeze",
+            headers=_auth_header(other_token),
         )
         assert response.status_code == 404
 

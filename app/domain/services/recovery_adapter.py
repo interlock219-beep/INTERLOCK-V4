@@ -59,6 +59,7 @@ class CompensatingActionAdapter(Protocol):
         self,
         action: ProtectedAction,
         execution_context: dict[str, Any] | None = None,
+        before_snapshot: dict[str, Any] | None = None,
     ) -> RecoveryEvidence:
         """Build an immutable :class:`RecoveryEvidence` object for *action*."""
         ...
@@ -145,6 +146,17 @@ class RecoveryAdapter(ABC):
     adapter_type: str = "unknown"
     capability: str = "unsupported"
 
+    @staticmethod
+    def normalize_capability(capability: Any) -> str:
+        """Normalize adapter capability values across enum and string forms."""
+        if capability is None:
+            return ""
+        if isinstance(capability, AdapterCapability):
+            return capability.value
+        if isinstance(capability, str):
+            return capability
+        return str(capability)
+
     @abstractmethod
     async def can_recover(self, action: ProtectedAction) -> str:
         """Legacy: return a capability string for *action*."""
@@ -179,6 +191,7 @@ class RecoveryAdapter(ABC):
         self,
         action: ProtectedAction,
         execution_context: dict[str, Any] | None = None,
+        before_snapshot: dict[str, Any] | None = None,
     ) -> RecoveryEvidence:
         return RecoveryEvidence(
             evidence_id=f"ev-{action.action_id}",

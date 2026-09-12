@@ -270,10 +270,10 @@ See [Security Model](docs/architecture/security-model.md), [Authorization Archit
 
 ## Recovery adapters
 
-Interlock ships with a `RecoveryAdapter` protocol and an `AdapterFactory` for registration. Production-validated adapters are listed under [Recovery](#recovery). To add a new production adapter:
+Interlock ships with a `RecoveryAdapter` protocol. Production-validated adapters are listed under [Recovery](#recovery). To add a new production adapter:
 
 1. Implement the `RecoveryAdapter` protocol.
-2. Register it in `AdapterFactory`.
+2. Register it in the route-level adapter builder (e.g. `_get_adapters` in `app/presentation/api/v1/routes/surgical_recovery.py`).
 3. Validate against a real instance of the target system.
 4. Document the capability level honestly.
 

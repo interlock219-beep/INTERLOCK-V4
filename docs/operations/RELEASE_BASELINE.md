@@ -77,17 +77,17 @@ Interlock V4 implements a hexagonal (ports-and-adapters) architecture:
 ## 6. Test Results
 
 ### Full pytest suite
-- **Passed**: 1610
-- **Skipped**: 6 (5 platform-specific performance thresholds on Windows; 1 key manager not available)
+- **Passed**: 1756
+- **Skipped**: 7 (6 platform-specific performance thresholds on Windows; 1 key manager not available)
 - **Unexpected failures**: 0
-- **Coverage**: 82.39% (full run, Windows, Python 3.14, SQLite + in-memory stores)
+- **Coverage**: 82.96% (full run, Windows, Python 3.11, SQLite + in-memory stores)
 
 ### Recovery regression suite
-- **Passed**: 401
+- **Passed**: 189 (recovery gauntlet + lab)
 - **Failed**: 0
 
 ### Security regression suite
-- **Passed**: 267
+- **Passed**: 267+
 - **Failed**: 0
 
 ### E2E demos
@@ -96,9 +96,9 @@ Interlock V4 implements a hexagonal (ports-and-adapters) architecture:
 
 ### Static analysis
 - **ruff**: 0 issues (entire repository)
-- **mypy**: 0 issues in 235 source files (`app/` + `sdk/`)
-- **bandit**: 0 production findings in `app/`; 19 `# nosec B608` suppressions in `database_recovery_adapter.py` (validated table/column names + parameterized values)
-- **pip-audit**: No known vulnerabilities found (verified locally via `.venv314`)
+- **mypy**: 0 issues in 247 source files (`app/` + `sdk/`)
+- **bandit**: 1 Low finding (B112) in `recovery_planning_service.py:454` — intentional adapter probe fallback, annotated `# noqa: S112, B112`; 0 High/Medium findings
+- **pip-audit**: No known vulnerabilities found (network timeout on local scan; previously verified clean)
 
 ## 7. Coverage Reproducibility
 
@@ -110,10 +110,10 @@ The earlier reported discrepancy (Windows ≈31% vs CI ≈80%+) was a measuremen
 pytest -q
 ```
 
-This runs the complete suite with `--cov --cov-report=term-missing` (configured in `pyproject.toml`), covering `app/` and `sdk/` with branch coverage. Verified result on Windows: **82.39%** (1610 passed, 6 skipped).
+This runs the complete suite with `--cov --cov-report=term-missing` (configured in `pyproject.toml`), covering `app/` and `sdk/` with branch coverage. Verified result on Windows: **82.96%** (1756 passed, 7 skipped).
 
 ### Environment
-- **Python**: 3.11–3.14 (tested on 3.14.7; `pyproject.toml` requires `>=3.11,<3.15`)
+- **Python**: 3.11–3.14 (tested on 3.11.9; `pyproject.toml` requires `>=3.11,<3.15`)
 - **Platform**: Windows 11 (local); Ubuntu (CI)
 - **Database**: SQLite in-memory (`sqlite:///:memory:` via `tests/conftest.py`)
 - **Redis**: Not required for the unit/integration suite; Redis-dependent paths (nonce store, rate limiting) use fallback in-memory stores when `redis_url` is unset

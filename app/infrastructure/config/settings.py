@@ -128,6 +128,7 @@ class Settings(BaseSettings):
     refresh_token_enabled: bool = Field(default=False)
 
     recovery_adapter_names: list[str] = Field(default_factory=list)
+    interlock_workspace_path: str | None = Field(default=None)
 
     @field_validator("cors_origins", mode="before")
     @classmethod

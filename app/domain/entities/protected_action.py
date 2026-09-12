@@ -1,6 +1,7 @@
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from enum import StrEnum
+from typing import Any
 from uuid import UUID
 
 from app.domain.entities.surgical_recovery_types import Reversibility
@@ -36,6 +37,7 @@ class ProtectedAction:
     workflow_id: str | None = None
     reversibility: Reversibility = Reversibility.UNKNOWN
     before_state_ref: str | None = None
+    before_state_snapshot: dict[str, Any] | None = None
     after_state_ref: str | None = None
     tool_arguments: dict[str, str] = field(default_factory=dict)
     status: ActionStatus = ActionStatus.PENDING

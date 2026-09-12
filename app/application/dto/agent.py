@@ -132,6 +132,7 @@ class ProtectedActionCreateRequest(BaseModel):
     workflow_id: str | None = None
     tool_arguments: dict[str, str] = Field(default_factory=dict)
     before_state_ref: str | None = None
+    before_state_snapshot: dict[str, Any] | None = None
 
 
 class ProtectedActionResponse(BaseModel):

@@ -41,7 +41,6 @@ def _get_session_repo(
     "/",
     response_model=dict[str, Any],
     status_code=status.HTTP_201_CREATED,
-    dependencies=[_session_admin],
 )
 async def create_agent_session(
     body: dict[str, Any],
@@ -114,7 +113,6 @@ async def get_agent_session(
 @router.post(
     "/{session_id}/freeze",
     response_model=dict[str, Any],
-    dependencies=[_session_admin],
 )
 async def freeze_agent_session(
     session_id: str,
@@ -126,6 +124,11 @@ async def freeze_agent_session(
     session = await repo.get_by_session_id(get_user_tenant_id(current_user), session_id)
     if session is None:
         raise HTTPException(status_code=404, detail="Session not found")
+    if current_user.role not in {"admin", "operator"}:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Insufficient permissions for this operation.",
+        )
     if session.status in (AgentSessionStatus.FROZEN, AgentSessionStatus.COMPLETED):
         raise HTTPException(
             status_code=400,
@@ -151,7 +154,6 @@ async def freeze_agent_session(
 @router.post(
     "/{session_id}/rollback",
     response_model=dict[str, Any],
-    dependencies=[_session_admin],
 )
 async def rollback_agent_session(
     session_id: str,
@@ -161,6 +163,11 @@ async def rollback_agent_session(
     session = await repo.get_by_session_id(get_user_tenant_id(current_user), session_id)
     if session is None:
         raise HTTPException(status_code=404, detail="Session not found")
+    if current_user.role not in {"admin", "operator"}:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Insufficient permissions for this operation.",
+        )
     if session.status == AgentSessionStatus.ROLLING_BACK:
         raise HTTPException(status_code=409, detail="Rollback already in progress")
     await repo.update_status(
@@ -182,7 +189,6 @@ async def rollback_agent_session(
 @router.post(
     "/{session_id}/rollback/preview",
     response_model=dict[str, Any],
-    dependencies=[_session_admin],
 )
 async def preview_agent_session_rollback(
     session_id: str,
@@ -192,6 +198,11 @@ async def preview_agent_session_rollback(
     session = await repo.get_by_session_id(get_user_tenant_id(current_user), session_id)
     if session is None:
         raise HTTPException(status_code=404, detail="Session not found")
+    if current_user.role not in {"admin", "operator"}:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Insufficient permissions for this operation.",
+        )
     return {
         "session_id": session_id,
         "agent_id": session.agent_id,

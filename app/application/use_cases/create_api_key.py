@@ -36,7 +36,8 @@ class CreateApiKeyUseCase:
         if request.expires_at:
             expires_at = request.expires_at
         else:
-            assert request.expires_in_days is not None
+            if request.expires_in_days is None:
+                raise ApiKeyError("expires_in_days is required when expires_at is not provided.")
             expires_at = datetime.now(UTC) + timedelta(days=request.expires_in_days)
 
         now = datetime.now(UTC)

@@ -18,6 +18,7 @@ from app.domain.entities.surgical_recovery_types import (
 )
 from app.domain.repositories.containment_repository import RecoveryPlanRepository
 from app.domain.repositories.protected_action_repository import ProtectedActionRepository
+from app.domain.repositories.recovery_evidence_repository import RecoveryEvidenceRepository
 from app.domain.services.recovery_adapter import RecoveryAdapter
 from app.infrastructure.observability.metrics import metrics
 
@@ -34,10 +35,12 @@ class RecoveryPlanningService:
         action_repository: ProtectedActionRepository,
         plan_repository: RecoveryPlanRepository,
         adapters: list[RecoveryAdapter] | None = None,
+        evidence_repo: RecoveryEvidenceRepository | None = None,
     ) -> None:
         self._action_repo = action_repository
         self._plan_repo = plan_repository
         self._adapters = adapters or []
+        self._evidence_repo = evidence_repo
 
     async def create_plan(
         self,
@@ -248,6 +251,8 @@ class RecoveryPlanningService:
         all_succeeded = all(
             result.get("execution_state") in ("succeeded", "unknown_external_outcome")
             and result.get("verification_passed") is True
+            and result.get("adapter_selection")
+            and result.get("adapter") != "none"
             for result in execution_results.values()
         ) if execution_results else False
 
@@ -339,7 +344,17 @@ class RecoveryPlanningService:
             try:
                 if not hasattr(adapter, "capture_recovery_evidence"):
                     continue
-                evidence = await adapter.capture_recovery_evidence(action)
+                evidence = None
+                if self._evidence_repo is not None:
+                    evidence = await self._evidence_repo.get_by_action_id(
+                        action.tenant_id, action.action_id
+                    )
+                if evidence is None:
+                    evidence = await adapter.capture_recovery_evidence(
+                        action, before_snapshot=action.before_state_snapshot
+                    )
+                    if self._evidence_repo is not None:
+                        await self._evidence_repo.save(evidence)
                 reversibility = await adapter.classify_reversibility(action, evidence)
                 impact = await adapter.simulate(action, evidence)
                 drift = await adapter.detect_drift(action, evidence)
@@ -374,73 +389,185 @@ class RecoveryPlanningService:
     async def _execute_with_protocol_adapters(
         self, action: ProtectedAction, approved_by: str
     ) -> dict[str, Any] | None:
-        """Use the new Protocol-based adapter methods for compensation execution."""
-        for adapter in self._adapters:
-            try:
-                if not hasattr(adapter, "capture_recovery_evidence"):
-                    continue
-                evidence = await adapter.capture_recovery_evidence(action)
-                reversibility = await adapter.classify_reversibility(action, evidence)
+        """Use the new Protocol-based adapter methods for compensation execution.
 
-                if reversibility == Reversibility.IRREVERSIBLE:
-                    return {
-                        "adapter": getattr(adapter, "adapter_name", adapter.__class__.__name__),
-                        "execution_state": ExecutionState.BLOCKED_BY_CONFLICT.value,
-                        "success": False,
-                        "error": "Action is irreversible",
-                    }
+        CRITICAL: Adapter selection is explicit and auditable.  For live
+        filesystem targets, the FilesystemRecoveryAdapter MUST be selected.
+        The system fails closed if a mock/reference adapter would be used for
+        a real filesystem mutation.  Success is NOT inferred from the adapter
+        return value alone — independent verification MUST pass.
+        """
+        from app.domain.entities.surgical_recovery_types import AdapterCapability
 
-                precond = await adapter.check_preconditions(action)
-                if not precond.satisfied:
-                    return {
-                        "adapter": getattr(adapter, "adapter_name", adapter.__class__.__name__),
-                        "execution_state": ExecutionState.BLOCKED_BY_CONFLICT.value,
-                        "success": False,
-                        "error": f"Preconditions not satisfied: {precond.failed_checks}",
-                    }
+        is_filesystem_action = (
+            action.tool.lower()
+            in {"filesystem", "file", "fs", "storage"}
+            or action.action_type.lower()
+            in {"create", "write", "modify", "update", "delete", "rename", "move"}
+        )
 
-                drift = await adapter.detect_drift(action, evidence)
-                if drift.status != DriftStatus.NO_DRIFT:
-                    return {
-                        "adapter": getattr(adapter, "adapter_name", adapter.__class__.__name__),
-                        "execution_state": ExecutionState.BLOCKED_BY_DRIFT.value,
-                        "success": False,
-                        "error": f"Drift detected: {drift.status.value}",
-                    }
-
-                conflict = await adapter.check_conflicts(action, evidence)
-                if conflict.status != ConflictStatus.NO_CONFLICT:
-                    return {
-                        "adapter": getattr(adapter, "adapter_name", adapter.__class__.__name__),
-                        "execution_state": ExecutionState.BLOCKED_BY_CONFLICT.value,
-                        "success": False,
-                        "error": f"Conflict detected: {conflict.status.value}",
-                    }
-
-                compensation = await adapter.generate_compensation(action, evidence)
-                metrics.increment_recovery_adapter_call(adapter.__class__.__name__)
-                result = await adapter.execute_compensation(compensation, evidence.idempotency_key)
-                verification = await adapter.verify(compensation)
-
+        # Explicit adapter selection: prefer the production filesystem adapter
+        # for filesystem actions.  Fail closed if it is unavailable.
+        selected_adapter: RecoveryAdapter | None = None
+        selection_reason = ""
+        if is_filesystem_action:
+            for adapter in self._adapters:
+                adapter_name = getattr(adapter, "adapter_name", "")
+                if adapter_name == "filesystem_recovery":
+                    capability = RecoveryAdapter.normalize_capability(
+                        getattr(adapter, "capability", "")
+                    )
+                    if capability != AdapterCapability.PRODUCTION_VALIDATED.value:
+                        return {
+                            "adapter": adapter_name,
+                            "execution_state": ExecutionState.FAILED.value,
+                            "success": False,
+                            "error": (
+                                "FilesystemRecoveryAdapter is not production-validated; "
+                                "refusing live filesystem recovery."
+                            ),
+                            "adapter_selection": "rejected",
+                        }
+                    selected_adapter = adapter
+                    selection_reason = "filesystem_recovery_selected_for_live_execution"
+                    break
+            if selected_adapter is None:
                 return {
-                    "adapter": getattr(adapter, "adapter_name", adapter.__class__.__name__),
-                    "execution_state": result.execution_state.value,
-                    "success": result.success,
-                    "external_outcome": result.external_outcome,
-                    "verification_passed": verification.verified,
-                    "compensation_type": compensation.compensation_type.value,
-                    "idempotency_key": result.idempotency_key,
+                    "adapter": "none",
+                    "execution_state": ExecutionState.FAILED.value,
+                    "success": False,
+                    "error": (
+                        "No FilesystemRecoveryAdapter available for live filesystem "
+                        "recovery. Refusing to silently substitute a mock/reference adapter."
+                    ),
+                    "adapter_selection": "fail_closed",
                 }
-            except (AttributeError, TypeError):
-                continue
-            except Exception as exc:
+        else:
+            # Non-filesystem action: pick the first adapter that supports it.
+            for adapter in self._adapters:
+                try:
+                    supported = await adapter.supports(action)
+                    if supported:
+                        selected_adapter = adapter
+                        selection_reason = f"{adapter.adapter_name}_selected"
+                        break
+                except Exception:  # noqa: S112, B112
+                    # Adapter probes are untrusted; fail-open is intentional to allow
+                    # fallback to other adapters in the selection loop.
+                    continue
+            if selected_adapter is None:
+                return {
+                    "adapter": "none",
+                    "execution_state": ExecutionState.FAILED.value,
+                    "success": False,
+                    "error": "No adapter supports this action",
+                    "adapter_selection": "fail_closed",
+                }
+
+        adapter = selected_adapter
+        try:
+            if not hasattr(adapter, "capture_recovery_evidence"):
                 return {
                     "adapter": getattr(adapter, "adapter_name", adapter.__class__.__name__),
                     "execution_state": ExecutionState.FAILED.value,
                     "success": False,
-                    "error": str(exc),
+                    "error": "Adapter does not implement capture_recovery_evidence",
+                    "adapter_selection": selection_reason,
                 }
-        return None
+            evidence = None
+            if self._evidence_repo is not None:
+                evidence = await self._evidence_repo.get_by_action_id(
+                    action.tenant_id, action.action_id
+                )
+            if evidence is None:
+                evidence = await adapter.capture_recovery_evidence(
+                    action, before_snapshot=action.before_state_snapshot
+                )
+                if self._evidence_repo is not None:
+                    await self._evidence_repo.save(evidence)
+            reversibility = await adapter.classify_reversibility(action, evidence)
+
+            if reversibility == Reversibility.IRREVERSIBLE:
+                return {
+                    "adapter": getattr(adapter, "adapter_name", adapter.__class__.__name__),
+                    "execution_state": ExecutionState.BLOCKED_BY_CONFLICT.value,
+                    "success": False,
+                    "error": "Action is irreversible",
+                    "adapter_selection": selection_reason,
+                }
+
+            precond = await adapter.check_preconditions(action)
+            if not precond.satisfied:
+                return {
+                    "adapter": getattr(adapter, "adapter_name", adapter.__class__.__name__),
+                    "execution_state": ExecutionState.BLOCKED_BY_CONFLICT.value,
+                    "success": False,
+                    "error": f"Preconditions not satisfied: {precond.failed_checks}",
+                    "adapter_selection": selection_reason,
+                }
+
+            drift = await adapter.detect_drift(action, evidence)
+            if drift.status != DriftStatus.NO_DRIFT:
+                return {
+                    "adapter": getattr(adapter, "adapter_name", adapter.__class__.__name__),
+                    "execution_state": ExecutionState.BLOCKED_BY_DRIFT.value,
+                    "success": False,
+                    "error": f"Drift detected: {drift.status.value}",
+                    "adapter_selection": selection_reason,
+                }
+
+            conflict = await adapter.check_conflicts(action, evidence)
+            if conflict.status != ConflictStatus.NO_CONFLICT:
+                return {
+                    "adapter": getattr(adapter, "adapter_name", adapter.__class__.__name__),
+                    "execution_state": ExecutionState.BLOCKED_BY_CONFLICT.value,
+                    "success": False,
+                    "error": f"Conflict detected: {conflict.status.value}",
+                    "adapter_selection": selection_reason,
+                }
+
+            compensation = await adapter.generate_compensation(action, evidence)
+            metrics.increment_recovery_adapter_call(adapter.__class__.__name__)
+            result = await adapter.execute_compensation(compensation, evidence.idempotency_key)
+            verification = await adapter.verify(compensation)
+
+            # CRITICAL: Success is NOT inferred from the adapter return value
+            # alone.  Independent verification MUST pass.
+            adapter_name = getattr(adapter, "adapter_name", adapter.__class__.__name__)
+            success = bool(
+                result.success
+                and result.execution_state == ExecutionState.SUCCEEDED.value
+                and verification.verified is True
+            )
+
+            return {
+                "adapter": adapter_name,
+                "adapter_selection": selection_reason,
+                "execution_state": result.execution_state.value,
+                "success": success,
+                "external_outcome": result.external_outcome,
+                "verification_passed": verification.verified,
+                "verification_details": verification.details,
+                "compensation_type": compensation.compensation_type.value,
+                "idempotency_key": result.idempotency_key,
+                "adapter_capability": getattr(adapter, "capability", ""),
+            }
+        except (AttributeError, TypeError):
+            return {
+                "adapter": getattr(adapter, "adapter_name", adapter.__class__.__name__),
+                "execution_state": ExecutionState.FAILED.value,
+                "success": False,
+                "error": "Adapter protocol error",
+                "adapter_selection": selection_reason,
+            }
+        except Exception as exc:
+            return {
+                "adapter": getattr(adapter, "adapter_name", adapter.__class__.__name__),
+                "execution_state": ExecutionState.FAILED.value,
+                "success": False,
+                "error": str(exc),
+                "adapter_selection": selection_reason,
+            }
 
     async def _preview_with_adapters(
         self, action: ProtectedAction

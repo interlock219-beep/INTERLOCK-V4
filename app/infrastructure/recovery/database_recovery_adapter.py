@@ -25,7 +25,7 @@ import hashlib
 import json
 import sqlite3
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from app.domain.entities.causal_state_types import (
     AdapterCapabilityDeclaration,
@@ -156,6 +156,7 @@ class DatabaseRecoveryAdapter(RecoveryAdapter):
         self,
         action: ProtectedAction,
         execution_context: dict[str, Any] | None = None,
+        before_snapshot: dict[str, Any] | None = None,
     ) -> RecoveryEvidence:
         payload_str = json.dumps(action.tool_arguments, sort_keys=True, default=str)
         evidence_hash = hashlib.sha256(
@@ -168,7 +169,27 @@ class DatabaseRecoveryAdapter(RecoveryAdapter):
         table_name = self._extract_table_name(action.resource)
 
         if db_path and db_path.exists() and table_name:
-            before_state = self._capture_table_state(db_path, table_name, action)
+            if before_snapshot and isinstance(before_snapshot, dict) and "rows" in before_snapshot:
+                rows = before_snapshot.get("rows", [])
+                raw_row_data = cast(
+                    dict[str, Any],
+                    action.tool_arguments.get("row_data", dict[str, Any]())
+                    if isinstance(action.tool_arguments, dict)
+                    else dict[str, Any](),
+                )
+                if isinstance(raw_row_data, dict):
+                    row_data: dict[str, Any] = raw_row_data
+                    for row in rows:
+                        if all(str(row.get(k)) == str(v) for k, v in row_data.items()):
+                            before_state = {
+                                "hash": self._compute_row_hash(row),
+                                "row_data": row,
+                                "row_count": 1,
+                            }
+                            break
+
+            if before_state is None:
+                before_state = self._capture_table_state(db_path, table_name, action)
             after_state = self._capture_table_state(db_path, table_name, action)
 
         compensation_payload = {
@@ -180,7 +201,7 @@ class DatabaseRecoveryAdapter(RecoveryAdapter):
             "after_state": after_state,
             "primary_key": self._extract_primary_key(action),
             "where_clause": action.tool_arguments.get("where"),
-            "row_data": action.tool_arguments.get("row_data"),
+            "row_data": (before_state or after_state or {}).get("row_data"),
         }
 
         before_state_reference = (
@@ -852,7 +873,7 @@ class DatabaseRecoveryAdapter(RecoveryAdapter):
         prefixes = ["table:", "db:", "database:", "sql:"]
         for prefix in prefixes:
             if resource.startswith(prefix):
-                table_name = resource[len(prefix):]
+                table_name = resource[len(prefix):].split(":")[0]
                 if self._validate_table_name(table_name):
                     return table_name
                 return None
@@ -890,7 +911,12 @@ class DatabaseRecoveryAdapter(RecoveryAdapter):
 
             primary_key = self._extract_primary_key(action)
             if not self._validate_column_name(primary_key):
-                return None
+                conn.close()
+                return {
+                    "hash": "0",
+                    "row_data": None,
+                    "row_count": 0,
+                }
 
             row_data_raw: Any = action.tool_arguments.get("row_data") or {}
             if not isinstance(row_data_raw, dict):
@@ -906,19 +932,39 @@ class DatabaseRecoveryAdapter(RecoveryAdapter):
                 row = cursor.fetchone()
                 if row:
                     row_dict = dict(row)
+                    conn.close()
                     return {
                         "hash": self._compute_row_hash(row_dict),
                         "row_data": row_dict,
                         "row_count": 1,
                     }
+                conn.close()
                 return {
                     "hash": None,
                     "row_data": None,
                     "row_count": 0,
                 }
 
+            if row_data:
+                for key, value in row_data.items():
+                    if self._validate_column_name(key):
+                        cursor = conn.execute(
+                            f"SELECT * FROM {table_name} WHERE {key} = ?",  # noqa: B608  # nosec B608  # safe: table/column validated, values parameterized
+                            (value,),
+                        )
+                        row = cursor.fetchone()
+                        if row:
+                            row_dict = dict(row)
+                            conn.close()
+                            return {
+                                "hash": self._compute_row_hash(row_dict),
+                                "row_data": row_dict,
+                                "row_count": 1,
+                            }
+
             cursor = conn.execute(f"SELECT COUNT(*) as cnt FROM {table_name}")  # noqa: B608  # nosec B608  # safe: table validated
             count = cursor.fetchone()[0]
+            conn.close()
             return {
                 "hash": str(count),
                 "row_data": None,

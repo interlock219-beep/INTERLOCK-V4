@@ -54,7 +54,6 @@ from app.domain.services.recovery_confidence_model import RecoveryConfidenceMode
 from app.domain.services.recovery_planning_service import RecoveryPlanningService
 from app.domain.services.recovery_simulation_engine import RecoverySimulationEngine
 from app.infrastructure.logging.audit_logger import log_security_event
-from app.infrastructure.persistence.database import get_db_session
 from app.infrastructure.persistence.repositories.sqlalchemy_agent_repository import (
     SQLAlchemyAgentRepository,
 )
@@ -178,16 +177,18 @@ class SessionRollbackService:
                 agent_id=session.agent_id,
             )
 
-            containment = await self._contain_agent(tenant_id, session.agent_id, initiated_by, dry_run)
+            containment = await self._contain_agent(
+                tenant_id, session.agent_id, initiated_by, dry_run
+            )
 
             incident = await self._create_incident(tenant_id, session, initiated_by)
 
             actions = await self._discover_session_actions(tenant_id, session_id)
 
-            changeset = await self._build_changeset(
+            await self._build_changeset(
                 tenant_id, incident.incident_id, session, actions
             )
-            graph = await self._build_causal_graph(
+            await self._build_causal_graph(
                 tenant_id, incident.incident_id, session, actions
             )
 

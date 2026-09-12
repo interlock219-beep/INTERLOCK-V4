@@ -73,6 +73,7 @@ class DatabaseRecordAdapter(RecoveryAdapter):
         self,
         action: ProtectedAction,
         execution_context: dict[str, Any] | None = None,
+        before_snapshot: dict[str, Any] | None = None,
     ) -> RecoveryEvidence:
         import hashlib
         import json

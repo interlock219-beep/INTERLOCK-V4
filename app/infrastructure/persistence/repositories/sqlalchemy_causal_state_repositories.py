@@ -633,27 +633,50 @@ class SQLAlchemyDurableExecutionRepository(DurableExecutionRepository):
         return [self._to_entity(r) for r in results], len(results)
 
     async def save(self, step: DurableExecutionStep) -> DurableExecutionStep:
-        model = DurableExecutionStepModel(
-            step_id=step.step_id,
-            plan_id=step.plan_id,
-            action_id=step.action_id,
-            execution_order=step.execution_order,
-            tenant_id=step.tenant_id,
-            execution_state=step.execution_state,
-            idempotency_key=step.idempotency_key,
-            target_system=step.target_system,
-            target_resource=step.target_resource,
-            compensation_payload=_serialize_json_field(step.compensation_payload),
-            started_at=step.started_at,
-            completed_at=step.completed_at,
-            error=step.error,
-            verification_passed=step.verification_passed,
-            retry_count=step.retry_count,
-            max_retries=step.max_retries,
-            step_metadata=_serialize_json_field(step.step_metadata),
-            created_at=step.created_at,
+        stmt = select(DurableExecutionStepModel).where(
+            DurableExecutionStepModel.step_id == step.step_id,
+            DurableExecutionStepModel.tenant_id == step.tenant_id,
         )
-        self._session.add(model)
+        result = self._session.execute(stmt).scalar_one_or_none()
+        if result is not None:
+            result.plan_id = step.plan_id
+            result.action_id = step.action_id
+            result.execution_order = step.execution_order
+            result.execution_state = step.execution_state
+            result.idempotency_key = step.idempotency_key
+            result.target_system = step.target_system
+            result.target_resource = step.target_resource
+            result.compensation_payload = _serialize_json_field(step.compensation_payload)
+            result.started_at = step.started_at
+            result.completed_at = step.completed_at
+            result.error = step.error
+            result.verification_passed = step.verification_passed
+            result.retry_count = step.retry_count
+            result.max_retries = step.max_retries
+            result.step_metadata = _serialize_json_field(step.step_metadata)
+            self._session.add(result)
+        else:
+            model = DurableExecutionStepModel(
+                step_id=step.step_id,
+                plan_id=step.plan_id,
+                action_id=step.action_id,
+                execution_order=step.execution_order,
+                tenant_id=step.tenant_id,
+                execution_state=step.execution_state,
+                idempotency_key=step.idempotency_key,
+                target_system=step.target_system,
+                target_resource=step.target_resource,
+                compensation_payload=_serialize_json_field(step.compensation_payload),
+                started_at=step.started_at,
+                completed_at=step.completed_at,
+                error=step.error,
+                verification_passed=step.verification_passed,
+                retry_count=step.retry_count,
+                max_retries=step.max_retries,
+                step_metadata=_serialize_json_field(step.step_metadata),
+                created_at=step.created_at,
+            )
+            self._session.add(model)
         self._session.flush()
         return step
 

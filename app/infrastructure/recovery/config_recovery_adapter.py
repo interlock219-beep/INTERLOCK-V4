@@ -106,6 +106,7 @@ class ConfigRecoveryAdapter(RecoveryAdapter):
         self,
         action: ProtectedAction,
         execution_context: dict[str, Any] | None = None,
+        before_snapshot: dict[str, Any] | None = None,
     ) -> RecoveryEvidence:
         payload_str = json.dumps(action.tool_arguments, sort_keys=True, default=str)
         evidence_hash = hashlib.sha256(
@@ -538,6 +539,23 @@ class ConfigRecoveryAdapter(RecoveryAdapter):
                 )
 
             elif operation == "restore_deleted_config":
+                if not before_snapshot or before_snapshot.get("exists", True) is False:
+                    if config_path.exists():
+                        return VerificationResult(
+                            action_id=compensation.action_id,
+                            verified=False,
+                            details={
+                            "reason": (
+                                f"Config file should not exist but does: {config_file}"
+                            )
+                        },
+                        )
+                    return VerificationResult(
+                        action_id=compensation.action_id,
+                        verified=True,
+                        details={"reason": "Config file already absent - no restoration needed"},
+                    )
+
                 if not config_path.exists():
                     return VerificationResult(
                         action_id=compensation.action_id,
@@ -691,7 +709,7 @@ class ConfigRecoveryAdapter(RecoveryAdapter):
         if action_type in ("modify", "update", "set"):
             return "restore_config"
 
-        if action_type in ("delete",):
+        if action_type in ("delete", "delete_config"):
             return "restore_deleted_config"
 
         return "restore_config"
@@ -806,6 +824,18 @@ class ConfigRecoveryAdapter(RecoveryAdapter):
                 "success": False,
                 "execution_state": ExecutionState.FAILED,
                 "error": "No config file in payload",
+            }
+
+        if not before_snapshot or before_snapshot.get("exists", True) is False:
+            return {
+                "success": True,
+                "execution_state": ExecutionState.SUCCEEDED,
+                "details": {
+                    "operation": "restore_deleted_config",
+                    "file": config_file,
+                    "note": "Config already absent - no restoration needed",
+                },
+                "external_outcome": "config_already_absent",
             }
 
         if not before_snapshot or before_snapshot.get("content") is None:

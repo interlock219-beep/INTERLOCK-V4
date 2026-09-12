@@ -34,6 +34,7 @@ from app.domain.entities.surgical_recovery_types import (
 )
 from app.domain.services.recovery_adapter import RecoveryAdapter
 from app.domain.services.recovery_planning_service import RecoveryPlanningService
+from app.infrastructure.recovery.filesystem_recovery_adapter import FilesystemRecoveryAdapter
 from app.infrastructure.recovery.mock_adapter import MockRecoveryAdapter
 
 # ---------------------------------------------------------------------------
@@ -47,6 +48,10 @@ def _make_action(
     parent_action_id: str | None = None,
     reversibility: Reversibility = Reversibility.AUTOMATICALLY_REVERSIBLE,
     before_state_ref: str | None = "state:before:123",
+    before_state_snapshot: dict[str, Any] | None = None,
+    tool: str = "database",
+    resource: str | None = None,
+    action_type: str = "insert",
 ) -> ProtectedAction:
     return ProtectedAction(
         action_id=action_id,
@@ -54,12 +59,13 @@ def _make_action(
         actor_user_id=uuid4(),
         agent_id="agent-1",
         authority_grant_id=None,
-        tool="database",
-        resource=f"record:{action_id}",
-        action_type="insert",
+        tool=tool,
+        resource=resource or f"record:{action_id}",
+        action_type=action_type,
         reversibility=reversibility,
         parent_action_id=parent_action_id,
         before_state_ref=before_state_ref,
+        before_state_snapshot=before_state_snapshot,
         after_state_ref="state:after:456" if before_state_ref else None,
         status=ActionStatus.EXECUTED,
     )
@@ -75,7 +81,7 @@ class MockActionRepo:
         action = self._actions.get(action_id)
         if action and action.tenant_id == tenant_id:
             return action
-        return None
+        return self._by_action.get(action_id)
 
     async def list_descendants(
         self, tenant_id: str, root_action_id: str, **kwargs: object
@@ -323,8 +329,13 @@ async def test_protocol_execution_produces_compensation() -> None:
     assert executed.status == RecoveryStatus.COMPLETED
     sim_result = executed.simulation_result.get("execution_results", {})
     assert "root" in sim_result
-    assert sim_result["root"]["success"] is True
+    # The mock adapter executes successfully but its verify() returns False
+    # because it does not perform actual verification.  The overall result
+    # therefore must NOT be considered successful — recovery must NOT become
+    # RECOVERED merely because the adapter returned success.
     assert sim_result["root"]["execution_state"] == ExecutionState.SUCCEEDED.value
+    assert sim_result["root"]["verification_passed"] is False
+    assert sim_result["root"]["success"] is False
 
 
 @pytest.mark.asyncio
@@ -344,6 +355,38 @@ async def test_protocol_execution_handles_failure_and_stop_condition() -> None:
     first_action = next(iter(execution_results))
     assert execution_results[first_action]["success"] is False
     assert execution_results[first_action]["execution_state"] == ExecutionState.FAILED.value
+
+
+@pytest.mark.asyncio
+async def test_live_filesystem_action_uses_production_adapter(tmp_path: Any) -> None:
+    base_path = tmp_path / "live-fs"
+    base_path.mkdir()
+    target = base_path / "calculator.py"
+    target.write_text("print('before')\n", encoding="utf-8")
+
+    root = _make_action(
+        "root",
+        tool="filesystem",
+        action_type="modify",
+        resource="file:calculator.py",
+        reversibility=Reversibility.AUTOMATICALLY_REVERSIBLE,
+    )
+    repo = MockActionRepo([root])
+    plan_repo = MockPlanRepo([])
+    adapter = FilesystemRecoveryAdapter(base_path=base_path)
+    service = RecoveryPlanningService(repo, plan_repo, adapters=[adapter])
+
+    plan = await service.create_plan("test-tenant", "root")
+    await service.simulate_plan("test-tenant", plan.plan_id)
+    executed = await service.execute_plan("test-tenant", plan.plan_id, "approver-1")
+
+    execution_results = executed.simulation_result.get("execution_results", {})
+    assert execution_results["root"]["adapter"] == "filesystem_recovery"
+    assert (
+        execution_results["root"]["adapter_selection"]
+        == "filesystem_recovery_selected_for_live_execution"
+    )
+    assert execution_results["root"]["verification_passed"] is True
 
 
 @pytest.mark.asyncio
@@ -732,3 +775,98 @@ async def test_simulation_populates_compensation_summary() -> None:
     assert "root" in summary
     assert summary["root"]["reversibility"] == "automatically_reversible"
     assert summary["root"]["would_succeed"] is True
+
+
+@pytest.mark.asyncio
+async def test_execute_plan_uses_evidence_repo_snapshot() -> None:
+    root = _make_action(
+        "root",
+        reversibility=Reversibility.AUTOMATICALLY_REVERSIBLE,
+        before_state_snapshot={"hash": "abc", "content_b64": "aGVsbG8="},
+    )
+    repo = MockActionRepo([root])
+    plan_repo = MockPlanRepo([])
+
+    class FakeEvidenceRepo:
+        def __init__(self) -> None:
+            self.saved: list[Any] = []
+            self._by_action: dict[str, Any] = {}
+
+        async def get_by_action_id(self, tenant_id: str, action_id: str) -> Any:
+            return self._by_action.get(action_id)
+
+        async def save(self, evidence: Any) -> Any:
+            self.saved.append(evidence)
+            self._by_action[evidence.action_id] = evidence
+            return evidence
+
+    evidence_repo = FakeEvidenceRepo()
+    adapter = MockRecoveryAdapter(scenario="success")
+    service = RecoveryPlanningService(
+        repo, plan_repo, adapters=[adapter], evidence_repo=evidence_repo
+    )
+
+    plan = await service.create_plan("test-tenant", "root")
+    await service.simulate_plan("test-tenant", plan.plan_id)
+    executed = await service.execute_plan("test-tenant", plan.plan_id, "approver-1")
+
+    assert executed.status == RecoveryStatus.COMPLETED
+    assert len(evidence_repo.saved) == 1
+    assert evidence_repo.saved[0].action_id == "root"
+
+
+@pytest.mark.asyncio
+async def test_execute_plan_reuses_existing_evidence() -> None:
+    from app.domain.entities.surgical_recovery_types import RecoveryEvidence
+
+    root = _make_action("root", reversibility=Reversibility.AUTOMATICALLY_REVERSIBLE)
+    repo = MockActionRepo([root])
+    plan_repo = MockPlanRepo([])
+
+    existing = RecoveryEvidence(
+        evidence_id="ev-existing",
+        action_id="root",
+        tenant_id="test-tenant",
+        agent_id="agent-1",
+        authority_grant_id=None,
+        parent_action_id=None,
+        root_action_id="root",
+        correlation_id="corr-1",
+        incident_id="",
+        target_system="mock",
+        target_resource="record:root",
+        action_type="insert",
+        before_state_reference=root.before_state_ref,
+        after_state_reference=root.after_state_ref,
+        compensation_payload={"operation": "mock_revert"},
+        compensation_type=CompensationType.REVERSE_OPERATION,
+        recovery_adapter_type=RecoveryAdapterType.MOCK,
+        idempotency_key="idem-root",
+        dependency_edges=[],
+        reversibility_classification=Reversibility.AUTOMATICALLY_REVERSIBLE,
+        evidence_hash="hash-existing",
+        adapter_capability=AdapterCapability.MOCK,
+    )
+
+    class FakeEvidenceRepo:
+        def __init__(self, evidence: RecoveryEvidence) -> None:
+            self._evidence = {evidence.action_id: evidence}
+
+        async def get_by_action_id(self, tenant_id: str, action_id: str) -> RecoveryEvidence | None:
+            return self._evidence.get(action_id)
+
+        async def save(self, evidence: Any) -> Any:
+            return evidence
+
+    evidence_repo = FakeEvidenceRepo(existing)
+    adapter = MockRecoveryAdapter(scenario="success")
+    service = RecoveryPlanningService(
+        repo, plan_repo, adapters=[adapter], evidence_repo=evidence_repo
+    )
+
+    plan = await service.create_plan("test-tenant", "root")
+    await service.simulate_plan("test-tenant", plan.plan_id)
+    executed = await service.execute_plan("test-tenant", plan.plan_id, "approver-1")
+
+    assert executed.status == RecoveryStatus.COMPLETED
+

@@ -14,9 +14,17 @@ from uuid import uuid4
 import pytest
 from fastapi.testclient import TestClient
 
+from app.domain.entities.agent import Agent, AgentEnvironment, AgentStatus, AgentType
+from app.domain.entities.agent_session import AgentSession, AgentSessionStatus
 from app.domain.exceptions.domain_errors import ExecutionTokenError
 from app.infrastructure.config.settings import get_settings
 from app.infrastructure.persistence.database import SessionLocal
+from app.infrastructure.persistence.repositories.sqlalchemy_agent_repository import (
+    SQLAlchemyAgentRepository,
+)
+from app.infrastructure.persistence.repositories.sqlalchemy_agent_session_repository import (
+    SQLAlchemyAgentSessionRepository,
+)
 from app.infrastructure.persistence.repositories.sqlalchemy_user_repository import (
     SQLAlchemyUserRepository,
 )
@@ -306,3 +314,60 @@ def test_execution_token_with_retired_key_rejected() -> None:
 
     with pytest.raises(ExecutionTokenError):
         token_service.verify_execution_token(token)
+
+
+@pytest.mark.asyncio
+async def test_mutation_gate_rejects_mismatched_agent_and_session(client: TestClient) -> None:
+    token = await _create_user(client, f"mismatch-{uuid4()}@example.com", "tenant-mismatch")
+
+    session = SessionLocal()
+    try:
+        agent_repo = SQLAlchemyAgentRepository(session)
+        agent_session_repo = SQLAlchemyAgentSessionRepository(session)
+
+        agent_one = Agent(
+            agent_id="agent-alpha",
+            tenant_id="tenant-mismatch",
+            name="Alpha",
+            description="",
+            owner_user_id=None,
+            agent_type=AgentType.USER_AGENT,
+            status=AgentStatus.ACTIVE,
+            environment=AgentEnvironment.TEST,
+        )
+        await agent_repo.save(agent_one)
+
+        session_record = AgentSession(
+            session_id="session-alpha",
+            tenant_id="tenant-mismatch",
+            agent_id="agent-beta",
+            status=AgentSessionStatus.ACTIVE,
+            correlation_id="corr-mismatch",
+            risk_level="low",
+        )
+        await agent_session_repo.save(session_record)
+        session.commit()
+    finally:
+        session.close()
+
+    response = client.post(
+        "/api/v1/intent/authorize-mutation",
+        json={"agent_id": "agent-alpha", "session_id": "session-alpha"},
+        headers=_auth_headers(token),
+    )
+
+    assert response.status_code == 403
+    assert "does not match" in response.json()["detail"].lower()
+
+
+def test_execution_token_contains_tenant_binding() -> None:
+    token_service = _make_token_service()
+    token = token_service.create_execution_token(
+        agent_id="agent-1",
+        tool="safe_tool",
+        ttl_seconds=300,
+        tenant_id="tenant-a",
+    )
+    parts = token.split(".")
+    payload = json.loads(base64.urlsafe_b64decode(parts[1] + "=="))
+    assert payload["tenant_id"] == "tenant-a"

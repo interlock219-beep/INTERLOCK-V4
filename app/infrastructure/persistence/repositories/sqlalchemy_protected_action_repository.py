@@ -1,5 +1,6 @@
 import json
 from datetime import UTC, datetime
+from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -112,6 +113,11 @@ class SQLAlchemyProtectedActionRepository(ProtectedActionRepository):
                 workflow_id=action.workflow_id,
                 reversibility=action.reversibility.value,
                 before_state_ref=action.before_state_ref,
+                before_state_snapshot=(
+                    json.dumps(action.before_state_snapshot)
+                    if action.before_state_snapshot is not None
+                    else None
+                ),
                 after_state_ref=action.after_state_ref,
                 tool_arguments=json.dumps(action.tool_arguments),
                 status=action.status.value,
@@ -127,7 +133,43 @@ class SQLAlchemyProtectedActionRepository(ProtectedActionRepository):
             model.evaluated_at = action.evaluated_at
             model.executed_at = action.executed_at
             model.after_state_ref = action.after_state_ref
+            model.before_state_snapshot = (
+                json.dumps(action.before_state_snapshot)
+                if action.before_state_snapshot is not None
+                else None
+            )
             model.risk_score = action.risk_score
+        self._session.flush()
+        return self._to_entity(model)
+
+
+    async def update_execution_result(
+        self,
+        tenant_id: str,
+        action_id: str,
+        *,
+        after_state_ref: str | None = None,
+        after_state_snapshot: dict[str, Any] | None = None,
+        status: ActionStatus | None = None,
+        decision_reason: str | None = None,
+    ) -> ProtectedAction | None:
+        stmt = select(ProtectedActionModel).where(
+            ProtectedActionModel.tenant_id == tenant_id,
+            ProtectedActionModel.action_id == action_id,
+        )
+        model = self._session.scalar(stmt)
+        if model is None:
+            return None
+        if after_state_ref is not None:
+            model.after_state_ref = after_state_ref
+        if after_state_snapshot is not None:
+            model.after_state_snapshot = json.dumps(after_state_snapshot)
+        if status is not None:
+            model.status = status.value
+            if status == ActionStatus.EXECUTED:
+                model.executed_at = datetime.now(UTC)
+        if decision_reason is not None:
+            model.decision_reason = decision_reason
         self._session.flush()
         return self._to_entity(model)
 
@@ -174,6 +216,11 @@ class SQLAlchemyProtectedActionRepository(ProtectedActionRepository):
             workflow_id=model.workflow_id,
             reversibility=Reversibility(model.reversibility),
             before_state_ref=model.before_state_ref,
+            before_state_snapshot=(
+                json.loads(model.before_state_snapshot)
+                if model.before_state_snapshot
+                else None
+            ),
             after_state_ref=model.after_state_ref,
             tool_arguments=tool_arguments,
             status=ActionStatus(model.status),

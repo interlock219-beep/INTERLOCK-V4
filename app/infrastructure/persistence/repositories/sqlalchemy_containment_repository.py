@@ -286,8 +286,20 @@ class SQLAlchemyRecoveryPlanRepository(RecoveryPlanRepository):
         if model is None:
             return None
         model.status = status.value
+        _json_fields = {
+            "simulation_result",
+            "steps",
+            "topological_order",
+            "stop_conditions",
+            "compensation_summary",
+            "affected_action_ids",
+        }
         for key, value in fields.items():
-            if hasattr(model, key):
+            if not hasattr(model, key):
+                continue
+            if key in _json_fields and isinstance(value, (dict, list)):
+                setattr(model, key, json.dumps(value))
+            else:
                 setattr(model, key, value)
         model.updated_at = datetime.now(UTC)
         if status == RecoveryStatus.COMPLETED:

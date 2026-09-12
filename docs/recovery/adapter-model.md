@@ -14,7 +14,7 @@ Every adapter implements the `RecoveryAdapter` protocol:
 
 ## Adapter registry
 
-`AdapterFactory` builds adapters from the `RECOVERY_ADAPTER_NAMES` setting. The factory registry maps adapter names to implementations.
+Adapters are constructed in route-level dependency providers (e.g. `_get_adapters` in `app/presentation/api/v1/routes/surgical_recovery.py`) or via the production `build_recovery_adapters()` helper. The adapter list is passed to `RecoveryPlanningService` at construction time.
 
 ## Production-validated adapters
 
@@ -57,7 +57,7 @@ These return `REQUIRES_MANUAL_ACTION` on execution. They exist to model the prot
 To add production recovery for a new system:
 
 1. Implement the `RecoveryAdapter` protocol.
-2. Register it in `AdapterFactory`.
+2. Register it in the route-level adapter builder (e.g. `_get_adapters` in `app/presentation/api/v1/routes/surgical_recovery.py`).
 3. Add reversibility and compensation logic for the new system's operations.
 4. Validate against a real instance of the target system.
 5. Document the capability level honestly.

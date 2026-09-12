@@ -13,6 +13,7 @@ class ExecutionTokenService(ABC):
         tool: str,
         ttl_seconds: int,
         subject: str | None = None,
+        tenant_id: str | None = None,
     ) -> str: ...
 
     @abstractmethod
@@ -21,6 +22,15 @@ class ExecutionTokenService(ABC):
 
         Returns the token payload if valid, raises ExecutionTokenError
         if the token is invalid, expired, or replayed.
+        """
+
+    @abstractmethod
+    def peek_execution_token(self, token: str) -> dict[str, Any]:
+        """Verify an execution token without consuming its nonce.
+
+        Returns the token payload if valid, raises ExecutionTokenError
+        if the token is invalid, expired, or has already been consumed.
+        Does NOT mark the nonce as used.
         """
 
     @abstractmethod

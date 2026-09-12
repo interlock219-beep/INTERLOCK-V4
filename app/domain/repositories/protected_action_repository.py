@@ -1,4 +1,5 @@
 from abc import ABC, abstractmethod
+from typing import Any
 
 from app.domain.entities.protected_action import ActionStatus, ProtectedAction
 
@@ -38,6 +39,18 @@ class ProtectedActionRepository(ABC):
 
     @abstractmethod
     async def save(self, action: ProtectedAction) -> ProtectedAction: ...
+
+    @abstractmethod
+    async def update_execution_result(
+        self,
+        tenant_id: str,
+        action_id: str,
+        *,
+        after_state_ref: str | None = None,
+        after_state_snapshot: dict[str, Any] | None = None,
+        status: ActionStatus | None = None,
+        decision_reason: str | None = None,
+    ) -> ProtectedAction | None: ...
 
     @abstractmethod
     async def update_status(
