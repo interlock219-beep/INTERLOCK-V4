@@ -62,7 +62,10 @@ class WebhookAdapter(ABC):
 class MockWebhookAdapter(WebhookAdapter):
     async def verify_signature(self, payload: bytes, signature: str, secret: str) -> bool:
         expected = hmac.new(secret.encode(), payload, hashlib.sha256).hexdigest()
-        return hmac.compare_digest(expected, signature)
+        expected_prefix = f"sha256={expected}"
+        if signature.startswith("sha256="):
+            return hmac.compare_digest(signature, expected_prefix)
+        return hmac.compare_digest(signature, expected)
 
     async def process_event(self, payload: dict[str, Any], event_id: str) -> dict[str, Any]:
         return {

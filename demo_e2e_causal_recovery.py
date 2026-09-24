@@ -141,6 +141,15 @@ class InMemoryActionRepo(ProtectedActionRepository):
         ]
         return items[offset:offset + limit], len(items)
 
+    async def list_by_tenant(
+        self, tenant_id: str, limit: int = 100, offset: int = 0
+    ) -> tuple[list[ProtectedAction], int]:
+        items = [
+            a for a in self._actions.values()
+            if a.tenant_id == tenant_id
+        ]
+        return items[offset:offset + limit], len(items)
+
     async def list_by_correlation(
         self, tenant_id: str, correlation_id: str, limit: int = 100, offset: int = 0
     ) -> tuple[list[ProtectedAction], int]:

@@ -10,6 +10,9 @@ class AgentRepository(ABC):
     async def get_by_agent_id(self, tenant_id: str, agent_id: str) -> Agent | None: ...
 
     @abstractmethod
+    async def get_by_agent_id_global(self, agent_id: str) -> Agent | None: ...
+
+    @abstractmethod
     async def list_by_tenant(
         self,
         tenant_id: str,

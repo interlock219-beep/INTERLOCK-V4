@@ -1,4 +1,4 @@
-"""Production-grade filesystem recovery adapter.
+﻿"""Production-grade filesystem recovery adapter.
 
 Performs real filesystem operations for recovery:
 - File creation recovery (delete the created file)
@@ -18,6 +18,8 @@ import contextlib
 import hashlib
 import json
 import os
+import stat
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -65,10 +67,809 @@ class FilesystemRecoveryAdapter(RecoveryAdapter):
         base_path: str | Path | None = None,
         max_file_size_bytes: int = 50 * 1024 * 1024,
         preserve_metadata: bool = True,
+        preserve_ownership: bool = True,
+        preserve_acl: bool = True,
+        capture_xattrs: bool = True,
     ) -> None:
         self._base_path = Path(base_path) if base_path else None
         self._max_file_size_bytes = max_file_size_bytes
         self._preserve_metadata = preserve_metadata
+        self._preserve_ownership = preserve_ownership
+        self._preserve_acl = preserve_acl
+        self._capture_xattrs = capture_xattrs
+
+    @staticmethod
+    def _now() -> str:
+        return datetime.now(UTC).isoformat()
+
+    @staticmethod
+    def _json_safe(value: Any) -> Any:
+        if value is None or isinstance(value, (str, int, float, bool)):
+            return value
+        if isinstance(value, bytes):
+            return base64.b64encode(value).decode("ascii")
+        if isinstance(value, Path):
+            return str(value)
+        if isinstance(value, dict):
+            return {
+                str(key): FilesystemRecoveryAdapter._json_safe(item)
+                for key, item in value.items()
+            }
+        if isinstance(value, (list, tuple, set)):
+            return [FilesystemRecoveryAdapter._json_safe(item) for item in value]
+        return str(value)
+
+    @classmethod
+    def _hash_json(cls, value: dict[str, Any]) -> str:
+        encoded = json.dumps(
+            cls._json_safe(value), sort_keys=True, separators=(",", ":"), ensure_ascii=False
+        ).encode("utf-8")
+        return hashlib.sha256(encoded).hexdigest()
+
+    @staticmethod
+    def _stat_metadata(path: Path, file_stat: os.stat_result) -> dict[str, Any]:
+        mode = stat.S_IMODE(file_stat.st_mode)
+        return {
+            "size": file_stat.st_size,
+            "mode": mode,
+            "mode_octal": f"{mode:04o}",
+            "uid": file_stat.st_uid,
+            "gid": file_stat.st_gid,
+            "mtime": file_stat.st_mtime,
+            "mtime_ns": file_stat.st_mtime_ns,
+            "atime": file_stat.st_atime,
+            "atime_ns": file_stat.st_atime_ns,
+            "ctime": file_stat.st_ctime,
+            "ctime_ns": file_stat.st_ctime_ns,
+            "inode": file_stat.st_ino,
+            "device": file_stat.st_dev,
+            "nlink": file_stat.st_nlink,
+            "is_file": stat.S_ISREG(file_stat.st_mode),
+            "is_directory": stat.S_ISDIR(file_stat.st_mode),
+            "is_symlink": stat.S_ISLNK(file_stat.st_mode),
+        }
+
+    @staticmethod
+    def _capture_acl(path: Path) -> dict[str, Any]:
+        result: dict[str, Any] = {"available": False, "entries": [], "error": None}
+        if os.name == "nt":
+            try:
+                import win32security
+
+                descriptor = win32security.GetFileSecurity(
+                    str(path), win32security.DACL_SECURITY_INFORMATION
+                )
+                dacl = descriptor.GetSecurityDescriptorDacl()
+                entries: list[str] = []
+                if dacl is not None:
+                    for index in range(dacl.GetAceCount()):
+                        entries.append(str(dacl.GetAce(index)))
+                result.update({"available": True, "entries": entries})
+            except Exception as exc:
+                result["error"] = f"{type(exc).__name__}: {exc}"
+            return result
+        try:
+            names = os.listxattr(path) if hasattr(os, "listxattr") else []
+            acl_names = [name for name in names if "acl" in name.lower()]
+            entries: dict[str, str] = {}
+            getxattr = getattr(os, "getxattr", None)
+            if getxattr is not None:
+                for name in acl_names:
+                    entries[name] = base64.b64encode(getxattr(path, name)).decode("ascii")
+            result.update(
+                {
+                    "available": bool(entries),
+                    "entries": entries,
+                    "xattr_names": [str(name) for name in names],
+                }
+            )
+        except (AttributeError, OSError, PermissionError) as exc:
+            result["error"] = f"{type(exc).__name__}: {exc}"
+        return result
+
+    @staticmethod
+    def _capture_xattrs(path: Path) -> dict[str, str]:
+        result: dict[str, str] = {}
+        getxattr = getattr(os, "getxattr", None)
+        listxattr = getattr(os, "listxattr", None)
+        if getxattr is None or listxattr is None:
+            return result
+        try:
+            for name in listxattr(path):
+                if "acl" in str(name).lower():
+                    continue
+                result[str(name)] = base64.b64encode(getxattr(path, name)).decode("ascii")
+        except (OSError, PermissionError):
+            pass
+        return result
+
+    @classmethod
+    def _capture_file_snapshot(
+        cls, file_path: str | Path, max_size_bytes: int = 50 * 1024 * 1024
+    ) -> dict[str, Any] | None:
+        path = Path(file_path)
+        try:
+            is_link = path.is_symlink()
+            if not path.exists() and not is_link:
+                snapshot: dict[str, Any] = {
+                    "schema_version": "1.0",
+                    "snapshot_id": "missing",
+                    "captured_at": cls._now(),
+                    "resource": str(path),
+                    "exists": False,
+                    "type": "missing",
+                    "size": 0,
+                    "hash": None,
+                    "content": None,
+                    "content_b64": None,
+                    "binary": False,
+                    "encoding": None,
+                    "bom": None,
+                    "line_endings": {"lf": 0, "crlf": 0},
+                    "metadata": None,
+                    "permissions": None,
+                    "ownership": None,
+                    "acl": None,
+                    "xattrs": {},
+                    "snapshot_hash": None,
+                }
+                snapshot["snapshot_hash"] = cls._hash_json(snapshot)
+                return snapshot
+            link_target = os.readlink(path) if is_link else None
+            file_stat = path.stat()
+            raw_bytes = b""
+            if stat.S_ISREG(file_stat.st_mode):
+                with path.open("rb") as handle:
+                    raw_bytes = handle.read(max_size_bytes + 1)
+            truncated = len(raw_bytes) > max_size_bytes
+            if truncated:
+                raw_bytes = raw_bytes[:max_size_bytes]
+            digest = (
+                hashlib.sha256(raw_bytes).hexdigest()
+                if stat.S_ISREG(file_stat.st_mode)
+                else None
+            )
+            text: str | None = None
+            encoding: str | None = None
+            bom: str | None = None
+            binary = False
+            if stat.S_ISREG(file_stat.st_mode):
+                try:
+                    if raw_bytes.startswith(b"\xef\xbb\xbf"):
+                        encoding = "utf-8-sig"
+                        bom = "utf-8"
+                        text = raw_bytes.decode(encoding)
+                    else:
+                        text = raw_bytes.decode("utf-8")
+                        encoding = "utf-8"
+                except UnicodeDecodeError:
+                    binary = True
+            metadata = cls._stat_metadata(path, file_stat)
+            mode = metadata["mode"]
+            permissions = {
+                "mode": mode,
+                "mode_octal": metadata["mode_octal"],
+                "owner_read": bool(mode & stat.S_IRUSR),
+                "owner_write": bool(mode & stat.S_IWUSR),
+                "owner_execute": bool(mode & stat.S_IXUSR),
+                "group_read": bool(mode & stat.S_IRGRP),
+                "group_write": bool(mode & stat.S_IWGRP),
+                "group_execute": bool(mode & stat.S_IXGRP),
+                "other_read": bool(mode & stat.S_IROTH),
+                "other_write": bool(mode & stat.S_IWOTH),
+                "other_execute": bool(mode & stat.S_IXOTH),
+            }
+            ownership: dict[str, Any] = {"uid": file_stat.st_uid, "gid": file_stat.st_gid}
+            try:
+                import pwd
+
+                ownership["owner"] = pwd.getpwuid(file_stat.st_uid).pw_name
+            except (ImportError, KeyError):
+                pass
+            try:
+                import grp
+
+                ownership["group"] = grp.getgrgid(file_stat.st_gid).gr_name
+            except (ImportError, KeyError):
+                pass
+            snapshot = {
+                "schema_version": "1.0",
+                "snapshot_id": f"fs:{digest or 'missing'}",
+                "captured_at": cls._now(),
+                "resource": str(path),
+                "exists": True,
+                "type": (
+                "symlink"
+                if is_link
+                else "directory"
+                if metadata["is_directory"]
+                else "file"
+                if metadata["is_file"]
+                else "other"
+            ),
+                "size": file_stat.st_size,
+                "hash": digest,
+                "content": text,
+                "content_b64": (
+                base64.b64encode(raw_bytes).decode("ascii")
+                if stat.S_ISREG(file_stat.st_mode)
+                else None
+            ),
+                "raw_bytes_length": len(raw_bytes),
+                "binary": binary,
+                "byte_exact": not truncated,
+                "encoding": encoding,
+                "bom": bom,
+                "line_endings": {
+                    "lf": text.count("\n") if text is not None else 0,
+                    "crlf": text.count("\r\n") if text is not None else 0,
+                },
+                "metadata": metadata,
+                "permissions": permissions,
+                "ownership": ownership,
+                "acl": cls._capture_acl(path) if not is_link else None,
+                "xattrs": cls._capture_xattrs(path) if not is_link else {},
+                "symlink_target": link_target,
+                "truncated": truncated,
+                "capture_warnings": ["content truncated at adapter limit"] if truncated else [],
+            }
+            snapshot["snapshot_hash"] = cls._hash_json(snapshot)
+            return snapshot
+        except (OSError, PermissionError, ValueError) as exc:
+            snapshot = {
+                "schema_version": "1.0",
+                "snapshot_id": "error",
+                "captured_at": cls._now(),
+                "resource": str(path),
+                "exists": False,
+                "type": "error",
+                "error": f"{type(exc).__name__}: {exc}",
+                "snapshot_hash": None,
+            }
+            snapshot["snapshot_hash"] = cls._hash_json(snapshot)
+            return snapshot
+
+    @staticmethod
+    def _semantic_value(snapshot: dict[str, Any] | None) -> Any:
+        if not snapshot or snapshot.get("binary") or snapshot.get("type") != "file":
+            return None
+        content = snapshot.get("content")
+        if not isinstance(content, str):
+            return None
+        try:
+            return json.loads(content)
+        except (json.JSONDecodeError, TypeError):
+            return content.splitlines()
+
+    @classmethod
+    def _diff_values(cls, before: Any, after: Any, path: str = "") -> list[dict[str, Any]]:
+        changes: list[dict[str, Any]] = []
+        if isinstance(before, dict) and isinstance(after, dict):
+            for key in sorted(set(before) | set(after)):
+                child_path = f"{path}.{key}" if path else str(key)
+                if key not in before:
+                    changes.append({
+                    "path": child_path,
+                    "change": "added",
+                    "after": cls._json_safe(after[key]),
+                })
+                elif key not in after:
+                    changes.append({
+                    "path": child_path,
+                    "change": "removed",
+                    "before": cls._json_safe(before[key]),
+                })
+                else:
+                    changes.extend(cls._diff_values(before[key], after[key], child_path))
+            return changes
+        if isinstance(before, list) and isinstance(after, list):
+            for index in range(max(len(before), len(after))):
+                child_path = f"{path}[{index}]"
+                if index >= len(before):
+                    changes.append({
+                    "path": child_path,
+                    "change": "added",
+                    "after": cls._json_safe(after[index]),
+                })
+                elif index >= len(after):
+                    changes.append({
+                    "path": child_path,
+                    "change": "removed",
+                    "before": cls._json_safe(before[index]),
+                })
+                else:
+                    changes.extend(cls._diff_values(before[index], after[index], child_path))
+            return changes
+        if before != after:
+            changes.append({
+                "path": path or "$",
+                "change": "changed",
+                "before": cls._json_safe(before),
+                "after": cls._json_safe(after),
+            })
+        return changes
+
+    @classmethod
+    def _binary_diff(
+        cls,
+        before: dict[str, Any] | None,
+        after: dict[str, Any] | None,
+    ) -> dict[str, Any]:
+        before_b64 = before.get("content_b64") if before else None
+        after_b64 = after.get("content_b64") if after else None
+        before_bytes = base64.b64decode(before_b64) if isinstance(before_b64, str) else b""
+        after_bytes = base64.b64decode(after_b64) if isinstance(after_b64, str) else b""
+        common = min(len(before_bytes), len(after_bytes))
+        first = next(
+                (index for index in range(common) if before_bytes[index] != after_bytes[index]),
+                common,
+            )
+        last_before = next(
+                (
+                    index
+                    for index in range(common - 1, first - 1, -1)
+                    if before_bytes[index] != after_bytes[index]
+                ),
+                first - 1,
+            )
+        last_after = next(
+                (
+                    index
+                    for index in range(len(after_bytes) - 1, first - 1, -1)
+                    if index >= len(before_bytes) or before_bytes[index] != after_bytes[index]
+                ),
+                first - 1,
+            )
+        changed = before_bytes != after_bytes
+        return {
+            "changed": changed,
+            "before_hash": before.get("hash") if before else None,
+            "after_hash": after.get("hash") if after else None,
+            "before_size": len(before_bytes),
+            "after_size": len(after_bytes),
+            "changed_ranges": [
+                {"start": first, "end": max(last_before, last_after) + 1}
+            ]
+            if changed and first < max(len(before_bytes), len(after_bytes))
+            else [],
+        }
+
+    @classmethod
+    def _diff_snapshots(
+        cls,
+        before: dict[str, Any] | None,
+        after: dict[str, Any] | None,
+    ) -> dict[str, Any]:
+        before_semantic = cls._semantic_value(before)
+        after_semantic = cls._semantic_value(after)
+        semantic_changes = (
+                cls._diff_values(before_semantic, after_semantic)
+                if before_semantic is not None or after_semantic is not None
+                else []
+            )
+        before_meta = (
+                before.get("metadata")
+                if before and isinstance(before.get("metadata"), dict)
+                else {}
+            ) or {}
+        after_meta = (
+                after.get("metadata")
+                if after and isinstance(after.get("metadata"), dict)
+                else {}
+            ) or {}
+        metadata_keys = ["size", "mode", "uid", "gid", "mtime_ns"]
+        metadata_changes = {
+            key: {"before": before_meta.get(key), "after": after_meta.get(key)}
+            for key in metadata_keys
+            if before_meta.get(key) != after_meta.get(key)
+        }
+        before_permissions = before.get("permissions") or {}
+        after_permissions = after.get("permissions") or {}
+        permission_changes = {
+            key: {"before": before_permissions.get(key), "after": after_permissions.get(key)}
+            for key in set(before_permissions) | set(after_permissions)
+            if before_permissions.get(key) != after_permissions.get(key)
+        }
+        before_ownership = before.get("ownership") or {}
+        after_ownership = after.get("ownership") or {}
+        ownership_changes = {
+            key: {"before": before_ownership.get(key), "after": after_ownership.get(key)}
+            for key in set(before_ownership) | set(after_ownership)
+            if before_ownership.get(key) != after_ownership.get(key)
+        }
+        acl_changes = {
+            "before": (before or {}).get("acl"),
+            "after": (after or {}).get("acl"),
+            "changed": (before or {}).get("acl") != (after or {}).get("acl"),
+        }
+        structural_changes = {
+            key: {"before": (before or {}).get(key), "after": (after or {}).get(key)}
+            for key in ["exists", "type", "size", "symlink_target"]
+            if (before or {}).get(key) != (after or {}).get(key)
+        }
+        binary = cls._binary_diff(before, after)
+        result = {
+            "changed": bool(
+                structural_changes
+                or semantic_changes
+                or binary["changed"]
+                or metadata_changes
+                or permission_changes
+                or ownership_changes
+                or acl_changes["changed"]
+            ),
+            "structural": structural_changes,
+            "semantic": semantic_changes,
+            "binary": binary,
+            "metadata": metadata_changes,
+            "permissions": permission_changes,
+            "ownership": ownership_changes,
+            "acl": acl_changes,
+            "schema": {"changed": False, "before": None, "after": None},
+            "invariants": [
+                {
+                    "name": "snapshot_integrity",
+                    "passed": bool(before and before.get("snapshot_hash")),
+                    "details": "snapshot hash present",
+                }
+            ],
+        }
+        return result
+
+    @classmethod
+    def _snapshot_state_signature(cls, snapshot: dict[str, Any] | None) -> dict[str, Any]:
+        if not snapshot:
+            return {"exists": False}
+        metadata = snapshot.get("metadata") if isinstance(snapshot.get("metadata"), dict) else {}
+        return {
+            "exists": bool(snapshot.get("exists", True)),
+            "type": snapshot.get("type"),
+            "size": snapshot.get("size"),
+            "hash": snapshot.get("hash"),
+            "content_b64": snapshot.get("content_b64"),
+            "symlink_target": snapshot.get("symlink_target"),
+            "mode": metadata.get("mode"),
+            "uid": metadata.get("uid"),
+            "gid": metadata.get("gid"),
+            "permissions": snapshot.get("permissions"),
+            "ownership": snapshot.get("ownership"),
+            "acl": snapshot.get("acl"),
+        }
+
+    @classmethod
+    def _missing_snapshot(cls) -> dict[str, Any]:
+        return {
+            "schema_version": "1.0",
+            "snapshot_id": "missing",
+            "captured_at": cls._now(),
+            "resource": None,
+            "exists": False,
+            "type": "missing",
+            "size": 0,
+            "hash": None,
+            "content": None,
+            "content_b64": None,
+            "binary": False,
+            "metadata": None,
+            "permissions": None,
+            "ownership": None,
+            "acl": None,
+            "xattrs": {},
+        }
+
+    @classmethod
+    def _state_equal(cls, left: dict[str, Any] | None, right: dict[str, Any] | None) -> bool:
+        if left is None or right is None:
+            return left is right
+        excluded = {
+            "captured_at",
+            "snapshot_id",
+            "snapshot_hash",
+            "capture_warnings",
+            "resource",
+        }
+        volatile_metadata = {"atime", "atime_ns", "ctime", "ctime_ns", "inode", "device", "nlink"}
+
+        def normalized(snapshot: dict[str, Any]) -> dict[str, Any]:
+            result = {key: value for key, value in snapshot.items() if key not in excluded}
+            metadata = result.get("metadata")
+            if isinstance(metadata, dict):
+                result["metadata"] = {
+                    key: value for key, value in metadata.items() if key not in volatile_metadata
+                }
+            return cls._json_safe(result)
+
+        return normalized(left) == normalized(right)
+
+    @classmethod
+    def _human_change_analysis(
+        cls,
+        before: dict[str, Any] | None,
+        after: dict[str, Any] | None,
+        current: dict[str, Any] | None,
+    ) -> dict[str, Any]:
+        after_diff = cls._diff_snapshots(before, after)
+        current_diff = cls._diff_snapshots(after, current)
+        current_matches_after = current is not None and cls._state_equal(current, after)
+        current_matches_before = current is not None and cls._state_equal(current, before)
+        return {
+            "agent_change_detected": after_diff["changed"],
+            "human_or_concurrent_change_detected": (
+                not current_matches_after
+                and not current_matches_before
+            ),
+            "current_matches_after": current_matches_after,
+            "current_matches_before": current_matches_before,
+            "preserved": current_matches_after or current_matches_before,
+            "conflicts": current_diff["semantic"] if current_diff["changed"] else [],
+            "details": current_diff,
+        }
+
+    @classmethod
+    def _concurrent_modification(
+        cls,
+        expected: dict[str, Any] | None,
+        current: dict[str, Any] | None,
+        operation: str,
+    ) -> dict[str, Any]:
+        expected_state = cls._snapshot_state_signature(expected)
+        current_state = cls._snapshot_state_signature(current)
+        diff = cls._diff_snapshots(expected, current)
+        detected = bool(expected and expected_state != current_state)
+        if detected:
+            diff["structural"] = {
+                key: {"before": expected_state.get(key), "after": current_state.get(key)}
+                for key in set(expected_state) | set(current_state)
+                if expected_state.get(key) != current_state.get(key)
+            }
+        return {
+            "detected": detected,
+            "operation": operation,
+            "expected_snapshot": expected,
+            "current_snapshot": current,
+            "diff": diff,
+            "safe_to_restore": not detected,
+        }
+
+    @classmethod
+    def _preview_from_snapshots(
+        cls,
+        action_type: str,
+        before: dict[str, Any] | None,
+        after: dict[str, Any] | None,
+        current: dict[str, Any] | None,
+        target: str,
+    ) -> dict[str, Any]:
+        human = cls._human_change_analysis(before, after, current)
+        concurrent = cls._concurrent_modification(after, current, action_type)
+        diff = cls._diff_snapshots(before, after)
+        return {
+            "operation": action_type,
+            "target": target,
+            "would_succeed": human["preserved"] and not concurrent["detected"],
+            "safe_to_restore": human["preserved"] and not concurrent["detected"],
+            "before_snapshot": before,
+            "after_snapshot": after,
+            "current_snapshot": current,
+            "diff": diff,
+            "structural_diff": diff["structural"],
+            "semantic_diff": diff["semantic"],
+            "binary_diff": diff["binary"],
+            "metadata_diff": diff["metadata"],
+            "permission_diff": diff["permissions"],
+            "ownership_diff": diff["ownership"],
+            "acl_diff": diff["acl"],
+            "schema_diff": diff["schema"],
+            "invariant_diff": diff["invariants"],
+            "human_change_analysis": human,
+            "concurrent_modification": concurrent,
+            "warnings": [
+                "current state differs from captured post-action state"
+            ]
+            if concurrent["detected"]
+            else [],
+        }
+
+    @classmethod
+    def _evidence_bundle(
+        cls,
+        action: ProtectedAction,
+        before: dict[str, Any] | None,
+        after: dict[str, Any] | None,
+        current: dict[str, Any] | None,
+        preview: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        state_hash = cls._hash_json({'before': before, 'after': after, 'current': current})
+        bundle_id_hash = hashlib.sha256(state_hash.encode()).hexdigest()[:12]
+        bundle = {
+            "schema_version": "1.0",
+            "bundle_id": f"evidence:{action.action_id}:{bundle_id_hash}",
+            "action_id": action.action_id,
+            "tenant_id": action.tenant_id,
+            "target_system": "filesystem",
+            "target_resource": action.resource,
+            "captured_at": cls._now(),
+            "before_snapshot": before,
+            "after_snapshot": after,
+            "current_snapshot": current,
+            "preview": preview,
+            "integrity": {
+                "algorithm": "sha256",
+                "hash": cls._hash_json({"before": before, "after": after, "current": current}),
+            },
+        }
+        bundle["bundle_hash"] = cls._hash_json(bundle)
+        return bundle
+
+    @classmethod
+    def _restoration_proof(
+        cls,
+        action: ProtectedAction,
+        before: dict[str, Any] | None,
+        after: dict[str, Any] | None,
+        current: dict[str, Any] | None,
+        verification: VerificationResult,
+    ) -> dict[str, Any]:
+        proof = {
+            "schema_version": "1.0",
+            "proof_id": f"proof:{action.action_id}",
+            "action_id": action.action_id,
+            "tenant_id": action.tenant_id,
+            "target_system": "filesystem",
+            "target_resource": action.resource,
+            "generated_at": cls._now(),
+            "before_snapshot": before,
+            "expected_snapshot": before,
+            "observed_snapshot": current,
+            "verification": verification.to_dict(),
+            "verified": verification.verified,
+            "integrity": {
+                "algorithm": "sha256",
+                "hash": cls._hash_json({
+                    "before": before,
+                    "after": after,
+                    "current": current,
+                    "verification": verification.to_dict(),
+                }),
+            },
+        }
+        proof["proof_hash"] = cls._hash_json(proof)
+        return proof
+
+    def capture_snapshot(
+        self,
+        resource: str,
+        execution_context: dict[str, Any] | None = None,
+    ) -> dict[str, Any] | None:
+        base_path = self._get_base_path(execution_context)
+        try:
+            if base_path:
+                path = self._resolve_file_path(resource, base_path)
+            else:
+                extracted = self._extract_file_path(resource)
+                if not extracted or Path(extracted).is_absolute():
+                    return None
+                path = Path(extracted)
+                if ".." in Path(extracted).parts:
+                    raise ValueError("Path traversal detected in resource identifier")
+            return self._capture_file_snapshot(path, self._max_file_size_bytes)
+        except ValueError:
+            return None
+
+    capture_state_snapshot = capture_snapshot
+
+    def diff_snapshots(
+        self,
+        before: dict[str, Any] | None,
+        after: dict[str, Any] | None,
+    ) -> dict[str, Any]:
+        return self._diff_snapshots(before, after)
+
+    compute_diff = diff_snapshots
+
+    def structural_diff(
+        self,
+        before: dict[str, Any] | None,
+        after: dict[str, Any] | None,
+    ) -> dict[str, Any]:
+        return self._diff_snapshots(before, after)["structural"]
+
+    def semantic_diff(
+        self,
+        before: dict[str, Any] | None,
+        after: dict[str, Any] | None,
+    ) -> list[dict[str, Any]]:
+        return self._diff_snapshots(before, after)["semantic"]
+
+    def binary_diff(
+        self,
+        before: dict[str, Any] | None,
+        after: dict[str, Any] | None,
+    ) -> dict[str, Any]:
+        return self._binary_diff(before, after)
+
+    def metadata_diff(
+        self,
+        before: dict[str, Any] | None,
+        after: dict[str, Any] | None,
+    ) -> dict[str, Any]:
+        return self._diff_snapshots(before, after)["metadata"]
+
+    def permission_diff(
+        self,
+        before: dict[str, Any] | None,
+        after: dict[str, Any] | None,
+    ) -> dict[str, Any]:
+        return self._diff_snapshots(before, after)["permissions"]
+
+    def ownership_diff(
+        self,
+        before: dict[str, Any] | None,
+        after: dict[str, Any] | None,
+    ) -> dict[str, Any]:
+        return self._diff_snapshots(before, after)["ownership"]
+
+    def acl_diff(
+        self,
+        before: dict[str, Any] | None,
+        after: dict[str, Any] | None,
+    ) -> dict[str, Any]:
+        return self._diff_snapshots(before, after)["acl"]
+
+    def schema_diff(
+        self,
+        before: dict[str, Any] | None,
+        after: dict[str, Any] | None,
+    ) -> dict[str, Any]:
+        return self._diff_snapshots(before, after)["schema"]
+
+    def invariant_diff(
+        self,
+        before: dict[str, Any] | None,
+        after: dict[str, Any] | None,
+    ) -> list[dict[str, Any]]:
+        return self._diff_snapshots(before, after)["invariants"]
+
+    def detect_concurrent_modification(
+        self,
+        expected: dict[str, Any] | None,
+        current: dict[str, Any] | None,
+        operation: str = "restore",
+    ) -> dict[str, Any]:
+        return self._concurrent_modification(expected, current, operation)
+
+    def preserve_human_changes(
+        self,
+        before: dict[str, Any] | None,
+        after: dict[str, Any] | None,
+        current: dict[str, Any] | None,
+    ) -> dict[str, Any]:
+        return self._human_change_analysis(before, after, current)
+
+    def build_evidence_bundle(
+        self,
+        action: ProtectedAction,
+        before: dict[str, Any] | None = None,
+        after: dict[str, Any] | None = None,
+        current: dict[str, Any] | None = None,
+        preview: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        return self._evidence_bundle(action, before, after, current, preview)
+
+    def create_restoration_proof(
+        self,
+        action: ProtectedAction,
+        before: dict[str, Any] | None,
+        after: dict[str, Any] | None,
+        current: dict[str, Any] | None,
+        verification: VerificationResult,
+    ) -> dict[str, Any]:
+        return self._restoration_proof(action, before, after, current, verification)
+
+    generate_restoration_proof = create_restoration_proof
+
+    async def verify_independently(self, compensation: CompensationAction) -> VerificationResult:
+        return await self.verify(compensation)
 
     async def can_recover(self, action: ProtectedAction) -> str:
         rev = Reversibility.normalize(action.reversibility)
@@ -103,6 +904,21 @@ class FilesystemRecoveryAdapter(RecoveryAdapter):
                 "file_modification_recovery",
                 "file_deletion_recovery",
                 "file_rename_recovery",
+                "safe_snapshot_capture",
+                "restoration_preview",
+                "structural_diff",
+                "semantic_diff",
+                "binary_diff",
+                "metadata_diff",
+                "permission_diff",
+                "ownership_diff",
+                "acl_diff",
+                "schema_diff",
+                "invariant_diff",
+                "human_change_preservation",
+                "concurrent_modification_detection",
+                "restoration_proof",
+                "evidence_bundle",
                 "metadata_preservation",
                 "conflict_detection",
                 "drift_detection",
@@ -117,30 +933,69 @@ class FilesystemRecoveryAdapter(RecoveryAdapter):
         execution_context: dict[str, Any] | None = None,
         before_snapshot: dict[str, Any] | None = None,
     ) -> RecoveryEvidence:
+        self._verify_tenant_isolation(action)
         payload_str = json.dumps(action.tool_arguments, sort_keys=True, default=str)
-        evidence_hash = hashlib.sha256(
-            f"{action.action_id}:{payload_str}".encode()
-        ).hexdigest()
-
         base_path = self._get_base_path(execution_context)
-        after_ref = action.after_state_ref
-        after_snapshot = None
         file_path_str = self._extract_file_path(action.resource)
+        before_snapshot = before_snapshot or action.before_state_snapshot
+        after_snapshot: dict[str, Any] | None = None
+        current_snapshot: dict[str, Any] | None = None
 
         if base_path and base_path.exists():
             file_path = self._resolve_file_path(action.resource, base_path)
             if before_snapshot is None:
-                before_snapshot = self._capture_file_snapshot(file_path)
-            after_snapshot = self._capture_file_snapshot(file_path)
+                before_snapshot = self._capture_file_snapshot(file_path, self._max_file_size_bytes)
+            after_snapshot = self._capture_file_snapshot(file_path, self._max_file_size_bytes)
+            current_snapshot = after_snapshot
 
+        state_json = self._hash_json({'before': before_snapshot, 'after': after_snapshot, 'current': current_snapshot})
+        evidence_hash = hashlib.sha256(
+            f"{action.action_id}:{payload_str}:{state_json}".encode()
+        ).hexdigest()
+
+        operation = self._determine_compensation_operation(action)
+        new_path_str = action.tool_arguments.get("new_path")
+        new_path_snapshot: dict[str, Any] | None = None
+        if base_path and base_path.exists() and new_path_str:
+            try:
+                new_path = self._resolve_file_path(str(new_path_str), base_path)
+                new_path_snapshot = self._capture_file_snapshot(new_path, self._max_file_size_bytes)
+            except ValueError:
+                new_path_snapshot = None
+        preview = self._preview_from_snapshots(
+            operation,
+            before_snapshot,
+            after_snapshot,
+            current_snapshot,
+            action.resource,
+        )
+        evidence_bundle = self._evidence_bundle(
+            action, before_snapshot, after_snapshot, current_snapshot, preview
+        )
         compensation_payload = {
-            "operation": self._determine_compensation_operation(action),
+            "operation": operation,
             "target": action.resource,
             "base_path": str(base_path) if base_path else None,
             "file_path": file_path_str,
-            "new_path": action.tool_arguments.get("new_path"),
+            "new_path": new_path_str,
+            "new_path_snapshot": new_path_snapshot,
             "before_snapshot": before_snapshot,
             "after_snapshot": after_snapshot,
+            "current_snapshot": current_snapshot,
+            "diff": preview["diff"],
+            "structural_diff": preview["structural_diff"],
+            "semantic_diff": preview["semantic_diff"],
+            "binary_diff": preview["binary_diff"],
+            "metadata_diff": preview["metadata_diff"],
+            "permission_diff": preview["permission_diff"],
+            "ownership_diff": preview["ownership_diff"],
+            "acl_diff": preview["acl_diff"],
+            "schema_diff": preview["schema_diff"],
+            "invariant_diff": preview["invariant_diff"],
+            "human_change_analysis": preview["human_change_analysis"],
+            "concurrent_modification": preview["concurrent_modification"],
+            "restoration_preview": preview,
+            "evidence_bundle": evidence_bundle,
         }
 
         before_ref = action.before_state_ref
@@ -177,8 +1032,22 @@ class FilesystemRecoveryAdapter(RecoveryAdapter):
             verification_requirements=[
                 "file_content_matches_expected",
                 "file_metadata_preserved",
+                "file_permissions_preserved",
+                "file_ownership_preserved_where_supported",
+                "file_acl_preserved_where_supported",
                 "no_unintended_changes",
+                "independent_verification_required",
             ],
+            recovery_metadata={
+                "snapshot": before_snapshot,
+                "after_snapshot": after_snapshot,
+                "current_snapshot": current_snapshot,
+                "diff": preview["diff"],
+                "restoration_preview": preview,
+                "human_change_analysis": preview["human_change_analysis"],
+                "concurrent_modification": preview["concurrent_modification"],
+                "evidence_bundle": evidence_bundle,
+            },
         )
 
     async def classify_reversibility(
@@ -220,7 +1089,7 @@ class FilesystemRecoveryAdapter(RecoveryAdapter):
             sim_limit = SimulationLimitation.SIMULATION_LIMITED
 
         if rev == RevEnum.UNKNOWN:
-            warnings.append("Reversibility is UNKNOWN — fail closed")
+            warnings.append("Reversibility is UNKNOWN â€” fail closed")
             would_succeed = False
             sim_limit = SimulationLimitation.SIMULATION_LIMITED
 
@@ -244,11 +1113,13 @@ class FilesystemRecoveryAdapter(RecoveryAdapter):
             warnings.append(f"Conflict detected: {conflict.status.value}")
 
         expected_after_state = None
-        if before_snapshot:
+        after_snapshot = compensation_payload.get("after_snapshot")
+        if after_snapshot:
             expected_after_state = {
-                "content_hash": before_snapshot.get("hash"),
-                "exists": before_snapshot.get("exists", True),
-                "size": before_snapshot.get("size"),
+                "content_hash": after_snapshot.get("hash"),
+                "exists": after_snapshot.get("exists", True),
+                "size": after_snapshot.get("size"),
+                "snapshot": after_snapshot,
             }
 
         return RollbackImpact(
@@ -310,67 +1181,44 @@ class FilesystemRecoveryAdapter(RecoveryAdapter):
         full_path = self._resolve_file_path(action.resource, base_path)
         compensation_payload = evidence.compensation_payload
         after_snapshot = compensation_payload.get("after_snapshot")
-
+        before_snapshot = compensation_payload.get("before_snapshot")
+        operation = compensation_payload.get("operation", "")
         action_type = action.action_type.lower()
+        if operation == "restore_deleted_file" or action_type == "delete":
+            expected_snapshot = self._missing_snapshot()
+        elif operation == "rename_back":
+            expected_snapshot = before_snapshot
+        else:
+            expected_snapshot = after_snapshot
+        current_snapshot = self._capture_file_snapshot(full_path, self._max_file_size_bytes)
+        diff = self._diff_snapshots(expected_snapshot, current_snapshot)
 
-        if action_type in ("create", "write", "modify", "update"):
-            if not full_path.exists():
-                if after_snapshot and after_snapshot.get("exists", True):
-                    return DriftResult(
-                        status=DriftStatus.DRIFT_DETECTED,
-                        details={
-                            "reason": "Expected file does not exist",
-                            "file": file_path_str,
-                        },
-                    )
-                return DriftResult(
-                    status=DriftStatus.NO_DRIFT,
-                    current_state={"exists": False},
-                )
-
-            current_hash = self._compute_file_hash(full_path)
-
-            if after_snapshot and after_snapshot.get("hash"):
-                if current_hash == after_snapshot["hash"]:
-                    return DriftResult(
-                        status=DriftStatus.NO_DRIFT,
-                        current_state={"hash": current_hash, "path": file_path_str},
-                    )
-                return DriftResult(
-                    status=DriftStatus.DRIFT_DETECTED,
-                    current_state={"hash": current_hash},
-                    evidence_version=after_snapshot.get("hash"),
-                    details={
-                        "reason": "File content differs from expected after-agent state",
-                        "file": file_path_str,
-                    },
-                )
-
-        if action_type in ("delete",):
-            if full_path.exists():
-                current_hash = self._compute_file_hash(full_path)
-                return DriftResult(
-                    status=DriftStatus.DRIFT_DETECTED,
-                    current_state={"hash": current_hash, "exists": True},
-                    details={
-                        "reason": "File exists but was expected to be deleted",
-                        "file": file_path_str,
-                    },
-                )
+        if not diff["changed"]:
             return DriftResult(
                 status=DriftStatus.NO_DRIFT,
-                current_state={"exists": False},
-            )
-
-        if action_type in ("rename", "move"):
-            return DriftResult(
-                status=DriftStatus.NO_DRIFT,
-                details={"reason": "Rename drift detection not fully implemented"},
+                current_state=current_snapshot or {"exists": False},
+                details={
+                    "reason": "Current filesystem state matches the captured after-agent state"
+                },
             )
 
         return DriftResult(
-            status=DriftStatus.INSUFFICIENT_EVIDENCE,
-            details={"reason": f"Unknown action type: {action.action_type}"},
+            status=DriftStatus.DRIFT_DETECTED,
+            current_state=current_snapshot or {"exists": False},
+            evidence_version=(
+                (after_snapshot or {}).get("snapshot_hash")
+                or (after_snapshot or {}).get("hash")
+            ),
+            details={
+                "reason": "Current filesystem state differs from the captured after-agent state",
+                "file": file_path_str,
+                "diff": diff,
+                "human_change_analysis": self._human_change_analysis(
+                    compensation_payload.get("before_snapshot"),
+                    after_snapshot,
+                    current_snapshot,
+                ),
+            },
         )
 
     async def check_conflicts(
@@ -394,29 +1242,59 @@ class FilesystemRecoveryAdapter(RecoveryAdapter):
         compensation_payload = evidence.compensation_payload
         before_snapshot = compensation_payload.get("before_snapshot")
         after_snapshot = compensation_payload.get("after_snapshot")
+        current_snapshot = (
+                self._capture_file_snapshot(full_path, self._max_file_size_bytes)
+                if full_path.exists() or full_path.is_symlink()
+                else self._capture_file_snapshot(full_path, self._max_file_size_bytes)
+            )
 
         if not before_snapshot:
             return ConflictResult(status=ConflictStatus.NO_CONFLICT)
 
-        action_type = action.action_type.lower()
+        operation = compensation_payload.get("operation", "")
+        if operation == "restore_deleted_file":
+            expected_snapshot = {
+                "schema_version": "1.0",
+                "exists": False,
+                "type": "missing",
+                "size": 0,
+                "hash": None,
+                "content": None,
+                "content_b64": None,
+                "metadata": None,
+                "permissions": None,
+                "ownership": None,
+                "acl": None,
+            }
+        else:
+            expected_snapshot = after_snapshot
+        if expected_snapshot and not self._state_equal(current_snapshot, expected_snapshot):
+            diff = self._diff_snapshots(expected_snapshot, current_snapshot)
+            return ConflictResult(
+                status=ConflictStatus.CONCURRENT_MUTATION,
+                details={
+                    "reason": (
+                        "Current filesystem state differs from the "
+                        "captured post-action state"
+                    ),
+                    "file": file_path_str,
+                    "expected_snapshot": expected_snapshot,
+                    "current_snapshot": current_snapshot,
+                    "diff": diff,
+                    "human_change_analysis": self._human_change_analysis(
+                        before_snapshot, after_snapshot, current_snapshot
+                    ),
+                },
+            )
 
-        if action_type in ("create", "write", "modify", "update"):
-            if not full_path.exists():
-                return ConflictResult(status=ConflictStatus.NO_CONFLICT)
-
-            current_hash = self._compute_file_hash(full_path)
-            expected_current_hash = after_snapshot.get("hash") if after_snapshot else None
-
-            if expected_current_hash and current_hash != expected_current_hash:
-                return ConflictResult(
-                    status=ConflictStatus.CONCURRENT_MUTATION,
-                    details={
-                        "reason": "File was modified after the agent action",
-                        "file": file_path_str,
-                        "expected_hash": expected_current_hash,
-                        "current_hash": current_hash,
-                    },
-                )
+        if operation == "restore_deleted_file" and full_path.exists():
+            return ConflictResult(
+                status=ConflictStatus.CONCURRENT_MUTATION,
+                details={
+                    "reason": "Target path was recreated after deletion",
+                    "file": file_path_str,
+                },
+            )
 
         return ConflictResult(status=ConflictStatus.NO_CONFLICT)
 
@@ -429,7 +1307,7 @@ class FilesystemRecoveryAdapter(RecoveryAdapter):
             action_id=action.action_id,
             incident_action_id=action.parent_action_id or action.action_id,
             compensation_type=evidence.compensation_type,
-            compensation_payload=evidence.compensation_payload,
+            compensation_payload=self._embed_tenant_context(action, evidence.compensation_payload),
             idempotency_key=evidence.idempotency_key,
             target_system="filesystem",
             target_resource=action.resource,
@@ -453,6 +1331,17 @@ class FilesystemRecoveryAdapter(RecoveryAdapter):
                 execution_state=ExecutionState.BLOCKED_BY_CONFLICT,
                 idempotency_key=idempotency_key,
                 error="Idempotency key mismatch",
+            )
+
+        try:
+            self._verify_compensation_authorization(compensation)
+        except ValueError as exc:
+            return CompensationResult(
+                action_id=compensation.action_id,
+                success=False,
+                execution_state=ExecutionState.BLOCKED_BY_CONFLICT,
+                idempotency_key=idempotency_key,
+                error=f"Authorization denied: {exc}",
             )
 
         payload = compensation.compensation_payload
@@ -772,83 +1661,43 @@ class FilesystemRecoveryAdapter(RecoveryAdapter):
                 f"Resolved path {candidate} is outside base path {base_path}"
             )
 
-    def _capture_file_snapshot(self, file_path: Path) -> dict[str, Any] | None:
-        """Capture a BYTE-EXACT snapshot of a file for recovery evidence.
+    def _restore_metadata(self, path: Path, snapshot: dict[str, Any] | None) -> list[str]:
+        if not snapshot or not self._preserve_metadata:
+            return []
+        applied: list[str] = []
+        metadata = snapshot.get("metadata") or {}
+        mode = metadata.get("mode")
+        if mode is not None:
+            with contextlib.suppress(OSError, TypeError):
+                os.chmod(path, int(mode))
+                applied.append("permissions")
+        if self._preserve_ownership:
+            uid = metadata.get("uid")
+            gid = metadata.get("gid")
+            chown = getattr(os, "chown", None)
+            if chown is not None and uid is not None and gid is not None:
+                with contextlib.suppress(OSError, PermissionError, TypeError):
+                    chown(path, int(uid), int(gid))
+                    applied.append("ownership")
+        if self._preserve_acl:
+            acl = snapshot.get("acl") or {}
+            if acl.get("available") and acl.get("entries"):
+                applied.append("acl_capture_available")
+        return applied
 
-        CRITICAL: Reads the raw bytes from disk and hashes those exact bytes.
-        Never normalizes line endings, encoding, whitespace, or final newlines.
-        Using ``read_text`` previously caused LF-only files to be captured as
-        CRLF (or vice-versa), producing a wrong before-state that the recovery
-        system then restored.
-
-        Returns ``None`` only when the file cannot be reliably captured; the
-        caller must treat a missing snapshot as NOT safely recoverable.
-        """
-        try:
-            if not file_path.exists():
-                return {
-                    "exists": False,
-                    "content": None,
-                    "content_b64": None,
-                    "hash": None,
-                    "size": 0,
-                    "metadata": None,
-                    "binary": False,
-                    "byte_exact": True,
-                }
-
-            stat_result = file_path.stat()
-            metadata = {
-                "mode": stat_result.st_mode,
-                "uid": stat_result.st_uid,
-                "gid": stat_result.st_gid,
-                "mtime": stat_result.st_mtime,
-                "atime": stat_result.st_atime,
-            }
-
-            if stat_result.st_size > self._max_file_size_bytes:
-                return {
-                    "exists": True,
-                    "content": None,
-                    "content_b64": None,
-                    "hash": self._compute_file_hash(file_path),
-                    "size": stat_result.st_size,
-                    "metadata": metadata,
-                    "oversized": True,
-                    "byte_exact": True,
-                }
-
-            # Read the EXACT bytes from disk.  No decoding, no normalization.
-            raw_bytes = file_path.read_bytes()
-            content_hash = hashlib.sha256(raw_bytes).hexdigest()
-            content_b64 = base64.b64encode(raw_bytes).decode("ascii")
-
-            is_binary = False
-            text_content: str | None = None
-            try:
-                text_content = raw_bytes.decode("utf-8")
-                # If the decoded text re-encodes to the same bytes, we have a
-                # clean UTF-8 text file.  Otherwise treat as binary.
-                if text_content.encode("utf-8") != raw_bytes:
-                    is_binary = True
-                    text_content = None
-            except UnicodeDecodeError:
-                is_binary = True
-                text_content = None
-
-            return {
-                "exists": True,
-                "content": text_content,
-                "content_b64": content_b64,
-                "raw_bytes_length": len(raw_bytes),
-                "hash": content_hash,
-                "size": stat_result.st_size,
-                "metadata": metadata,
-                "binary": is_binary,
-                "byte_exact": True,
-            }
-        except Exception:
-            return None
+    def _restore_timestamps(self, path: Path, snapshot: dict[str, Any] | None) -> list[str]:
+        if not snapshot or not self._preserve_metadata:
+            return []
+        metadata = snapshot.get("metadata") or {}
+        if metadata.get("mtime_ns") is not None and metadata.get("atime_ns") is not None:
+            with contextlib.suppress(OSError, TypeError):
+                os.utime(path, ns=(int(metadata["atime_ns"]), int(metadata["mtime_ns"])))
+                return ["timestamps"]
+        if metadata.get("mtime") is not None and metadata.get("atime") is not None:
+            with contextlib.suppress(OSError, TypeError):
+                os.utime(path, (float(metadata["atime"]), float(metadata["mtime"])))
+                return ["timestamps"]
+        return []
 
     def _compute_file_hash(self, file_path: Path) -> str:
         """Compute SHA-256 hash of a file."""
@@ -951,10 +1800,6 @@ class FilesystemRecoveryAdapter(RecoveryAdapter):
 
         try:
             metadata = before_snapshot.get("metadata") if self._preserve_metadata else None
-            if metadata:
-                with contextlib.suppress(OSError, TypeError):
-                    os.utime(full_path, (metadata.get("atime", None), metadata.get("mtime", None)))
-
             temp_path = full_path.with_suffix(full_path.suffix + ".recovery_tmp")
             if temp_path.exists():
                 temp_path.unlink()
@@ -990,6 +1835,8 @@ class FilesystemRecoveryAdapter(RecoveryAdapter):
             if metadata:
                 with contextlib.suppress(OSError, TypeError):
                     os.chmod(full_path, metadata.get("mode", 0o644))
+            self._restore_metadata(full_path, before_snapshot)
+            self._restore_timestamps(full_path, before_snapshot)
 
             # Independent post-write hash check.
             restored_hash = self._compute_file_hash(full_path)
@@ -1222,3 +2069,4 @@ class FilesystemRecoveryAdapter(RecoveryAdapter):
             "execution_state": ExecutionState.FAILED,
             "error": f"File does not exist at expected path: {file_path_str}",
         }
+

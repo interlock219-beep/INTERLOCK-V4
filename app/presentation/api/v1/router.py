@@ -4,13 +4,24 @@ from app.presentation.api.v1.routes import (
     activity,
     approval,
     auth,
+    authorization,
     billing,
+    circuit_breaker,
     compliance,
+    containment,
     discovery,
+    distributed_lock,
+    emergency,
     health,
+    identity,
     intent,
     metrics,
+    policy,
+    risk,
     surgical_recovery,
+    tokens,
+    tool_security,
+    velocity,
 )
 from app.presentation.api.v1.routes.actions import router as actions_router
 from app.presentation.api.v1.routes.agent_sessions import router as agent_sessions_router
@@ -19,12 +30,17 @@ from app.presentation.api.v1.routes.api_keys import router as api_keys_router
 from app.presentation.api.v1.routes.authority import router as authority_router
 from app.presentation.api.v1.routes.control import router as control_router
 from app.presentation.api.v1.routes.discover import router as discover_router
+from app.presentation.api.v1.routes.emergency import (
+    token_revocation_router,
+)
 from app.presentation.api.v1.routes.incident import router as incident_router
 from app.presentation.api.v1.routes.incidents import router as incidents_router
 from app.presentation.api.v1.routes.mfa import email_router, mfa_router, password_router
 from app.presentation.api.v1.routes.session import session_router
 from app.presentation.api.v1.routes.sso import sso_router
 from app.presentation.api.v1.routes.webhook import router as webhook_router
+from app.presentation.api.v1.routes.evidence import router as evidence_router
+from app.presentation.api.v1.routes.identity_compromise import router as identity_compromise_router
 
 api_v1_router = APIRouter()
 api_v1_router.include_router(health.router)
@@ -37,6 +53,16 @@ api_v1_router.include_router(sso_router)
 api_v1_router.include_router(intent.router)
 api_v1_router.include_router(approval.router)
 api_v1_router.include_router(metrics.router)
+api_v1_router.include_router(policy.router)
+api_v1_router.include_router(circuit_breaker.router)
+api_v1_router.include_router(distributed_lock.router)
+api_v1_router.include_router(tokens.router)
+api_v1_router.include_router(authorization.router)
+api_v1_router.include_router(containment.router)
+api_v1_router.include_router(risk.router)
+api_v1_router.include_router(identity.router)
+api_v1_router.include_router(tool_security.router)
+api_v1_router.include_router(velocity.router)
 api_v1_router.include_router(compliance.router)
 api_v1_router.include_router(discovery.router)
 api_v1_router.include_router(discover_router)
@@ -50,5 +76,9 @@ api_v1_router.include_router(actions_router, prefix="/actions")
 api_v1_router.include_router(control_router)
 api_v1_router.include_router(incident_router)
 api_v1_router.include_router(incidents_router)
-api_v1_router.include_router(webhook_router)
+api_v1_router.include_router(webhook_router, prefix="/webhook")
 api_v1_router.include_router(api_keys_router)
+api_v1_router.include_router(emergency.emergency_router)
+api_v1_router.include_router(token_revocation_router)
+api_v1_router.include_router(evidence_router, prefix="/evidence")
+api_v1_router.include_router(identity_compromise_router, prefix="/identity/compromise")

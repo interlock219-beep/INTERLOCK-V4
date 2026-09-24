@@ -7,6 +7,7 @@ adapters that only implement the legacy three-method interface.
 
 from __future__ import annotations
 
+import copy
 from abc import ABC, abstractmethod
 from typing import Any, Protocol, runtime_checkable
 
@@ -371,6 +372,80 @@ class RecoveryAdapter(ABC):
         ).lower():
             return AdapterCapability.MOCK
         return AdapterCapability.STUB
+
+
+    # -- Security helpers for tenant isolation, authorization, and defensive copying --
+
+    @staticmethod
+    def _deep_copy_payload(payload: dict[str, Any]) -> dict[str, Any]:
+        """Return a deep copy of a compensation payload.
+
+        Prevents external mutation of evidence or compensation state after
+        it has been captured and sealed.
+        """
+        return copy.deepcopy(payload)
+
+    @staticmethod
+    def _verify_tenant_isolation(action: ProtectedAction) -> None:
+        """Verify the action carries a valid, non-placeholder tenant identifier.
+
+        Raises ValueError when the action tenant_id is empty or a known
+        placeholder, preventing cross-tenant recovery operations.
+        """
+        tenant_id = action.tenant_id
+        if not tenant_id or not tenant_id.strip():
+            raise ValueError(
+                "Tenant isolation violation: action has no tenant_id. "
+                "Refusing to process recovery operation without tenant context."
+            )
+        normalized = tenant_id.strip().lower()
+        if normalized in ("null", "none", "unknown", "system", ""):
+            raise ValueError(
+                f"Tenant isolation violation: action tenant_id {tenant_id!r} "
+                "is a reserved placeholder and cannot be used for recovery."
+            )
+
+    def _embed_tenant_context(
+        self, action: ProtectedAction, payload: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Deep-copy payload and embed tenant/authorization context.
+
+        The embedded context is later verified by
+        :meth:`_verify_compensation_authorization` during execution.
+        """
+        payload = self._deep_copy_payload(payload)
+        payload["_tenant_id"] = action.tenant_id
+        payload["_authority_grant_id"] = action.authority_grant_id
+        payload["_action_status"] = action.status.value if action.status else None
+        return payload
+
+    def _verify_compensation_authorization(
+        self, compensation: CompensationAction
+    ) -> None:
+        """Verify that a compensation action is authorized for execution.
+
+        Checks:
+        - Tenant isolation: the embedded tenant_id must be valid
+        - Action authorization: irreversible actions are blocked
+        """
+        payload = compensation.compensation_payload
+        tenant_id = payload.get("_tenant_id", "")
+        if not tenant_id or not tenant_id.strip():
+            raise ValueError(
+                "Authorization denied: compensation has no tenant context. "
+                "ExecuteCompensation requires a valid tenant_id."
+            )
+        normalized = tenant_id.strip().lower()
+        if normalized in ("null", "none", "unknown", "system", ""):
+            raise ValueError(
+                f"Authorization denied: compensation tenant_id {tenant_id!r} "
+                "is a reserved placeholder."
+            )
+        if compensation.reversibility == Reversibility.IRREVERSIBLE:
+            raise ValueError(
+                "Authorization denied: action is irreversible. "
+                "ExecuteCompensation blocked for irreversible actions."
+            )
 
     async def declare_capabilities(self) -> AdapterCapabilityDeclaration:
         """Default capability declaration based on adapter metadata."""

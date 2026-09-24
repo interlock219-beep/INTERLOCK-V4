@@ -31,6 +31,11 @@ class SQLAlchemyAgentRepository(AgentRepository):
         model = self._session.scalar(stmt)
         return self._to_entity(model) if model else None
 
+    async def get_by_agent_id_global(self, agent_id: str) -> Agent | None:
+        stmt = select(AgentModel).where(AgentModel.agent_id == agent_id)
+        model = self._session.scalar(stmt)
+        return self._to_entity(model) if model else None
+
     async def list_by_tenant(
         self,
         tenant_id: str,

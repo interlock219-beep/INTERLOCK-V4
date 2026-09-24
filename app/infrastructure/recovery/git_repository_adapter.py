@@ -113,6 +113,7 @@ class GitRepositoryAdapter(RecoveryAdapter):
         execution_context: dict[str, Any] | None = None,
         before_snapshot: dict[str, Any] | None = None,
     ) -> RecoveryEvidence:
+        self._verify_tenant_isolation(action)
         import hashlib
 
         payload_str = json.dumps(action.tool_arguments, sort_keys=True, default=str)
@@ -450,7 +451,7 @@ class GitRepositoryAdapter(RecoveryAdapter):
             action_id=action.action_id,
             incident_action_id=action.parent_action_id or action.action_id,
             compensation_type=evidence.compensation_type,
-            compensation_payload=evidence.compensation_payload,
+            compensation_payload=self._embed_tenant_context(action, evidence.compensation_payload),
             idempotency_key=evidence.idempotency_key,
             target_system="git_repository",
             target_resource=action.resource,
@@ -474,6 +475,17 @@ class GitRepositoryAdapter(RecoveryAdapter):
                 execution_state=ExecutionState.BLOCKED_BY_CONFLICT,
                 idempotency_key=idempotency_key,
                 error="Idempotency key mismatch",
+            )
+
+        try:
+            self._verify_compensation_authorization(compensation)
+        except ValueError as exc:
+            return CompensationResult(
+                action_id=compensation.action_id,
+                success=False,
+                execution_state=ExecutionState.BLOCKED_BY_CONFLICT,
+                idempotency_key=idempotency_key,
+                error=f"Authorization denied: {exc}",
             )
 
         payload = compensation.compensation_payload
@@ -721,21 +733,41 @@ class GitRepositoryAdapter(RecoveryAdapter):
         return self._repo_path
 
     def _resolve_resource_path(self, resource: str, repo_path: Path) -> Path:
-        """Resolve a resource identifier to a full file path."""
+        """Resolve a resource identifier to a contained full file path."""
         file_path = self._extract_file_path(resource)
-        if file_path:
-            return repo_path / file_path
-        return repo_path / resource
+        candidate = repo_path / file_path if file_path else repo_path / resource
+        self._assert_contained(candidate, repo_path)
+        return candidate
+
+    @staticmethod
+    def _assert_contained(candidate: Path, base_path: Path) -> None:
+        """Ensure *candidate* resolves inside *base_path*."""
+        try:
+            base = base_path.resolve()
+            target = candidate.resolve()
+        except OSError:
+            base = base_path.absolute()
+            target = candidate.absolute()
+        if base != target and base not in target.parents:
+            raise ValueError(
+                f"Resolved path {candidate} is outside base path {base_path}"
+            )
 
     def _extract_file_path(self, resource: str) -> str | None:
-        """Extract file path from resource identifier."""
+        """Extract file path from resource identifier, rejecting traversal."""
         if not resource:
             return None
+
+        if ".." in resource:
+            raise ValueError("Path traversal detected in resource identifier")
 
         prefixes = ["file:", "path:", "fs:", "git:"]
         for prefix in prefixes:
             if resource.startswith(prefix):
-                return resource[len(prefix):]
+                extracted = resource[len(prefix):]
+                if ".." in extracted:
+                    raise ValueError("Path traversal detected in resource identifier")
+                return extracted
 
         if "/" in resource or "\\" in resource:
             return resource

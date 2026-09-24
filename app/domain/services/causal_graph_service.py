@@ -2,30 +2,43 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+from app.domain.entities.recovery_graph_types import (
+    GraphRelation,
+    RecoveryGraph,
+)
+
 if TYPE_CHECKING:
     from app.domain.entities.protected_action import ProtectedAction
+    from app.domain.entities.recovery_graph_types import (
+        GraphEdge,
+        GraphNode,
+    )
 
 
-def _get_agent_id(agent: Any) -> str | None:
+def _get_agent_id(agent):
     if hasattr(agent, "agent_id"):
-        return agent.agent_id  # type: ignore[no-any-return]
+        return agent.agent_id
     if isinstance(agent, dict):
         return agent.get("agent_id")
     return None
 
 
-def _get_parent_agent_id(agent: Any) -> str | None:
+def _get_parent_agent_id(agent):
     if hasattr(agent, "parent_agent_id"):
-        return agent.parent_agent_id  # type: ignore[no-any-return]
+        return agent.parent_agent_id
     if isinstance(agent, dict):
         return agent.get("parent_agent_id")
     return None
 
 
 class CausalGraphService:
-    """Service for traversing causal graphs via parent_action_id and parent_agent_id."""
+    """Service for traversing causal graphs.
 
-    def __init__(self, *repos: Any) -> None:
+    Supports parent/child traversal and typed RecoveryGraph
+    dependency and impact traversal (Feature 60).
+    """
+
+    def __init__(self, *repos):
         if repos and hasattr(repos[0], "get_by_action_id"):
             self._action_repo = repos[0]
             self._agent_repo = repos[1] if len(repos) > 1 else None
@@ -39,16 +52,10 @@ class CausalGraphService:
             self._agent_repo = None
             self._grant_repo = None
 
-    async def get_upstream_actions(
-        self,
-        tenant_id: str,
-        action_id: str,
-        limit: int = 100,
-        offset: int = 0,
-    ) -> tuple[list[ProtectedAction], int]:
+    async def get_upstream_actions(self, tenant_id, action_id, limit=100, offset=0):
         current_id = action_id
-        collected: list[ProtectedAction] = []
-        seen: set[str] = set()
+        collected = []
+        seen = set()
         while current_id and len(collected) < limit + offset:
             if current_id in seen:
                 break
@@ -68,27 +75,21 @@ class CausalGraphService:
         total = len(collected)
         return collected[offset : offset + limit], total
 
-    async def get_downstream_actions(
-        self,
-        tenant_id: str,
-        action_id: str,
-        limit: int = 100,
-        offset: int = 0,
-    ) -> tuple[list[ProtectedAction], int]:
+    async def get_downstream_actions(self, tenant_id, action_id, limit=100, offset=0):
         root = await self._action_repo.get_by_action_id(tenant_id, action_id)
         if root is None:
             raise ValueError("Action not found")
-        return await self._action_repo.list_descendants(  # type: ignore[no-any-return]
+        return await self._action_repo.list_descendants(
             tenant_id, action_id, limit=limit, offset=offset
         )
 
-    async def get_incident_graph(self, tenant_id: str, action_id: str) -> dict[str, Any]:
+    async def get_incident_graph(self, tenant_id, action_id):
         root = await self._action_repo.get_by_action_id(tenant_id, action_id)
         if root is None:
             raise ValueError("Action not found")
-        nodes: list[dict[str, Any]] = []
-        edges: list[dict[str, Any]] = []
-        visited: set[str] = set()
+        nodes = []
+        edges = []
+        visited = set()
         queue = [root]
         while queue:
             current = queue.pop(0)
@@ -121,7 +122,7 @@ class CausalGraphService:
             )
             for desc in descendants:
                 if desc.action_id not in visited:
-                    queue.append(desc)
+                    queue.append(desc.action_id)
                     edges.append({
                         "source": current.action_id,
                         "target": desc.action_id,
@@ -133,12 +134,12 @@ class CausalGraphService:
             "edges": edges,
         }
 
-    async def get_upstream(self, tenant_id: str, agent_id: str) -> list[str]:
+    async def get_upstream(self, tenant_id, agent_id):
         if self._agent_repo is None:
             return []
         current_id = agent_id
-        collected: list[str] = []
-        seen: set[str] = set()
+        collected = []
+        seen = set()
         while current_id:
             if current_id in seen:
                 break
@@ -152,7 +153,7 @@ class CausalGraphService:
             current_id = parent_id or ""
         return collected
 
-    async def get_downstream(self, tenant_id: str, agent_id: str) -> list[str]:
+    async def get_downstream(self, tenant_id, agent_id):
         if self._agent_repo is None:
             return []
         all_agents, _ = await self._agent_repo.list_by_tenant(tenant_id, limit=1000, offset=0)
@@ -162,8 +163,8 @@ class CausalGraphService:
             if _get_parent_agent_id(a) == agent_id
         ]
         children = [c for c in raw_children if c is not None]
-        result: list[str] = list(children)
-        visited: set[str] = set(children)
+        result = list(children)
+        visited = set(children)
         queue = list(children)
         while queue:
             current = queue.pop(0)
@@ -180,3 +181,82 @@ class CausalGraphService:
                 result.append(gc)
                 queue.append(gc)
         return result
+
+    def traverse_dependencies(self, graph, start_node_id, direction="downstream", limit=100):
+        """Traverse DEPENDS_ON edges in the typed RecoveryGraph.
+
+        Args:
+          graph: RecoveryGraph to traverse.
+          start_node_id: Node to start traversal from.
+          direction: "downstream" for dependents, "upstream" for dependencies.
+          limit: Maximum nodes to return.
+
+        Returns list[GraphNode] reachable via DEPENDS_ON edges.
+        """
+        if direction not in ("upstream", "downstream"):
+            raise ValueError("direction must be upstream or downstream, got %r" % direction)
+        adj = {}
+        for node in graph.nodes:
+            adj.setdefault(node.node_id, [])
+        for edge in graph.edges:
+            if edge.relation == GraphRelation.DEPENDS_ON:
+                if direction == "downstream":
+                    adj.setdefault(edge.source_node_id, [])
+                    adj[edge.source_node_id].append(edge.target_node_id)
+                else:
+                    adj.setdefault(edge.target_node_id, [])
+                    adj[edge.target_node_id].append(edge.source_node_id)
+        visited = set()
+        result = []
+        queue = [start_node_id]
+        visited.add(start_node_id)
+        node_map = {n.node_id: n for n in graph.nodes}
+        while queue and len(result) < limit:
+            current = queue.pop(0)
+            node = node_map.get(current)
+            if node is not None and current != start_node_id:
+                result.append(node)
+            for neighbor in adj.get(current, []):
+                if neighbor not in visited:
+                    visited.add(neighbor)
+                    queue.append(neighbor)
+        return result
+
+    def get_impact_set(self, graph, changed_node_ids, limit=200):
+        """Compute nodes transitively impacted by changes.
+
+        Walks DEPENDS_ON edges downstream from changed_node_ids.
+
+        Args:
+          graph: RecoveryGraph.
+          changed_node_ids: Nodes whose change is being assessed.
+          limit: Maximum impacted nodes to return.
+
+        Returns list[GraphNode] of affected nodes (seed excluded).
+        """
+        adj = {}
+        for node in graph.nodes:
+            adj.setdefault(node.node_id, [])
+        for edge in graph.edges:
+            if edge.relation == GraphRelation.DEPENDS_ON:
+                adj.setdefault(edge.source_node_id, [])
+                adj[edge.source_node_id].append(edge.target_node_id)
+        visited = set()
+        result = []
+        node_map = {n.node_id: n for n in graph.nodes}
+        queue = list(changed_node_ids)
+        while queue and len(result) < limit:
+            current = queue.pop(0)
+            if current in visited:
+                continue
+            visited.add(current)
+            node = node_map.get(current)
+            if node is not None and current not in changed_node_ids:
+                result.append(node)
+            for neighbor in adj.get(current, []):
+                if neighbor not in visited:
+                    queue.append(neighbor)
+        return result
+
+
+__all__ = ["CausalGraphService"]

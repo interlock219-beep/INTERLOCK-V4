@@ -9,6 +9,8 @@ class AuthorityStatus(StrEnum):
     REVOKED = "revoked"
     EXPIRED = "expired"
     SUSPENDED = "suspended"
+    JIT_EXPIRED = "jit_expired"
+    ONE_SHOT_USED = "one_shot_used"
 
 
 class AuthorityScope(StrEnum):
@@ -40,3 +42,9 @@ class AuthorityGrant:
     metadata: dict[str, str] = field(default_factory=dict)
     created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
     updated_at: datetime = field(default_factory=lambda: datetime.now(UTC))
+    is_jit: bool = False
+    jit_created_at: datetime | None = None
+    jit_expires_at: datetime | None = None
+    jit_consumed_at: datetime | None = None
+    one_shot: bool = False
+    usage_count: int = 0

@@ -1,4 +1,4 @@
-from abc import ABC, abstractmethod
+﻿from abc import ABC, abstractmethod
 from typing import Any
 
 from app.domain.entities.protected_action import ActionStatus, ProtectedAction
@@ -15,6 +15,14 @@ class ProtectedActionRepository(ABC):
         self,
         tenant_id: str,
         agent_id: str,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> tuple[list[ProtectedAction], int]: ...
+
+    @abstractmethod
+    async def list_by_tenant(
+        self,
+        tenant_id: str,
         limit: int = 100,
         offset: int = 0,
     ) -> tuple[list[ProtectedAction], int]: ...

@@ -44,6 +44,23 @@ class SQLAlchemyProtectedActionRepository(ProtectedActionRepository):
         models = self._session.scalars(stmt).all()
         return [self._to_entity(m) for m in models], total
 
+    async def list_by_tenant(
+        self,
+        tenant_id: str,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> tuple[list[ProtectedAction], int]:
+        stmt = select(ProtectedActionModel).where(
+            ProtectedActionModel.tenant_id == tenant_id,
+        )
+        count_stmt = select(ProtectedActionModel).where(
+            ProtectedActionModel.tenant_id == tenant_id,
+        )
+        total = len(self._session.scalars(count_stmt).all())
+        stmt = stmt.order_by(ProtectedActionModel.created_at.desc()).limit(limit).offset(offset)
+        models = self._session.scalars(stmt).all()
+        return [self._to_entity(m) for m in models], total
+
     async def list_by_correlation(
         self,
         tenant_id: str,

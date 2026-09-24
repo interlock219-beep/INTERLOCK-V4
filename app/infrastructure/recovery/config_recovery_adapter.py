@@ -108,6 +108,7 @@ class ConfigRecoveryAdapter(RecoveryAdapter):
         execution_context: dict[str, Any] | None = None,
         before_snapshot: dict[str, Any] | None = None,
     ) -> RecoveryEvidence:
+        self._verify_tenant_isolation(action)
         payload_str = json.dumps(action.tool_arguments, sort_keys=True, default=str)
         evidence_hash = hashlib.sha256(
             f"{action.action_id}:{payload_str}".encode()
@@ -387,7 +388,7 @@ class ConfigRecoveryAdapter(RecoveryAdapter):
             action_id=action.action_id,
             incident_action_id=action.parent_action_id or action.action_id,
             compensation_type=evidence.compensation_type,
-            compensation_payload=evidence.compensation_payload,
+            compensation_payload=self._embed_tenant_context(action, evidence.compensation_payload),
             idempotency_key=evidence.idempotency_key,
             target_system="configuration",
             target_resource=action.resource,
@@ -411,6 +412,17 @@ class ConfigRecoveryAdapter(RecoveryAdapter):
                 execution_state=ExecutionState.BLOCKED_BY_CONFLICT,
                 idempotency_key=idempotency_key,
                 error="Idempotency key mismatch",
+            )
+
+        try:
+            self._verify_compensation_authorization(compensation)
+        except ValueError as exc:
+            return CompensationResult(
+                action_id=compensation.action_id,
+                success=False,
+                execution_state=ExecutionState.BLOCKED_BY_CONFLICT,
+                idempotency_key=idempotency_key,
+                error=f"Authorization denied: {exc}",
             )
 
         payload = compensation.compensation_payload
@@ -651,10 +663,16 @@ class ConfigRecoveryAdapter(RecoveryAdapter):
         if not resource:
             return None
 
+        if ".." in resource:
+            raise ValueError("Path traversal detected in config resource identifier")
+
         prefixes = ["config:", "file:", "path:", "settings:"]
         for prefix in prefixes:
             if resource.startswith(prefix):
-                return resource[len(prefix):]
+                extracted = resource[len(prefix):]
+                if ".." in extracted:
+                    raise ValueError("Path traversal detected in config resource identifier")
+                return extracted
 
         if "/" in resource or "\\" in resource:
             return Path(resource).name

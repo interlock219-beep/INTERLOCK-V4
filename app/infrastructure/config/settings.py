@@ -77,9 +77,17 @@ class Settings(BaseSettings):
     authorization_allowed_services: list[str] | None = Field(default=None)
     authorization_allowed_actions: list[str] | None = Field(default=None)
     authorization_allowed_resources: list[str] | None = Field(default=None)
+    authorization_allowed_tasks: list[str] | None = Field(default=None)
     authorization_expiry_seconds: int = Field(default=3600, ge=60, le=86400)
     authorization_default_deny: bool = Field(default=True)
     authorization_role_actions: dict[str, list[str]] = Field(default_factory=dict)
+    authorization_destructive_actions: list[str] = Field(default_factory=list)
+    authorization_time_windows: list[dict[str, str]] = Field(default_factory=list)
+    authorization_allowed_ips: list[str] = Field(default_factory=list)
+    authorization_denied_ips: list[str] = Field(default_factory=list)
+    authorization_max_session_age_seconds: int | None = Field(default=None)
+    authorization_max_concurrent_sessions: int | None = Field(default=None)
+    authorization_risk_threshold: float = Field(default=0.7, ge=0.0, le=1.0)
 
     trusted_proxies: list[str] = Field(default_factory=list)
 

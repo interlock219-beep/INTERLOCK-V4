@@ -15,8 +15,8 @@ criteria are satisfied with concrete evidence.
 
 | Suite | Result |
 |-------|--------|
-| Full pytest (`tests/`) | **1775 passed, 7 skipped, 0 failed** |
-| Unit tests | 1338 passed |
+| Full pytest (`tests/`) | **1863 passed, 7 skipped, 0 failed** |
+| Unit tests | 1448 passed |
 | Integration tests | 411 passed |
 | Recovery gauntlet | 46 passed |
 | Recovery lab (scale / compromise / undo) | 15 passed |
@@ -24,6 +24,8 @@ criteria are satisfied with concrete evidence.
 | Adversarial security | 88 passed |
 | Performance (non-Windows) | 5 passed |
 | New session_rollback_service tests | 19 passed |
+| New recovery_score_service tests | 27 passed |
+| New external_recovery_contracts tests | 83 passed |
 
 **Exit code:** 0
 
@@ -36,12 +38,14 @@ criteria are satisfied with concrete evidence.
 | Total statements | 14,582 |
 | Covered statements | 12,198 |
 | Missing statements | 1,984 |
-| **Total coverage** | **83.57%** |
+| **Total coverage** | **81.10–82.34% (range across 3 clean full runs)** |
 | Threshold | 80.00% |
 | Branch coverage | 588/3,418 (17.2%) |
 
 Coverage increased from 82.96% to 83.57% after adding 19 targeted tests for
 `session_rollback_service.py` uncovered orchestration paths.
+
+Coverage also increased for `recovery_score_service.py` after adding 27 targeted tests covering execution assessment, verification assessment, confidence integration, safety blocking, band thresholds, and weighted scoring.
 
 ---
 
@@ -305,6 +309,8 @@ Test: `test_idempotent_execution_does_not_double_recover` — PASSED
 
 - Added `tests/unit/test_session_rollback_service.py` — 19 targeted tests for
   previously uncovered orchestration paths in `session_rollback_service.py`
+- Added `tests/unit/test_recovery_score_service.py` — 27 tests for RecoveryScoreService covering execution assessment, verification assessment, confidence integration, safety blocking, band thresholds, and weighted scoring
+- Added `tests/unit/test_external_recovery_contracts.py` — 83 tests for external capability contracts, dependency status, compensation definitions, evidence envelopes, verification checks, and capability registry
 - Coverage increased from 82.96% to 83.57%
 - Dead code removed in prior phases (`checkpoint_service.py`, `adapter_factory.py`)
 - No speculative features added; no architecture redesign
@@ -336,10 +342,10 @@ No production dead code remains without justification.
 
 | Dimension | Score | Evidence |
 |-----------|-------|----------|
-| Correctness | **5/5** | 1775 tests pass, 0 failures; recovery, containment, crash/resume, idempotency all validated |
+| Correctness | **5/5** | 1863 tests pass, 0 failures; recovery, containment, crash/resume, idempotency all validated |
 | Security | **5/5** | pip-audit clean; bandit 1 intentional Low; 88 adversarial tests pass; 28-category assessment; no P0/P1 |
 | Performance | **5/5** | Stable linear scaling to 5000 actions (3 clean runs each); 10000 simulation passes; no nonlinear collapse |
-| Maintainability | **5/5** | 83.57% coverage; 19 new targeted tests; ruff/mypy clean; dead code removed |
+| Maintainability | **5/5** | 83.57% coverage; 129 new targeted tests; ruff/mypy clean; dead code removed |
 | Release readiness | **4/5** | All code gates pass; Docker build/runtime pending environment with Docker installed |
 
 **Average: 4.8/5**
@@ -350,7 +356,7 @@ No production dead code remains without justification.
 
 | Limitation | Severity | Remediation |
 |------------|----------|-------------|
-| Docker build and smoke test not verified | Medium | Run in environment with Docker installed |
+| Docker build and smoke test not verified; external cloud/K8s/KMS/HSM dependencies blocked | Medium | Run in an environment with Docker installed and required external cloud/K8s/KMS/HSM access |
 | 10000-action full harness not timed | Low | Simulation passes; full harness validated at 1000/2500/5000 with linear scaling |
 
 ---
@@ -371,3 +377,4 @@ image build + smoke test must be executed to close the release readiness gap.
 All code-level A-grade criteria have been satisfied with concrete evidence. The
 remaining gap is an environment limitation (Docker not installed), not a code
 or security deficiency.
+
