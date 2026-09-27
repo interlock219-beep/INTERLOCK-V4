@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import logging
-import re
 from collections import Counter
 from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
@@ -32,23 +31,28 @@ class AnomalyReport:
 class BehavioralSecurityService:
     """Behavioral security layer for agent anomaly defense."""
 
-    def __init__(self, velocity_tracker=None, risk_engine=None):
+    def __init__(
+        self,
+        velocity_tracker: Any = None,
+        risk_engine: Any = None,
+    ) -> None:
         self._velocity_tracker = velocity_tracker
         self._risk_engine = risk_engine
-        self._baselines: dict[str, dict] = {}
+        self._baselines: dict[str, dict[str, Any]] = {}
 
     def establish_baseline(
-        self, agent_id: str, session_id: str, actions: list[dict]
-    ) -> dict:
+        self,
+        agent_id: str,
+        session_id: str,
+        actions: list[dict[str, Any]],
+    ) -> dict[str, Any]:
         """Establish behavioral baseline from historical actions."""
         tools = [a.get("tool", "") for a in actions]
         resources = [a.get("resource", "") for a in actions]
         action_types = [a.get("action_type", "") for a in actions]
-        timestamps = [
-            a.get("timestamp", 0) for a in actions if a.get("timestamp")
-        ]
+        timestamps = [a.get("timestamp", 0) for a in actions if a.get("timestamp")]
 
-        baseline = {
+        baseline: dict[str, Any] = {
             "agent_id": agent_id,
             "session_id": session_id,
             "established_at": datetime.now(UTC).isoformat(),
@@ -69,14 +73,17 @@ class BehavioralSecurityService:
         return baseline
 
     def compare_to_baseline(
-        self, agent_id: str, session_id: str, current_actions: list[dict]
-    ) -> list[dict]:
+        self,
+        agent_id: str,
+        session_id: str,
+        current_actions: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
         key = f"{agent_id}:{session_id}"
         baseline = self._baselines.get(key)
         if baseline is None:
             return []
 
-        signals = []
+        signals: list[dict[str, Any]] = []
         baseline_tools = set(baseline.get("typical_tools", []))
         baseline_resources = set(baseline.get("typical_resources", []))
 
@@ -100,7 +107,9 @@ class BehavioralSecurityService:
                 {
                     "signal_type": "new_resource_targeting",
                     "severity": "medium",
-                    "description": f"Agent targeted {len(new_resources)} resource(s) not seen in baseline",
+                    "description": (
+                        f"Agent targeted {len(new_resources)} resource(s) not seen in baseline"
+                    ),
                     "evidence": {"unusual_resources": list(new_resources)},
                 }
             )
@@ -111,9 +120,9 @@ class BehavioralSecurityService:
         self,
         agent_id: str,
         session_id: str,
-        baseline: dict,
-        current: dict,
-    ) -> dict:
+        baseline: dict[str, Any],
+        current: dict[str, Any],
+    ) -> dict[str, Any]:
         """Detect behavioral drift from baseline."""
         signals = []
         score = 0.0
@@ -190,7 +199,7 @@ class BehavioralSecurityService:
         self,
         action_sequence: list[str],
         known_sequences: list[list[str]],
-    ) -> dict:
+    ) -> dict[str, Any]:
         """Detect unusual action patterns using sequence alignment."""
         if not known_sequences:
             return {
@@ -200,12 +209,10 @@ class BehavioralSecurityService:
             }
 
         best_score = 0.0
-        best_match = None
         for seq in known_sequences:
             similarity = self._sequence_similarity(action_sequence, seq)
             if similarity > best_score:
                 best_score = similarity
-                best_match = seq
 
         anomaly_score = 1.0 - best_score
         is_anomalous = anomaly_score >= 0.5
@@ -225,7 +232,7 @@ class BehavioralSecurityService:
         current_tools: list[str],
         baseline_tools: set[str],
         all_tools: set[str],
-    ) -> dict:
+    ) -> dict[str, Any]:
         """Identify tools never seen in baseline."""
         unusual = [t for t in current_tools if t not in baseline_tools]
         risk_multiplier = 1.0 + (len(unusual) * 0.2)
@@ -238,7 +245,7 @@ class BehavioralSecurityService:
         self,
         current_targets: list[str],
         baseline_targets: set[str],
-    ) -> dict:
+    ) -> dict[str, Any]:
         """Identify resources never targeted in baseline."""
         unusual = [t for t in current_targets if t not in baseline_targets]
         risk_multiplier = 1.0 + (len(unusual) * 0.2)
@@ -252,12 +259,9 @@ class BehavioralSecurityService:
         current_velocity: float,
         baseline_velocity: float,
         std_dev: float,
-    ) -> dict:
+    ) -> dict[str, Any]:
         """Z-score based velocity anomaly detection."""
-        if std_dev == 0:
-            z_score = 0.0
-        else:
-            z_score = (current_velocity - baseline_velocity) / std_dev
+        z_score = 0.0 if std_dev == 0 else (current_velocity - baseline_velocity) / std_dev
         is_anomalous = abs(z_score) > 3.0
         return {
             "velocity_z_score": round(z_score, 3),
@@ -268,23 +272,19 @@ class BehavioralSecurityService:
         self,
         current_scope: str,
         previous_scopes: list[str],
-        authority_grants: list[dict],
-    ) -> dict:
+        authority_grants: list[dict[str, Any]],
+    ) -> dict[str, Any]:
         """Detect if agent is requesting/granting higher privileges than baseline."""
         escalation_detected = False
-        escalation_details = []
+        escalation_details: list[str] = []
 
         if previous_scopes:
             scope_hierarchy = {"read": 1, "write": 2, "admin": 3}
             current_level = scope_hierarchy.get(current_scope, 0)
-            max_previous = max(
-                (scope_hierarchy.get(s, 0) for s in previous_scopes), default=0
-            )
+            max_previous = max((scope_hierarchy.get(s, 0) for s in previous_scopes), default=0)
             if current_level > max_previous:
                 escalation_detected = True
-                escalation_details.append(
-                    f"Scope increased from {max_previous} to {current_level}"
-                )
+                escalation_details.append(f"Scope increased from {max_previous} to {current_level}")
 
         for grant in authority_grants:
             grant_scope = grant.get("scope", "")
@@ -301,10 +301,10 @@ class BehavioralSecurityService:
 
     def detect_runaway_behavior(
         self,
-        action_sequence: list[dict],
+        action_sequence: list[dict[str, Any]],
         time_window_seconds: float = 60.0,
         repetition_threshold: int = 5,
-    ) -> dict:
+    ) -> dict[str, Any]:
         """Detect rapid repeated mutations."""
         if not action_sequence:
             return {
@@ -332,7 +332,8 @@ class BehavioralSecurityService:
         if len(timestamps) < 2:
             rate = 0.0
         else:
-            total_time = max(timestamps) - min(timestamps)
+            valid_timestamps = [t for t in timestamps if t is not None]
+            total_time = max(valid_timestamps) - min(valid_timestamps)
             rate = max_repetition / (total_time / time_window_seconds) if total_time > 0 else 0.0
 
         is_runaway = max_repetition > repetition_threshold
@@ -344,14 +345,14 @@ class BehavioralSecurityService:
 
     def detect_autonomous_escalation(
         self,
-        action_history: list[dict],
-        authorization_history: list[dict],
-    ) -> dict:
+        action_history: list[dict[str, Any]],
+        authorization_history: list[dict[str, Any]],
+    ) -> dict[str, Any]:
         """Detect agent escalating privileges without human authorization."""
         escalation_detected = False
-        escalation_chain = []
+        escalation_chain: list[dict[str, Any]] = []
 
-        unauthorized_scopes = []
+        unauthorized_scopes: list[dict[str, Any]] = []
         for action in action_history:
             scope = action.get("scope", "")
             if scope in ("admin", "write"):
@@ -380,8 +381,8 @@ class BehavioralSecurityService:
     def detect_intent_action_mismatch(
         self,
         declared_intent: str,
-        executed_actions: list[dict],
-    ) -> dict:
+        executed_actions: list[dict[str, Any]],
+    ) -> dict[str, Any]:
         """Detect mismatch between stated intent and actions."""
         if not declared_intent or not executed_actions:
             return {
@@ -399,7 +400,7 @@ class BehavioralSecurityService:
             "list": ["delete", "drop", "modify", "transfer"],
         }
 
-        evidence = []
+        evidence: list[dict[str, Any]] = []
         mismatch_count = 0
         total_actions = len(executed_actions)
 
@@ -439,5 +440,5 @@ class BehavioralSecurityService:
     def _sequence_similarity(self, seq1: list[str], seq2: list[str]) -> float:
         if not seq1 or not seq2:
             return 0.0
-        matches = sum(1 for a, b in zip(seq1, seq2) if a == b)
+        matches = sum(1 for a, b in zip(seq1, seq2, strict=False) if a == b)
         return matches / max(len(seq1), len(seq2))

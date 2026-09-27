@@ -33,6 +33,7 @@ class ProductionSAMLAdapter(SAMLAdapter):
     def __init__(self) -> None:
         try:
             import importlib
+
             importlib.import_module("python3_saml")
 
             self._provider = _ProductionSAMLProvider()

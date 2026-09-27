@@ -19,9 +19,7 @@ class GetSubscriptionUseCase:
     async def execute(
         self, user_id: UUID
     ) -> tuple[SubscriptionResponse | None, PlanResponse | None]:
-        subscription = (
-            await self._subscription_repository.get_active_by_user(user_id)
-        )
+        subscription = await self._subscription_repository.get_active_by_user(user_id)
         if subscription is None:
             return None, None
 

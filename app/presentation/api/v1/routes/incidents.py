@@ -173,9 +173,7 @@ async def update_incident_status(
     if incident is None:
         raise HTTPException(status_code=404, detail="Incident not found")
     new_status = IncidentStatus(body.get("status", incident.status.value))
-    await repo.update_status(
-        get_user_tenant_id(current_user), incident_id, new_status
-    )
+    await repo.update_status(get_user_tenant_id(current_user), incident_id, new_status)
     log_security_event(
         "incident_status_updated",
         tenant_id=get_user_tenant_id(current_user),

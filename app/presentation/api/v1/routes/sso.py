@@ -66,7 +66,11 @@ async def authorize(
         tenant_id=None,
         redirect_uri=redirect_uri,
     )
-    if result.result != SSOFlowResult.PENDING or not result.authorization_url or not result.state_token:  # noqa: E501
+    if (
+        result.result != SSOFlowResult.PENDING
+        or not result.authorization_url
+        or not result.state_token
+    ):  # noqa: E501
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=result.error or "Failed to initiate SSO flow.",
@@ -115,9 +119,11 @@ async def callback(
         from app.infrastructure.persistence.repositories.sqlalchemy_session_repository import (
             SQLAlchemySessionService,
         )
+
         session_service = SQLAlchemySessionService(session)
 
     from app.infrastructure.security.bcrypt_password_hasher import BcryptPasswordHasher
+
     use_case = OIDCAuthUseCase(
         user_repository=user_repository,
         token_service=token_service,

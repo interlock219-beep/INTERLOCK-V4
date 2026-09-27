@@ -2,18 +2,17 @@ from __future__ import annotations
 
 import secrets
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, cast
 
 from app.domain.entities.chaos_types import (
     ChaosExperiment,
     ChaosFault,
     ChaosResult,
     ChaosScenario,
-    ChaosType,
+    DigitalTwin,
     ExperimentStatus,
     SimulationResult,
     SimulationScenario,
-    DigitalTwin,
 )
 
 
@@ -79,9 +78,7 @@ class ChaosSimulationEngine:
                 hypothesized_impact=experiment.hypothesized_impact,
                 actual_impact=impact,
                 steady_state_verified_before=bool(steady_state_before),
-                steady_state_before=steady_state_before,
                 steady_state_verified_after=bool(steady_state_after),
-                steady_state_after=steady_state_after,
             )
 
         except Exception as exc:
@@ -116,11 +113,13 @@ class ChaosSimulationEngine:
     ) -> str:
         """Inject a fault into the system (or simulate it)."""
         if self._adapter is not None:
-            method = getattr(self._adapter, 'inject_fault', None)
+            method = getattr(self._adapter, "inject_fault", None)
             if method is not None:
-                return await method(tenant_id, fault)
+                return cast(str, await method(tenant_id, fault))
 
-        fault_type_name = fault.fault_type.value if hasattr(fault.fault_type, 'value') else str(fault.fault_type)
+        fault_type_name = (
+            fault.fault_type.value if hasattr(fault.fault_type, "value") else str(fault.fault_type)
+        )
         return f"Simulated {fault_type_name} on {fault.target_resource}"
 
     async def _wait_or_proceed(self, duration_seconds: int) -> None:
@@ -195,9 +194,9 @@ class ChaosSimulationEngine:
     ) -> str:
         """Simulate the twin's evolution and determine the actual outcome."""
         if self._adapter is not None:
-            method = getattr(self._adapter, 'simulate', None)
+            method = getattr(self._adapter, "simulate", None)
             if method is not None:
-                return await method(twin, scenario, events)
+                return cast(str, await method(twin, scenario, events))
 
         failure_modes = set(twin.failure_modes)
         event_types = {e.get("type", "") for e in events}
@@ -254,7 +253,7 @@ class ChaosSimulationEngine:
                 accuracy = 0.5
             accuracy = max(accuracy, 0.0)
 
-        score = (float(base) * 0.5 + accuracy * 0.5)
+        score = float(base) * 0.5 + accuracy * 0.5
         return round(max(0.5, min(1.0, score)), 2)
 
     def _generate_recommendations(

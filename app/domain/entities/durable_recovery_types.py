@@ -186,7 +186,7 @@ class PlanCoordinationState:
         status: DurablePlanStatus,
         completed_at: datetime | None = None,
         **overrides: Any,
-    ) -> "PlanCoordinationState":
+    ) -> PlanCoordinationState:
         return PlanCoordinationState(
             plan_id=self.plan_id,
             tenant_id=self.tenant_id,
@@ -195,20 +195,14 @@ class PlanCoordinationState:
             coordinator_worker_id=overrides.get(
                 "coordinator_worker_id", self.coordinator_worker_id
             ),
-            active_worker_id=overrides.get(
-                "active_worker_id", self.active_worker_id
-            ),
+            active_worker_id=overrides.get("active_worker_id", self.active_worker_id),
             lease_id=overrides.get("lease_id", self.lease_id),
             lock_mode=overrides.get("lock_mode", self.lock_mode),
             started_at=self.started_at,
             completed_at=completed_at or self.completed_at,
             stop_conditions=overrides.get("stop_conditions", self.stop_conditions),
-            completed_steps=overrides.get(
-                "completed_steps", self.completed_steps
-            ),
+            completed_steps=overrides.get("completed_steps", self.completed_steps),
             total_steps=overrides.get("total_steps", self.total_steps),
-            verification_passed=overrides.get(
-                "verification_passed", self.verification_passed
-            ),
+            verification_passed=overrides.get("verification_passed", self.verification_passed),
             coordination_metadata=self.coordination_metadata,
         )

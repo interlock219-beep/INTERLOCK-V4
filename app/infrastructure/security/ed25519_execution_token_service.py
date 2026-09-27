@@ -1,4 +1,4 @@
-﻿import base64
+import base64
 import hashlib
 import json
 import logging
@@ -13,7 +13,6 @@ from app.application.interfaces.execution_token_service import ExecutionTokenSer
 from app.application.interfaces.key_manager import KeyManager
 from app.application.interfaces.nonce_store import NonceStore
 from app.domain.exceptions.domain_errors import ExecutionTokenError
-
 
 logger = logging.getLogger(__name__)
 
@@ -81,9 +80,7 @@ class Ed25519ExecutionTokenService(ExecutionTokenService):
         if not tenant_id or not str(tenant_id).strip():
             raise ValueError("tenant_id must be a non-empty string.")
         if len(str(tenant_id)) > _MAX_TENANT_ID_LENGTH:
-            raise ValueError(
-                f"tenant_id must be at most {_MAX_TENANT_ID_LENGTH} characters."
-            )
+            raise ValueError(f"tenant_id must be at most {_MAX_TENANT_ID_LENGTH} characters.")
 
     @staticmethod
     def compute_resource_hash(resource: str) -> str:
@@ -157,12 +154,8 @@ class Ed25519ExecutionTokenService(ExecutionTokenService):
         if resource_hash is not None:
             payload["resource_hash"] = resource_hash
 
-        header_segment = _b64url_encode(
-            json.dumps(header, separators=(",", ":")).encode("ascii")
-        )
-        payload_segment = _b64url_encode(
-            json.dumps(payload, separators=(",", ":")).encode("ascii")
-        )
+        header_segment = _b64url_encode(json.dumps(header, separators=(",", ":")).encode("ascii"))
+        payload_segment = _b64url_encode(json.dumps(payload, separators=(",", ":")).encode("ascii"))
         signing_input = f"{header_segment}.{payload_segment}".encode("ascii")
 
         signature = self._key_manager.sign(signing_input, key_id)
@@ -252,9 +245,7 @@ class Ed25519ExecutionTokenService(ExecutionTokenService):
             )
         if expected_tenant_id is not None:
             if not token_tenant_id:
-                raise ExecutionTokenError(
-                    "Token missing tenant_id: cross-tenant token use denied."
-                )
+                raise ExecutionTokenError("Token missing tenant_id: cross-tenant token use denied.")
             if str(token_tenant_id) != str(expected_tenant_id):
                 raise ExecutionTokenError(
                     "Token tenant_id mismatch: cross-tenant token use detected and denied."
@@ -282,9 +273,8 @@ class Ed25519ExecutionTokenService(ExecutionTokenService):
                 )
 
         token_session_id = payload.get("session_id")
-        if expected_session_id is not None:
-            if token_session_id != expected_session_id:
-                raise ExecutionTokenError("Token session mismatch.")
+        if expected_session_id is not None and token_session_id != expected_session_id:
+            raise ExecutionTokenError("Token session mismatch.")
 
         if expected_param_hash is not None:
             token_param_hash = payload.get("param_hash")

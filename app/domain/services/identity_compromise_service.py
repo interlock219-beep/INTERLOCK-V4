@@ -4,7 +4,7 @@ import logging
 from datetime import UTC, datetime
 from typing import Any
 
-from app.domain.entities.agent import Agent, AgentType, TrustLevel
+from app.domain.entities.agent import AgentType, TrustLevel
 from app.domain.repositories.agent_repository import AgentRepository
 from app.infrastructure.observability.metrics import metrics
 
@@ -56,44 +56,50 @@ class IdentityCompromiseService:
             return indicators
 
         if agent.trust_level in (TrustLevel.UNVERIFIED, TrustLevel.DISCOVERED):
-            indicators.append(IdentityCompromiseIndicator(
-                agent_id=agent_id,
-                indicator_type="low_trust_level",
-                severity="medium",
-                description=(
-                    f"Agent has low trust level: {agent.trust_level.value}"
-                ),
-                detected_at=datetime.now(UTC),
-                evidence={"trust_level": agent.trust_level.value},
-            ))
+            indicators.append(
+                IdentityCompromiseIndicator(
+                    agent_id=agent_id,
+                    indicator_type="low_trust_level",
+                    severity="medium",
+                    description=(f"Agent has low trust level: {agent.trust_level.value}"),
+                    detected_at=datetime.now(UTC),
+                    evidence={"trust_level": agent.trust_level.value},
+                )
+            )
 
         if agent.agent_type == AgentType.UNKNOWN:
-            indicators.append(IdentityCompromiseIndicator(
-                agent_id=agent_id,
-                indicator_type="unknown_agent_type",
-                severity="low",
-                description="Agent type is unknown",
-                detected_at=datetime.now(UTC),
-                evidence={"agent_type": agent.agent_type.value},
-            ))
+            indicators.append(
+                IdentityCompromiseIndicator(
+                    agent_id=agent_id,
+                    indicator_type="unknown_agent_type",
+                    severity="low",
+                    description="Agent type is unknown",
+                    detected_at=datetime.now(UTC),
+                    evidence={"agent_type": agent.agent_type.value},
+                )
+            )
 
         if not agent.description:
-            indicators.append(IdentityCompromiseIndicator(
-                agent_id=agent_id,
-                indicator_type="missing_description",
-                severity="low",
-                description="Agent has no description",
-                detected_at=datetime.now(UTC),
-            ))
+            indicators.append(
+                IdentityCompromiseIndicator(
+                    agent_id=agent_id,
+                    indicator_type="missing_description",
+                    severity="low",
+                    description="Agent has no description",
+                    detected_at=datetime.now(UTC),
+                )
+            )
 
         if not agent.owner_user_id:
-            indicators.append(IdentityCompromiseIndicator(
-                agent_id=agent_id,
-                indicator_type="unowned_agent",
-                severity="medium",
-                description="Agent has no assigned owner",
-                detected_at=datetime.now(UTC),
-            ))
+            indicators.append(
+                IdentityCompromiseIndicator(
+                    agent_id=agent_id,
+                    indicator_type="unowned_agent",
+                    severity="medium",
+                    description="Agent has no assigned owner",
+                    detected_at=datetime.now(UTC),
+                )
+            )
 
         if indicators:
             logger.warning(
@@ -110,18 +116,14 @@ class IdentityCompromiseService:
         tenant_id: str,
     ) -> dict[str, Any]:
         """Get a summary of compromise indicators across all agents."""
-        agents, _ = await self._agent_repo.list_by_tenant(
-            tenant_id, limit=1000, offset=0
-        )
+        agents, _ = await self._agent_repo.list_by_tenant(tenant_id, limit=1000, offset=0)
 
         total_agents = len(agents)
         compromised_count = 0
         indicators_by_type: dict[str, int] = {}
 
         for agent in agents:
-            agent_indicators = await self.check_compromise_indicators(
-                tenant_id, agent.agent_id
-            )
+            agent_indicators = await self.check_compromise_indicators(tenant_id, agent.agent_id)
             if agent_indicators:
                 compromised_count += 1
                 for indicator in agent_indicators:

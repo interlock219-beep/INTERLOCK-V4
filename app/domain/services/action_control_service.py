@@ -78,8 +78,7 @@ class ActionControlService:
             return {
                 "decision": AuthorizationDecision.REQUIRE_HITL.value,
                 "reason": (
-                    f"Risk evaluation requires approval: "
-                    f"{'; '.join(risk_result['explanations'])}"
+                    f"Risk evaluation requires approval: {'; '.join(risk_result['explanations'])}"
                 ),
                 "risk_score": risk_result["score"],
                 "risk_signals": risk_result["signals"],

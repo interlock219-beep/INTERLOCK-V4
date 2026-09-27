@@ -41,9 +41,7 @@ class ProtectedActionModel(Base):
     # Surgical recovery extensions
     workflow_step: Mapped[int] = mapped_column(Integer(), nullable=True)
     execution_depth: Mapped[int] = mapped_column(Integer(), nullable=True)
-    requires_approval: Mapped[bool] = mapped_column(
-        Boolean(), nullable=False, server_default="0"
-    )
+    requires_approval: Mapped[bool] = mapped_column(Boolean(), nullable=False, server_default="0")
     approval_deadline: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )

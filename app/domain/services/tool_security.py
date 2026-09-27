@@ -122,8 +122,11 @@ class ToolArgumentValidator:
                     if "path" in lowered_key or "file" in lowered_key:
                         self.validate_path(item)
                     url_prefixes = ("http://", "https://", "file://", "ftp://", "javascript:")
-                    if ("url" in lowered_key or "link" in lowered_key
-                            or lowered_value.startswith(url_prefixes)):
+                    if (
+                        "url" in lowered_key
+                        or "link" in lowered_key
+                        or lowered_value.startswith(url_prefixes)
+                    ):
                         self.validate_url(item)
                     if lowered_key == "query" and self._looks_like_sql(item):
                         self.validate_sql(item)

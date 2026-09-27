@@ -83,9 +83,7 @@ class CascadeContainmentService:
                     await self._grant_repo.revoke(tenant_id, grant.grant_id, initiated_by)
                     affected_authorities.append(grant.grant_id)
 
-            child_agents, _ = await self._agent_repo.list_by_tenant(
-                tenant_id, limit=1000, offset=0
-            )
+            child_agents, _ = await self._agent_repo.list_by_tenant(tenant_id, limit=1000, offset=0)
             for child in child_agents:
                 if child.parent_agent_id == target_agent_id:
                     await self._agent_repo.update_status(
@@ -97,9 +95,7 @@ class CascadeContainmentService:
                     )
                     for grant in child_grants:
                         if grant.status == AuthorityStatus.ACTIVE:
-                            await self._grant_repo.revoke(
-                                tenant_id, grant.grant_id, initiated_by
-                            )
+                            await self._grant_repo.revoke(tenant_id, grant.grant_id, initiated_by)
                             affected_authorities.append(grant.grant_id)
 
             if self._token_repo is not None:
@@ -245,12 +241,14 @@ class CascadeContainmentService:
                         UserSessionModel.revoked == False,  # noqa: E712
                     )
                     for model in session.scalars(session_stmt).all():
-                        active_sessions.append({
-                            "session_id": model.session_id,
-                            "device_info": model.device_info,
-                            "ip_address": model.ip_address,
-                            "created_at": model.created_at.isoformat(),
-                        })
+                        active_sessions.append(
+                            {
+                                "session_id": model.session_id,
+                                "device_info": model.device_info,
+                                "ip_address": model.ip_address,
+                                "created_at": model.created_at.isoformat(),
+                            }
+                        )
             except Exception as exc:
                 logger.debug("Failed to load active sessions: %s", exc)
 
@@ -266,12 +264,14 @@ class CascadeContainmentService:
                         list(session.execute(approval_stmt).scalars().all()),
                     )
                     for approval_model in approval_models:
-                        pending_approvals.append({
-                            "request_id": approval_model.request_id,
-                            "risk_score": approval_model.risk_score,
-                            "status": approval_model.status,
-                            "created_at": approval_model.created_at.isoformat(),
-                        })
+                        pending_approvals.append(
+                            {
+                                "request_id": approval_model.request_id,
+                                "risk_score": approval_model.risk_score,
+                                "status": approval_model.status,
+                                "created_at": approval_model.created_at.isoformat(),
+                            }
+                        )
             except Exception as exc:
                 logger.debug("Failed to load pending approvals: %s", exc)
 
@@ -280,13 +280,15 @@ class CascadeContainmentService:
                 tenant_id, agent_id, status=TokenStatus.ACTIVE, limit=1000, offset=0
             )
             for token in tokens:
-                active_tokens.append({
-                    "token_id": token.token_id,
-                    "jti": token.jti,
-                    "tool": token.tool,
-                    "issued_at": token.issued_at.isoformat(),
-                    "expires_at": token.expires_at.isoformat() if token.expires_at else None,
-                })
+                active_tokens.append(
+                    {
+                        "token_id": token.token_id,
+                        "jti": token.jti,
+                        "tool": token.tool,
+                        "issued_at": token.issued_at.isoformat(),
+                        "expires_at": token.expires_at.isoformat() if token.expires_at else None,
+                    }
+                )
 
         if self._action_repo is not None:
             actions, _ = await self._action_repo.list_by_agent(
@@ -294,14 +296,16 @@ class CascadeContainmentService:
             )
             for action in actions:
                 if action.status in (ActionStatus.PENDING, ActionStatus.EVALUATING):
-                    pending_actions.append({
-                        "action_id": action.action_id,
-                        "tool": action.tool,
-                        "resource": action.resource,
-                        "action_type": action.action_type,
-                        "status": action.status.value,
-                        "created_at": action.created_at.isoformat(),
-                    })
+                    pending_actions.append(
+                        {
+                            "action_id": action.action_id,
+                            "tool": action.tool,
+                            "resource": action.resource,
+                            "action_type": action.action_type,
+                            "status": action.status.value,
+                            "created_at": action.created_at.isoformat(),
+                        }
+                    )
 
         return {
             "agent_id": agent_id,

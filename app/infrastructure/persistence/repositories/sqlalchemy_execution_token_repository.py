@@ -46,6 +46,27 @@ class SQLAlchemyExecutionTokenRepository(ExecutionTokenRepository):
         models = self._session.scalars(stmt).all()
         return [self._to_entity(m) for m in models], total
 
+    async def list_by_tenant(
+        self,
+        tenant_id: str,
+        status: TokenStatus | None = None,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> tuple[list[ExecutionToken], int]:
+        stmt = select(ExecutionTokenModel).where(
+            ExecutionTokenModel.tenant_id == tenant_id,
+        )
+        count_stmt = select(ExecutionTokenModel).where(
+            ExecutionTokenModel.tenant_id == tenant_id,
+        )
+        if status is not None:
+            stmt = stmt.where(ExecutionTokenModel.status == status.value)
+            count_stmt = count_stmt.where(ExecutionTokenModel.status == status.value)
+        total = len(self._session.scalars(count_stmt).all())
+        stmt = stmt.order_by(ExecutionTokenModel.issued_at.desc()).limit(limit).offset(offset)
+        models = self._session.scalars(stmt).all()
+        return [self._to_entity(m) for m in models], total
+
     async def save(self, token: ExecutionToken) -> ExecutionToken:
         stmt = select(ExecutionTokenModel).where(ExecutionTokenModel.token_id == token.token_id)
         model = self._session.scalar(stmt)

@@ -74,9 +74,7 @@ def _get_payment_provider(settings: Settings) -> PaymentProvider:
             publishable_key=settings.stripe_publishable_key,
         )
     if settings.app_env not in ("development", "test"):
-        raise ValueError(
-            "Stripe credentials must be configured in non-development environments."
-        )
+        raise ValueError("Stripe credentials must be configured in non-development environments.")
     return MockPaymentProvider(
         publishable_key=settings.stripe_publishable_key,
         webhook_secret=settings.stripe_webhook_secret or "whsec_mock",
@@ -98,6 +96,7 @@ async def get_subscription(
     session: Annotated[Session, Depends(_get_session)],
 ) -> SubscriptionResponse | None:
     from app.application.use_cases.get_subscription import GetSubscriptionUseCase
+
     use_case = GetSubscriptionUseCase(
         SQLAlchemySubscriptionRepository(session),
         SQLAlchemyPlanRepository(session),
@@ -112,6 +111,7 @@ async def get_usage(
     session: Annotated[Session, Depends(_get_session)],
 ) -> list[UsageResponse]:
     from app.application.use_cases.get_usage import GetUsageUseCase
+
     use_case = GetUsageUseCase(
         SQLAlchemyUsageRepository(session),
         SQLAlchemySubscriptionRepository(session),
@@ -159,6 +159,7 @@ async def create_checkout(
 ) -> CreateCheckoutResponse:
     provider = _get_payment_provider(settings)
     from app.application.use_cases.create_checkout_session import CreateCheckoutSessionUseCase
+
     use_case = CreateCheckoutSessionUseCase(
         SQLAlchemyPlanRepository(session),
         SQLAlchemySubscriptionRepository(session),
@@ -181,6 +182,7 @@ async def cancel_subscription(
     session: Annotated[Session, Depends(_get_session)],
 ) -> CancelSubscriptionResponse:
     from app.application.use_cases.cancel_subscription import CancelSubscriptionUseCase
+
     use_case = CancelSubscriptionUseCase(SQLAlchemySubscriptionRepository(session))
     try:
         return await use_case.execute(current_user.id)
@@ -204,6 +206,7 @@ async def billing_webhook(
 
     provider = _get_payment_provider(settings)
     from app.application.use_cases.handle_webhook import HandleWebhookUseCase
+
     use_case = HandleWebhookUseCase(
         SQLAlchemyWebhookRepository(session),
         SQLAlchemySubscriptionRepository(session),
@@ -243,9 +246,7 @@ async def create_portal_session(
             current_user.id, current_user.tenant_id, customer_id
         )
     except ValueError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)
-        ) from exc
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     return PortalSessionResponseDTO(url=result.url, expires_at=result.expires_at)
 
 

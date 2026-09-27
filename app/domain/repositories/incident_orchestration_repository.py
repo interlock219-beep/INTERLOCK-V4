@@ -23,9 +23,7 @@ class IncidentOrchestrationRepository(ABC):
     ) -> IncidentOrchestrationPlan | None: ...
 
     @abstractmethod
-    async def save_step(
-        self, tenant_id: str, step: OrchestrationStep
-    ) -> OrchestrationStep: ...
+    async def save_step(self, tenant_id: str, step: OrchestrationStep) -> OrchestrationStep: ...
 
     @abstractmethod
     async def list_steps(

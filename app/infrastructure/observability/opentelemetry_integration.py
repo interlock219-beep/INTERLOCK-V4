@@ -23,9 +23,8 @@ class OpenTelemetryIntegration:
 
     def _try_init(self) -> None:
         try:
-            from opentelemetry import trace, metrics
+            from opentelemetry import metrics, trace
             from opentelemetry.sdk.trace import TracerProvider
-            from opentelemetry.sdk.metrics import MeterProvider
 
             trace.set_tracer_provider(TracerProvider())
             self._tracer = trace.get_tracer(self._service_name)
@@ -49,7 +48,12 @@ class OpenTelemetryIntegration:
                 span.set_attribute(key, value)
         return span
 
-    def record_counter(self, name: str, value: int = 1, attributes: dict[str, Any] | None = None) -> None:
+    def record_counter(
+        self,
+        name: str,
+        value: int = 1,
+        attributes: dict[str, Any] | None = None,
+    ) -> None:
         """Record a counter metric if OTel is enabled."""
         if not self._enabled or self._meter is None:
             return
@@ -59,7 +63,12 @@ class OpenTelemetryIntegration:
         except Exception as exc:
             logger.debug("Failed to record counter %s: %s", name, exc)
 
-    def record_histogram(self, name: str, value: float, attributes: dict[str, Any] | None = None) -> None:
+    def record_histogram(
+        self,
+        name: str,
+        value: float,
+        attributes: dict[str, Any] | None = None,
+    ) -> None:
         """Record a histogram metric if OTel is enabled."""
         if not self._enabled or self._meter is None:
             return
@@ -75,6 +84,7 @@ class OpenTelemetryIntegration:
             return
         try:
             from opentelemetry.trace import get_tracer_provider
+
             provider = get_tracer_provider()
             if hasattr(provider, "shutdown"):
                 provider.shutdown()

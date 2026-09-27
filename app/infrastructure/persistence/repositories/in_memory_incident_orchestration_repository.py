@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from typing import Any
-
 from app.domain.entities.incident_orchestration_types import (
     IncidentOrchestrationPlan,
     OrchestrationResult,
@@ -37,10 +35,14 @@ class InMemoryIncidentOrchestrationRepository(IncidentOrchestrationRepository):
             return plan
         return None
 
-    async def save_step(
-        self, tenant_id: str, step: OrchestrationStep
-    ) -> OrchestrationStep:
-        plan_id = step.plan_id if hasattr(step, 'plan_id') else step.orchestration_id if hasattr(step, 'orchestration_id') else ''
+    async def save_step(self, tenant_id: str, step: OrchestrationStep) -> OrchestrationStep:
+        plan_id = (
+            step.plan_id
+            if hasattr(step, "plan_id")
+            else step.orchestration_id
+            if hasattr(step, "orchestration_id")
+            else ""
+        )
         if plan_id:
             if plan_id not in self._steps:
                 self._steps[plan_id] = []
@@ -64,15 +66,11 @@ class InMemoryIncidentOrchestrationRepository(IncidentOrchestrationRepository):
         page = steps[offset : offset + limit]
         return page, total
 
-    async def save_result(
-        self, tenant_id: str, result: OrchestrationResult
-    ) -> OrchestrationResult:
+    async def save_result(self, tenant_id: str, result: OrchestrationResult) -> OrchestrationResult:
         self._results[result.orchestration_id] = result
         return result
 
-    async def get_result(
-        self, tenant_id: str, orchestration_id: str
-    ) -> OrchestrationResult | None:
+    async def get_result(self, tenant_id: str, orchestration_id: str) -> OrchestrationResult | None:
         result = self._results.get(orchestration_id)
         if result is not None and result.tenant_id == tenant_id:
             return result

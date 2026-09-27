@@ -5,6 +5,7 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, status
 
 from app.domain.services.risk_engine import RiskEngine
+from app.domain.value_objects.authorization_context import AuthorizationContext
 from app.presentation.api.dependencies.auth import CurrentUser
 
 router = APIRouter(prefix="/risk", tags=["Risk"])
@@ -24,9 +25,18 @@ async def evaluate_risk(
             detail=f"Missing required fields: {missing}",
         )
 
+    auth_context = AuthorizationContext(
+        user_id=current_user.id,
+        agent_id=context["agent_id"],
+        proposed_tool=context["tool"],
+        tenant_id=current_user.tenant_id,
+        action=context["action"],
+        resource=context["resource"],
+        user_role=current_user.role,
+    )
     engine = RiskEngine()
     result = engine.evaluate(
-        context=context,
+        context=auth_context,
         agent_history=context.get("agent_history"),
         authority_grants=context.get("authority_grants"),
         recent_actions=context.get("recent_actions"),

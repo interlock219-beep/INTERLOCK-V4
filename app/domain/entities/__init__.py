@@ -126,4 +126,3 @@ __all__ = [
     "VerificationResult",
     "WebhookEvent",
 ]
-

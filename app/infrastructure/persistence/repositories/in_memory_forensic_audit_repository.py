@@ -1,8 +1,5 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime
-from typing import Any
-
 from app.domain.entities.forensic_types import (
     AuditLogEntry,
     EvidenceChainLink,
@@ -25,18 +22,14 @@ class InMemoryForensicAuditRepository(ForensicAuditRepository):
         self._snapshots: dict[str, list[MerkleTreeSnapshot]] = {}
         self._chain_links: list[EvidenceChainLink] = []
 
-    async def append_entry(
-        self, tenant_id: str, entry: AuditLogEntry
-    ) -> AuditLogEntry:
+    async def append_entry(self, tenant_id: str, entry: AuditLogEntry) -> AuditLogEntry:
         if tenant_id not in self._entries:
             self._entries[tenant_id] = []
         self._entries[tenant_id].append(entry)
         self._index[entry.entry_id] = entry
         return entry
 
-    async def get_entry(
-        self, tenant_id: str, entry_id: str
-    ) -> AuditLogEntry | None:
+    async def get_entry(self, tenant_id: str, entry_id: str) -> AuditLogEntry | None:
         entry = self._index.get(entry_id)
         if entry is not None and entry.tenant_id == tenant_id:
             return entry
@@ -60,18 +53,12 @@ class InMemoryForensicAuditRepository(ForensicAuditRepository):
         limit: int = 500,
         offset: int = 0,
     ) -> tuple[list[AuditLogEntry], int]:
-        entries = [
-            e
-            for e in self._entries.get(tenant_id, [])
-            if e.event_type.value == event_type
-        ]
+        entries = [e for e in self._entries.get(tenant_id, []) if e.event_type.value == event_type]
         total = len(entries)
         page = entries[offset : offset + limit]
         return page, total
 
-    async def get_latest_entry(
-        self, tenant_id: str
-    ) -> AuditLogEntry | None:
+    async def get_latest_entry(self, tenant_id: str) -> AuditLogEntry | None:
         entries = self._entries.get(tenant_id, [])
         return entries[-1] if entries else None
 
@@ -88,14 +75,10 @@ class InMemoryForensicAuditRepository(ForensicAuditRepository):
                 self._snapshots[tenant_id] = []
             self._snapshots[tenant_id].append(snapshot)
 
-    async def get_latest_merkle_root(
-        self, tenant_id: str
-    ) -> tuple[str, int] | None:
+    async def get_latest_merkle_root(self, tenant_id: str) -> tuple[str, int] | None:
         return self._merkle_roots.get(tenant_id)
 
-    async def save_chain_link(
-        self, tenant_id: str, link: EvidenceChainLink
-    ) -> EvidenceChainLink:
+    async def save_chain_link(self, tenant_id: str, link: EvidenceChainLink) -> EvidenceChainLink:
         self._chain_links.append(link)
         return link
 
@@ -110,10 +93,7 @@ class InMemoryForensicAuditRepository(ForensicAuditRepository):
             link
             for link in self._chain_links
             if link.tenant_id == tenant_id
-            and (
-                link.parent_evidence_id == evidence_id
-                or link.child_evidence_id == evidence_id
-            )
+            and (link.parent_evidence_id == evidence_id or link.child_evidence_id == evidence_id)
         ]
         total = len(matches)
         page = matches[offset : offset + limit]

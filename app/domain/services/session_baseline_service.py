@@ -28,7 +28,7 @@ class SessionBaselineService:
     """Establishes and compares session behavioral baselines."""
 
     def establish_baseline(
-        self, agent_id: str, session_id: str, actions: list[dict]
+        self, agent_id: str, session_id: str, actions: list[dict[str, Any]]
     ) -> SessionBaseline:
         tools = [a.get("tool", "") for a in actions]
         resources = [a.get("resource", "") for a in actions]
@@ -48,10 +48,10 @@ class SessionBaselineService:
 
         intervals = []
         for i in range(1, len(timestamps)):
-            if isinstance(timestamps[i], (int, float)) and isinstance(
-                timestamps[i - 1], (int, float)
-            ):
-                intervals.append(timestamps[i] - timestamps[i - 1])
+            prev = timestamps[i - 1]
+            curr = timestamps[i]
+            if isinstance(prev, (int, float)) and isinstance(curr, (int, float)):
+                intervals.append(curr - prev)
 
         return SessionBaseline(
             agent_id=agent_id,
@@ -69,9 +69,9 @@ class SessionBaselineService:
         self,
         agent_id: str,
         session_id: str,
-        current_actions: list[dict],
+        current_actions: list[dict[str, Any]],
         baseline: SessionBaseline,
-    ) -> list[dict]:
+    ) -> list[dict[str, Any]]:
         signals = []
         baseline_tools = set(baseline.typical_tools)
         baseline_resources = set(baseline.typical_resources)
@@ -96,21 +96,21 @@ class SessionBaselineService:
                 {
                     "signal_type": "new_resource_targeting",
                     "severity": "medium",
-                    "description": f"Agent targeted {len(new_resources)} resource(s) not seen in baseline",
+                    "description": (
+                        f"Agent targeted {len(new_resources)} resource(s) not seen in baseline"
+                    ),
                     "evidence": {"unusual_resources": list(new_resources)},
                 }
             )
 
         if current_actions and baseline.avg_action_interval_seconds > 0:
-            timestamps = [
-                a.get("timestamp")
-                for a in current_actions
-                if isinstance(a.get("timestamp"), (int, float))
-            ]
+            timestamps: list[int | float] = []
+            for a in current_actions:
+                ts = a.get("timestamp")
+                if isinstance(ts, (int, float)):
+                    timestamps.append(ts)
             if len(timestamps) > 1:
-                intervals = [
-                    timestamps[i] - timestamps[i - 1] for i in range(1, len(timestamps))
-                ]
+                intervals = [timestamps[i] - timestamps[i - 1] for i in range(1, len(timestamps))]
                 avg_interval = mean(intervals)
                 if avg_interval < baseline.avg_action_interval_seconds * 0.5:
                     signals.append(

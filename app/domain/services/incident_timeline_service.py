@@ -62,8 +62,7 @@ class IncidentTimelineService:
                     timestamp=de.created_at,
                     actor="system",
                     description=(
-                        f"Agent {de.agent_id or de.resource_id} "
-                        f"discovered via {de.source.value}"
+                        f"Agent {de.agent_id or de.resource_id} discovered via {de.source.value}"
                     ),
                     details={
                         "discovery_status": de.discovery_status.value,
@@ -130,8 +129,7 @@ class IncidentTimelineService:
                     timestamp=ce.created_at,
                     actor=ce.initiated_by,
                     description=(
-                        f"Containment initiated for {ce.target_agent_id} "
-                        f"mode={ce.mode.value}"
+                        f"Containment initiated for {ce.target_agent_id} mode={ce.mode.value}"
                     ),
                     details={
                         "containment_id": ce.containment_id,

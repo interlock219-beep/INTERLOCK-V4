@@ -42,9 +42,7 @@ class CentralPolicyEngine:
                 reason="No active policy; default allow",
             )
 
-        matching_rules = [
-            r for r in policy.rules if self._matches(r.match, context)
-        ]
+        matching_rules = [r for r in policy.rules if self._matches(r.match, context)]
 
         applicable_rules = [
             r for r in matching_rules if self._conditions_met(r.conditions, confidence, risk_score)
@@ -91,9 +89,7 @@ class CentralPolicyEngine:
                 "policy_version": None,
             }
 
-        matching_rules = [
-            r for r in policy.rules if self._matches(r.match, context)
-        ]
+        matching_rules = [r for r in policy.rules if self._matches(r.match, context)]
 
         applicable_rules = [
             r for r in matching_rules if self._conditions_met(r.conditions, confidence, risk_score)
@@ -185,9 +181,7 @@ class CentralPolicyEngine:
             return False
         return not (
             match.service_id is not None
-            and not CentralPolicyEngine._value_matches(
-                match.service_id, context.service_id
-            )
+            and not CentralPolicyEngine._value_matches(match.service_id, context.service_id)
         )
 
     @staticmethod
@@ -202,14 +196,11 @@ class CentralPolicyEngine:
         return actual in expected
 
     @staticmethod
-    def _conditions_met(
-        conditions: Any, confidence: float, risk_score: float
-    ) -> bool:
+    def _conditions_met(conditions: Any, confidence: float, risk_score: float) -> bool:
         if conditions is None:
             return True
         if conditions.min_confidence is not None and confidence < conditions.min_confidence:
             return False
         return not (
-            conditions.max_risk_score is not None
-            and risk_score > conditions.max_risk_score
+            conditions.max_risk_score is not None and risk_score > conditions.max_risk_score
         )

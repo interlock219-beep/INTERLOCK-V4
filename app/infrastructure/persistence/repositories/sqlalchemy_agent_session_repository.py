@@ -18,9 +18,7 @@ class SQLAlchemyAgentSessionRepository(AgentSessionRepository):
     def __init__(self, session: Session) -> None:
         self._session = session
 
-    async def get_by_session_id(
-        self, tenant_id: str, session_id: str
-    ) -> AgentSession | None:
+    async def get_by_session_id(self, tenant_id: str, session_id: str) -> AgentSession | None:
         stmt = (
             select(AgentSessionModel)
             .where(
@@ -64,20 +62,12 @@ class SQLAlchemyAgentSessionRepository(AgentSessionRepository):
         limit: int = 100,
         offset: int = 0,
     ) -> tuple[list[AgentSession], int]:
-        stmt = select(AgentSessionModel).where(
-            AgentSessionModel.tenant_id == tenant_id
-        )
+        stmt = select(AgentSessionModel).where(AgentSessionModel.tenant_id == tenant_id)
         if status is not None:
             stmt = stmt.where(AgentSessionModel.status == status.value)
-        stmt = (
-            stmt.order_by(AgentSessionModel.created_at.desc())
-            .limit(limit)
-            .offset(offset)
-        )
+        stmt = stmt.order_by(AgentSessionModel.created_at.desc()).limit(limit).offset(offset)
         models = self._session.scalars(stmt).all()
-        count_stmt = select(AgentSessionModel).where(
-            AgentSessionModel.tenant_id == tenant_id
-        )
+        count_stmt = select(AgentSessionModel).where(AgentSessionModel.tenant_id == tenant_id)
         if status is not None:
             count_stmt = count_stmt.where(AgentSessionModel.status == status.value)
         total = len(self._session.scalars(count_stmt).all())
@@ -110,9 +100,7 @@ class SQLAlchemyAgentSessionRepository(AgentSessionRepository):
             model.status = session.status.value
             model.ended_at = session.ended_at
             model.risk_level = session.risk_level
-            model.session_metadata = (
-                json.dumps(session.metadata) if session.metadata else None
-            )
+            model.session_metadata = json.dumps(session.metadata) if session.metadata else None
         self._session.flush()
         return self._to_entity(model)
 

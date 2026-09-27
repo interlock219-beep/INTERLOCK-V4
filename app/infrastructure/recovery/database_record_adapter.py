@@ -79,9 +79,7 @@ class DatabaseRecordAdapter(RecoveryAdapter):
         import json
 
         payload_str = json.dumps(action.tool_arguments, sort_keys=True, default=str)
-        evidence_hash = hashlib.sha256(
-            f"{action.action_id}:{payload_str}".encode()
-        ).hexdigest()
+        evidence_hash = hashlib.sha256(f"{action.action_id}:{payload_str}".encode()).hexdigest()
         before_ref = action.before_state_ref or f"state:{action.action_id}:before"
         after_ref = action.after_state_ref or f"state:{action.action_id}:after"
         return RecoveryEvidence(
@@ -284,9 +282,7 @@ class DatabaseRecordAdapter(RecoveryAdapter):
             "requires_approval": Reversibility.is_conditional(action.reversibility),
         }
 
-    async def execute_recovery(
-        self, action: ProtectedAction, approved_by: str
-    ) -> dict[str, Any]:
+    async def execute_recovery(self, action: ProtectedAction, approved_by: str) -> dict[str, Any]:
         return {
             "adapter": "database_record",
             "action_id": action.action_id,

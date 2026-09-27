@@ -71,9 +71,7 @@ class DistributedRecoveryOrchestrator:
                 tenant_id=tenant_id,
                 execution_state=ExecutionState.PENDING.value,
                 idempotency_key=(
-                    evidence.idempotency_key
-                    if evidence
-                    else f"idem-{action.action_id}"
+                    evidence.idempotency_key if evidence else f"idem-{action.action_id}"
                 ),
                 target_system=evidence.target_system if evidence else "",
                 target_resource=evidence.target_resource if evidence else action.resource,
@@ -308,7 +306,8 @@ class DistributedRecoveryOrchestrator:
         evidence = await self._evidence_repo.get_by_action_id(tenant_id, step.action_id)
         if evidence is None:
             await self._update_step_state(
-                step, ExecutionState.REQUIRES_MANUAL_ACTION.value,
+                step,
+                ExecutionState.REQUIRES_MANUAL_ACTION.value,
                 error="No evidence available for step",
             )
             return {
@@ -326,7 +325,8 @@ class DistributedRecoveryOrchestrator:
                 drift = await adapter.detect_drift(action, evidence)
                 if drift.status not in (DriftStatus.NO_DRIFT, DriftStatus.INSUFFICIENT_EVIDENCE):
                     await self._update_step_state(
-                        step, ExecutionState.BLOCKED_BY_DRIFT.value,
+                        step,
+                        ExecutionState.BLOCKED_BY_DRIFT.value,
                         error=f"Drift: {drift.status.value}",
                     )
                     return {
@@ -338,10 +338,12 @@ class DistributedRecoveryOrchestrator:
 
                 conflict = await adapter.check_conflicts(action, evidence)
                 if conflict.status not in (
-                    ConflictStatus.NO_CONFLICT, ConflictStatus.INSUFFICIENT_EVIDENCE
+                    ConflictStatus.NO_CONFLICT,
+                    ConflictStatus.INSUFFICIENT_EVIDENCE,
                 ):
                     await self._update_step_state(
-                        step, ExecutionState.BLOCKED_BY_CONFLICT.value,
+                        step,
+                        ExecutionState.BLOCKED_BY_CONFLICT.value,
                         error=f"Conflict: {conflict.status.value}",
                     )
                     return {
@@ -357,7 +359,8 @@ class DistributedRecoveryOrchestrator:
 
                 new_state = result.execution_state.value
                 await self._update_step_state(
-                    step, new_state,
+                    step,
+                    new_state,
                     error=result.error,
                     verification_passed=verification.verified,
                 )
@@ -373,7 +376,8 @@ class DistributedRecoveryOrchestrator:
                 continue
             except Exception as exc:
                 await self._update_step_state(
-                    step, ExecutionState.FAILED.value,
+                    step,
+                    ExecutionState.FAILED.value,
                     error=str(exc),
                 )
                 return {
@@ -384,7 +388,8 @@ class DistributedRecoveryOrchestrator:
                 }
 
         await self._update_step_state(
-            step, ExecutionState.REQUIRES_MANUAL_ACTION.value,
+            step,
+            ExecutionState.REQUIRES_MANUAL_ACTION.value,
             error="No adapter could execute this step",
         )
         return {
@@ -432,9 +437,7 @@ class DistributedRecoveryOrchestrator:
         )
         await self._execution_repo.save(updated)
 
-    async def _verify_external_outcome(
-        self, tenant_id: str, step: DurableExecutionStep
-    ) -> bool:
+    async def _verify_external_outcome(self, tenant_id: str, step: DurableExecutionStep) -> bool:
         """Verify the outcome of a step with unknown external outcome."""
         evidence = await self._evidence_repo.get_by_action_id(tenant_id, step.action_id)
         if evidence is None:
@@ -444,6 +447,7 @@ class DistributedRecoveryOrchestrator:
             try:
                 if hasattr(adapter, "verify"):
                     from app.domain.entities.surgical_recovery_types import CompensationAction
+
                     compensation = CompensationAction(
                         action_id=step.action_id,
                         incident_action_id=step.action_id,

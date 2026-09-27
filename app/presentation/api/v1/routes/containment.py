@@ -1,18 +1,13 @@
 from __future__ import annotations
 
 from collections.abc import Generator
-from datetime import UTC, datetime
-from typing import Annotated, Any
+from dataclasses import asdict
+from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
 from app.domain.entities.containment_event import ContainmentMode
-from app.domain.repositories.agent_repository import AgentRepository
-from app.domain.repositories.authority_grant_repository import AuthorityGrantRepository
-from app.domain.repositories.containment_repository import ContainmentRepository
-from app.domain.repositories.execution_token_repository import ExecutionTokenRepository
-from app.domain.repositories.protected_action_repository import ProtectedActionRepository
 from app.domain.services.cascade_containment_service import CascadeContainmentService
 from app.infrastructure.logging.audit_logger import log_security_event
 from app.infrastructure.observability.metrics import metrics
@@ -93,7 +88,7 @@ async def contain_authority_tree(
         mode=mode.value,
     )
     metrics.increment_security_exception("authority_tree_containment")
-    return result
+    return asdict(result)
 
 
 @router.get("/blast-radius/{agent_id}")
@@ -123,9 +118,8 @@ async def contain_execution_tokens(
     tenant_id = get_user_tenant_id(current_user)
     result = await service.contain_execution_tokens(
         tenant_id=tenant_id,
-        target_agent_id=agent_id,
-        reason=reason,
-        initiated_by=str(current_user.id),
+        agent_id=agent_id,
+        dry_run=False,
     )
     metrics.increment_security_exception("execution_tokens_contained")
-    return result
+    return {"revoked_tokens": result}

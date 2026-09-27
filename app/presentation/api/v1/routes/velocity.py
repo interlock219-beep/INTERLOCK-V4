@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter
 
 from app.domain.services.velocity_tracker import VelocityTracker
 from app.presentation.api.dependencies.auth import CurrentUser

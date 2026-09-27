@@ -116,11 +116,7 @@ class SQLAlchemyPlanRepository(PlanRepository):
         return self._to_entity(model) if model else None
 
     async def list_active(self) -> list[Plan]:
-        stmt = (
-            select(PlanModel)
-            .where(PlanModel.is_active)
-            .order_by(PlanModel.price_monthly_cents)
-        )
+        stmt = select(PlanModel).where(PlanModel.is_active).order_by(PlanModel.price_monthly_cents)
         result = self._session.execute(stmt)
         return [self._to_entity(m) for m in result.scalars().all()]
 
@@ -153,9 +149,7 @@ class SQLAlchemySubscriptionRepository(SubscriptionRepository):
     async def get_by_id(
         self, subscription_id: UUID, user_id: UUID | None = None
     ) -> Subscription | None:
-        stmt = select(SubscriptionModel).where(
-            SubscriptionModel.id == subscription_id
-        )
+        stmt = select(SubscriptionModel).where(SubscriptionModel.id == subscription_id)
         if user_id is not None:
             stmt = stmt.where(SubscriptionModel.user_id == user_id)
         result = self._session.execute(stmt)
@@ -167,9 +161,7 @@ class SQLAlchemySubscriptionRepository(SubscriptionRepository):
             select(SubscriptionModel)
             .where(
                 SubscriptionModel.user_id == user_id,
-                SubscriptionModel.status.in_(
-                    ["active", "trialing", "past_due"]
-                ),
+                SubscriptionModel.status.in_(["active", "trialing", "past_due"]),
             )
             .order_by(SubscriptionModel.created_at.desc())
         )
@@ -177,12 +169,9 @@ class SQLAlchemySubscriptionRepository(SubscriptionRepository):
         model = result.scalar_one_or_none()
         return self._to_entity(model) if model else None
 
-    async def get_by_provider_id(
-        self, provider_subscription_id: str
-    ) -> Subscription | None:
+    async def get_by_provider_id(self, provider_subscription_id: str) -> Subscription | None:
         stmt = select(SubscriptionModel).where(
-            SubscriptionModel.provider_subscription_id
-            == provider_subscription_id
+            SubscriptionModel.provider_subscription_id == provider_subscription_id
         )
         result = self._session.execute(stmt)
         model = result.scalar_one_or_none()
@@ -208,9 +197,7 @@ class SQLAlchemySubscriptionRepository(SubscriptionRepository):
         return subscription
 
     async def delete(self, subscription_id: UUID, user_id: UUID | None = None) -> None:
-        stmt = select(SubscriptionModel).where(
-            SubscriptionModel.id == subscription_id
-        )
+        stmt = select(SubscriptionModel).where(SubscriptionModel.id == subscription_id)
         if user_id is not None:
             stmt = stmt.where(SubscriptionModel.user_id == user_id)
         result = self._session.execute(stmt)
@@ -230,14 +217,11 @@ class SQLAlchemyUsageRepository(UsageRepository):
         period_start: datetime,
         period_end: datetime,
     ) -> int:
-        stmt = (
-            select(func.coalesce(func.sum(UsageRecordModel.quantity), 0))
-            .where(
-                UsageRecordModel.user_id == user_id,
-                UsageRecordModel.resource_type == resource_type,
-                UsageRecordModel.period_start >= period_start,
-                UsageRecordModel.period_end <= period_end,
-            )
+        stmt = select(func.coalesce(func.sum(UsageRecordModel.quantity), 0)).where(
+            UsageRecordModel.user_id == user_id,
+            UsageRecordModel.resource_type == resource_type,
+            UsageRecordModel.period_start >= period_start,
+            UsageRecordModel.period_end <= period_end,
         )
         result = self._session.execute(stmt)
         return int(result.scalar_one())
@@ -274,18 +258,14 @@ class SQLAlchemyCheckoutRepository(CheckoutRepository):
     async def get_by_id(
         self, checkout_id: UUID, user_id: UUID | None = None
     ) -> CheckoutSession | None:
-        stmt = select(CheckoutSessionModel).where(
-            CheckoutSessionModel.id == checkout_id
-        )
+        stmt = select(CheckoutSessionModel).where(CheckoutSessionModel.id == checkout_id)
         if user_id is not None:
             stmt = stmt.where(CheckoutSessionModel.user_id == user_id)
         result = self._session.execute(stmt)
         model = result.scalar_one_or_none()
         return self._to_entity(model) if model else None
 
-    async def get_by_provider_session_id(
-        self, provider_session_id: str
-    ) -> CheckoutSession | None:
+    async def get_by_provider_session_id(self, provider_session_id: str) -> CheckoutSession | None:
         stmt = select(CheckoutSessionModel).where(
             CheckoutSessionModel.provider_session_id == provider_session_id
         )
@@ -293,9 +273,7 @@ class SQLAlchemyCheckoutRepository(CheckoutRepository):
         model = result.scalar_one_or_none()
         return self._to_entity(model) if model else None
 
-    async def get_by_user_id(
-        self, user_id: UUID
-    ) -> CheckoutSession | None:
+    async def get_by_user_id(self, user_id: UUID) -> CheckoutSession | None:
         stmt = (
             select(CheckoutSessionModel)
             .where(CheckoutSessionModel.user_id == user_id)
@@ -343,9 +321,7 @@ class SQLAlchemyCheckoutRepository(CheckoutRepository):
         return self._to_entity(model)
 
     async def delete(self, checkout_id: UUID, user_id: UUID | None = None) -> None:
-        stmt = select(CheckoutSessionModel).where(
-            CheckoutSessionModel.id == checkout_id
-        )
+        stmt = select(CheckoutSessionModel).where(CheckoutSessionModel.id == checkout_id)
         if user_id is not None:
             stmt = stmt.where(CheckoutSessionModel.user_id == user_id)
         result = self._session.execute(stmt)
@@ -361,9 +337,7 @@ class SQLAlchemyWebhookRepository(WebhookRepository):
     def _to_entity(self, model: WebhookEventModel) -> WebhookEvent:
         return _webhook_to_entity(model)
 
-    async def get_by_provider_event_id(
-        self, provider_event_id: str
-    ) -> WebhookEvent | None:
+    async def get_by_provider_event_id(self, provider_event_id: str) -> WebhookEvent | None:
         stmt = select(WebhookEventModel).where(
             WebhookEventModel.provider_event_id == provider_event_id
         )

@@ -117,9 +117,7 @@ class GitRepositoryAdapter(RecoveryAdapter):
         import hashlib
 
         payload_str = json.dumps(action.tool_arguments, sort_keys=True, default=str)
-        evidence_hash = hashlib.sha256(
-            f"{action.action_id}:{payload_str}".encode()
-        ).hexdigest()
+        evidence_hash = hashlib.sha256(f"{action.action_id}:{payload_str}".encode()).hexdigest()
 
         repo_path = self._get_repo_path(execution_context)
         before_ref = action.before_state_ref
@@ -353,10 +351,10 @@ class GitRepositoryAdapter(RecoveryAdapter):
                 and before_content.get("hash")
                 and current_hash == before_content["hash"]
             ):
-                    return DriftResult(
-                        status=DriftStatus.NO_DRIFT,
-                        current_state={"hash": current_hash, "path": file_path},
-                    )
+                return DriftResult(
+                    status=DriftStatus.NO_DRIFT,
+                    current_state={"hash": current_hash, "path": file_path},
+                )
 
             return DriftResult(
                 status=DriftStatus.NO_DRIFT,
@@ -697,9 +695,7 @@ class GitRepositoryAdapter(RecoveryAdapter):
             "requires_approval": Reversibility.is_conditional(action.reversibility),
         }
 
-    async def execute_recovery(
-        self, action: ProtectedAction, approved_by: str
-    ) -> dict[str, Any]:
+    async def execute_recovery(self, action: ProtectedAction, approved_by: str) -> dict[str, Any]:
         return {
             "adapter": "git_repository",
             "action_id": action.action_id,
@@ -749,9 +745,7 @@ class GitRepositoryAdapter(RecoveryAdapter):
             base = base_path.absolute()
             target = candidate.absolute()
         if base != target and base not in target.parents:
-            raise ValueError(
-                f"Resolved path {candidate} is outside base path {base_path}"
-            )
+            raise ValueError(f"Resolved path {candidate} is outside base path {base_path}")
 
     def _extract_file_path(self, resource: str) -> str | None:
         """Extract file path from resource identifier, rejecting traversal."""
@@ -764,7 +758,7 @@ class GitRepositoryAdapter(RecoveryAdapter):
         prefixes = ["file:", "path:", "fs:", "git:"]
         for prefix in prefixes:
             if resource.startswith(prefix):
-                extracted = resource[len(prefix):]
+                extracted = resource[len(prefix) :]
                 if ".." in extracted:
                     raise ValueError("Path traversal detected in resource identifier")
                 return extracted

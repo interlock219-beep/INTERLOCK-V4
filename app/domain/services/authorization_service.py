@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import fnmatch
 import hashlib
@@ -7,7 +7,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from app.domain.services.risk_engine import RiskEngine
-from app.domain.value_objects.authorization_context import AuthorizationContext, AgentEnvironment
+from app.domain.value_objects.authorization_context import AgentEnvironment, AuthorizationContext
 from app.domain.value_objects.authorization_decision import AuthorizationDecision
 from app.infrastructure.config.settings import get_settings
 
@@ -205,9 +205,7 @@ class AuthorizationService:
         return AuthorizationDecision.ALLOW
 
     def _check_environment(self, context: AuthorizationContext) -> AuthorizationDecision:
-        destructive_actions = getattr(
-            self._settings, "authorization_destructive_actions", []
-        )
+        destructive_actions = getattr(self._settings, "authorization_destructive_actions", [])
         if context.action not in destructive_actions:
             return AuthorizationDecision.ALLOW
         if context.environment != AgentEnvironment.PRODUCTION:
@@ -224,7 +222,8 @@ class AuthorizationService:
         if not active:
             return AuthorizationDecision.ALLOW
         incident_response_actions = getattr(
-            self._settings, "authorization_incident_response_actions",
+            self._settings,
+            "authorization_incident_response_actions",
             ["respond", "recover", "diagnose", "contain"],
         )
         if context.action in incident_response_actions:
@@ -240,7 +239,8 @@ class AuthorizationService:
             return AuthorizationDecision.DENY
         if resource_status in ("recovering", "in_progress"):
             recovery_actions = getattr(
-                self._settings, "authorization_recovery_actions",
+                self._settings,
+                "authorization_recovery_actions",
                 ["recover", "status_check", "monitor"],
             )
             if context.action in recovery_actions:
@@ -252,7 +252,7 @@ class AuthorizationService:
         dependency_state = context.dependency_state or {}
         if not dependency_state:
             return AuthorizationDecision.ALLOW
-        for dep_name, dep_status in dependency_state.items():
+        for _dep_name, dep_status in dependency_state.items():
             if dep_status in ("degraded", "down"):
                 return AuthorizationDecision.REQUIRE_HITL
             if dep_status == "unknown":
@@ -409,7 +409,9 @@ class AuthorizationService:
         )
         signals = risk_result.get("signals", [])
         signal_names = ", ".join(s.get("name", "") for s in signals[:3])
-        return f"Risk score {risk_result.get('score', 0.0)} exceeds threshold. Signals: {signal_names}"
+        return (
+            f"Risk score {risk_result.get('score', 0.0)} exceeds threshold. Signals: {signal_names}"
+        )
 
     @staticmethod
     def _previous_behavior_reason(context: AuthorizationContext) -> str:

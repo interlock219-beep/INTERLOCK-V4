@@ -19,12 +19,8 @@ class GetUsageUseCase:
         self._subscription_repository = subscription_repository
         self._plan_repository = plan_repository
 
-    async def execute(
-        self, user_id: UUID, tenant_id: str | None
-    ) -> list[UsageResponse]:
-        subscription = (
-            await self._subscription_repository.get_active_by_user(user_id)
-        )
+    async def execute(self, user_id: UUID, tenant_id: str | None) -> list[UsageResponse]:
+        subscription = await self._subscription_repository.get_active_by_user(user_id)
         if subscription is None:
             return []
 
@@ -37,10 +33,8 @@ class GetUsageUseCase:
 
         response = []
         for resource_type, limit in plan.limits.items():
-            current = (
-                await self._usage_repository.get_current_period_usage(
-                    user_id, resource_type, period_start, period_end
-                )
+            current = await self._usage_repository.get_current_period_usage(
+                user_id, resource_type, period_start, period_end
             )
             percentage = (current / limit * 100) if limit > 0 else None
             response.append(

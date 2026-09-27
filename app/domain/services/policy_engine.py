@@ -40,11 +40,7 @@ class PolicyEngine:
 
         threshold = float(payload.get("score_threshold", 0.5))
         raw_patterns = payload.get("blocked_patterns", [])
-        patterns = [
-            str(item).strip().lower()
-            for item in raw_patterns
-            if str(item).strip()
-        ]
+        patterns = [str(item).strip().lower() for item in raw_patterns if str(item).strip()]
         return cls(score_threshold=threshold, blocked_patterns=patterns)
 
     def evaluate(self, text: str) -> dict[str, Any]:
@@ -106,8 +102,7 @@ class PolicyEngine:
         return any(
             candidate
             for candidate in base64_like
-            if (len(candidate) >= 8 and "=" in candidate)
-            or len(candidate) >= 12
+            if (len(candidate) >= 8 and "=" in candidate) or len(candidate) >= 12
         )
 
     @staticmethod

@@ -51,17 +51,13 @@ class SQLAlchemyApiKeyRepository(ApiKeyRepository):
         return self._to_entity(model)
 
     async def get_by_key_hash(self, key_hash: str) -> ApiKey | None:
-        model = self._session.scalar(
-            select(ApiKeyModel).where(ApiKeyModel.key_hash == key_hash)
-        )
+        model = self._session.scalar(select(ApiKeyModel).where(ApiKeyModel.key_hash == key_hash))
         if model is None:
             return None
         return self._to_entity(model)
 
     async def get_by_key_id(self, key_id: str) -> ApiKey | None:
-        model = self._session.scalar(
-            select(ApiKeyModel).where(ApiKeyModel.key_id == key_id)
-        )
+        model = self._session.scalar(select(ApiKeyModel).where(ApiKeyModel.key_id == key_id))
         if model is None:
             return None
         return self._to_entity(model)
@@ -73,9 +69,7 @@ class SQLAlchemyApiKeyRepository(ApiKeyRepository):
         return [self._to_entity(m) for m in models]
 
     async def revoke(self, key_id: str, *, user_id: UUID | None = None) -> ApiKey | None:
-        model = self._session.scalar(
-            select(ApiKeyModel).where(ApiKeyModel.key_id == key_id)
-        )
+        model = self._session.scalar(select(ApiKeyModel).where(ApiKeyModel.key_id == key_id))
         if model is None:
             return None
         if user_id is not None and model.user_id != user_id:
@@ -86,9 +80,7 @@ class SQLAlchemyApiKeyRepository(ApiKeyRepository):
         return self._to_entity(model)
 
     async def delete_expired(self, before: datetime) -> int:
-        result = self._session.execute(
-            select(ApiKeyModel).where(ApiKeyModel.expires_at < before)
-        )
+        result = self._session.execute(select(ApiKeyModel).where(ApiKeyModel.expires_at < before))
         models = result.scalars().all()
         count = len(models)
         for model in models:

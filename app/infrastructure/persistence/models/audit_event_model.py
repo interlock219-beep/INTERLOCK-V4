@@ -18,5 +18,7 @@ class AuditEventModel(Base):
     correlation_id: Mapped[str] = mapped_column(String(64), index=True, nullable=False)
     user_id: Mapped[UUID | None] = mapped_column(Uuid(as_uuid=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), index=True, nullable=False,
+        DateTime(timezone=True),
+        index=True,
+        nullable=False,
     )

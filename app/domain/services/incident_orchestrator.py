@@ -27,12 +27,12 @@ from app.domain.services.causal_graph_service import CausalGraphService
 from app.domain.services.continuous_verification_service import (
     ContinuousVerificationService,
 )
-from app.domain.services.evidence_verification_service import EvidenceVerificationService
-from app.domain.services.recovery_intelligence import RecoveryIntelligenceService
-from app.domain.services.recovery_simulation_engine import RecoverySimulationEngine
 from app.domain.services.distributed_recovery_orchestrator import (
     DistributedRecoveryOrchestrator,
 )
+from app.domain.services.evidence_verification_service import EvidenceVerificationService
+from app.domain.services.recovery_intelligence import RecoveryIntelligenceService
+from app.domain.services.recovery_simulation_engine import RecoverySimulationEngine
 
 
 @runtime_checkable
@@ -101,7 +101,9 @@ class IncidentOrchestrator:
                 plan_id=orch_id,
                 tenant_id=tenant_id,
                 incident_id=incident.incident_id,
-                root_action_id=incident.affected_action_ids[0] if incident.affected_action_ids else "",
+                root_action_id=(
+                    incident.affected_action_ids[0] if incident.affected_action_ids else ""
+                ),
                 agent_id=incident.agent_id,
                 phases=list(OrchestrationPhase),
             )
@@ -185,11 +187,9 @@ class IncidentOrchestrator:
                     phases_skipped = [p.value for p in phases if p not in phases_completed]
                     break
 
-        outcome = self._determine_outcome(
-            phases_completed, verification_passed, evidence_preserved
-        )
+        outcome = self._determine_outcome(phases_completed, verification_passed, evidence_preserved)
 
-        result = OrchestrationResult(
+        orchestration_result = OrchestrationResult(
             orchestration_id=orch_id,
             tenant_id=tenant_id,
             incident_id=incident.incident_id,
@@ -213,8 +213,8 @@ class IncidentOrchestrator:
             },
         )
 
-        await self._repo.save_result(tenant_id, result)
-        return result
+        await self._repo.save_result(tenant_id, orchestration_result)
+        return orchestration_result
 
     async def _execute_phase(
         self,
@@ -366,10 +366,10 @@ class IncidentOrchestrator:
         plan: IncidentOrchestrationPlan,
         orch_id: str,
     ) -> dict[str, Any]:
-        if not plan.auto_recovery or self._orchestrator is None:
+        if not plan.auto_recovery or self._orchestrator is None or self._intelligence is None:
             return {
                 "executed": False,
-                "reason": "auto_recovery disabled or orchestrator not configured",
+                "reason": "auto_recovery disabled or service not configured",
             }
 
         root_action = plan.root_action_id or (
@@ -387,7 +387,9 @@ class IncidentOrchestrator:
             tenant_id, recovery_plan_id, actions, topological
         )
 
-        execution_result = await self._orchestrator.execute_durable_plan(tenant_id, recovery_plan_id)
+        execution_result = await self._orchestrator.execute_durable_plan(
+            tenant_id, recovery_plan_id
+        )
 
         return {
             "executed": True,
@@ -468,12 +470,14 @@ class IncidentOrchestrator:
         """Construct minimal action references from incident data."""
         actions: list[Any] = []
         for action_id in incident.affected_action_ids:
-            actions.append(_MinimalAction(
-                action_id=action_id,
-                resource="",
-                tool="",
-                reversibility="unknown",
-            ))
+            actions.append(
+                _MinimalAction(
+                    action_id=action_id,
+                    resource="",
+                    tool="",
+                    reversibility="unknown",
+                )
+            )
         return actions
 
     def _determine_outcome(

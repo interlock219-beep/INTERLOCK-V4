@@ -44,9 +44,13 @@ class SQLAlchemyRecoveryExecutionRepository(RecoveryExecutionRepository):
             RecoveryExecutionModel.tenant_id == tenant_id,
             RecoveryExecutionModel.plan_id == plan_id,
         )
-        count_stmt = select(func.count()).select_from(RecoveryExecutionModel).where(
-            RecoveryExecutionModel.tenant_id == tenant_id,
-            RecoveryExecutionModel.plan_id == plan_id,
+        count_stmt = (
+            select(func.count())
+            .select_from(RecoveryExecutionModel)
+            .where(
+                RecoveryExecutionModel.tenant_id == tenant_id,
+                RecoveryExecutionModel.plan_id == plan_id,
+            )
         )
         total = self._session.scalar(count_stmt) or 0
         stmt = stmt.order_by(RecoveryExecutionModel.execution_order).limit(limit).offset(offset)
@@ -64,9 +68,13 @@ class SQLAlchemyRecoveryExecutionRepository(RecoveryExecutionRepository):
             RecoveryExecutionModel.tenant_id == tenant_id,
             RecoveryExecutionModel.action_id == action_id,
         )
-        count_stmt = select(func.count()).select_from(RecoveryExecutionModel).where(
-            RecoveryExecutionModel.tenant_id == tenant_id,
-            RecoveryExecutionModel.action_id == action_id,
+        count_stmt = (
+            select(func.count())
+            .select_from(RecoveryExecutionModel)
+            .where(
+                RecoveryExecutionModel.tenant_id == tenant_id,
+                RecoveryExecutionModel.action_id == action_id,
+            )
         )
         total = self._session.scalar(count_stmt) or 0
         stmt = stmt.order_by(RecoveryExecutionModel.execution_order).limit(limit).offset(offset)

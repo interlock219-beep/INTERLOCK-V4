@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import secrets
 from datetime import UTC, datetime
@@ -198,19 +198,21 @@ class AuthorityLineageService:
         if grant is None:
             raise ValueError("Authority grant not found")
         ancestors: list[dict[str, Any]] = []
-        current = grant
-        while current.parent_authority_id:
+        current: AuthorityGrant | None = grant
+        while current is not None and current.parent_authority_id:
             parent = await self._grant_repo.get_by_grant_id(tenant_id, current.parent_authority_id)
             if parent is None:
                 break
-            ancestors.append({
-                "grant_id": parent.grant_id,
-                "grantor_agent_id": parent.grantor_agent_id,
-                "grantee_agent_id": parent.grantee_agent_id,
-                "scope": parent.scope.value,
-                "resource": parent.resource,
-                "status": parent.status.value,
-            })
+            ancestors.append(
+                {
+                    "grant_id": parent.grant_id,
+                    "grantor_agent_id": parent.grantor_agent_id,
+                    "grantee_agent_id": parent.grantee_agent_id,
+                    "scope": parent.scope.value,
+                    "resource": parent.resource,
+                    "status": parent.status.value,
+                }
+            )
             current = parent
         descendants, total = await self._grant_repo.list_descendants(
             tenant_id, grant.root_authority_id or grant.grant_id, limit=1000, offset=0
@@ -332,52 +334,8 @@ class AuthorityLineageService:
             jit_expires_at=jit_expires,
         )
 
-    async def consume_one_shot(
-        self, tenant_id: str, grant_id: str
-    ) -> AuthorityGrant | None:
-        grant = await self._grant_repo.get_by_grant_id(tenant_id, grant_id)
-        if grant is None:
-            return None
-        if grant.status != AuthorityStatus.ACTIVE:
-            return None
-        if grant.expires_at:
-            now = datetime.now(UTC)
-            expires = grant.expires_at
-            if expires.tzinfo is None:
-                expires = expires.replace(tzinfo=UTC)
-            if expires < now:
-                return None
-        if not grant.one_shot:
-            return grant
-        if grant.usage_count > 0:
-            return None
-        consumed = AuthorityGrant(
-            grant_id=grant.grant_id,
-            tenant_id=grant.tenant_id,
-            grantor_agent_id=grant.grantor_agent_id,
-            grantee_agent_id=grant.grantee_agent_id,
-            scope=grant.scope,
-            resource=grant.resource,
-            conditions=grant.conditions,
-            expires_at=grant.expires_at,
-            delegation_depth=grant.delegation_depth,
-            parent_authority_id=grant.parent_authority_id,
-            root_authority_id=grant.root_authority_id,
-            status=AuthorityStatus.ONE_SHOT_USED,
-            revoked_at=grant.revoked_at,
-            revoked_by=grant.revoked_by,
-            metadata=grant.metadata,
-            created_at=grant.created_at,
-            updated_at=datetime.now(UTC),
-            is_jit=grant.is_jit,
-            jit_created_at=grant.jit_created_at,
-            jit_expires_at=grant.jit_expires_at,
-            jit_consumed_at=datetime.now(UTC),
-            one_shot=grant.one_shot,
-            usage_count=grant.usage_count + 1,
-        )
-        await self._grant_repo.save(consumed)
-        return consumed
+    async def consume_one_shot(self, tenant_id: str, grant_id: str) -> AuthorityGrant | None:
+        return await self._grant_repo.consume_one_shot(tenant_id, grant_id)
 
     async def validate_attenuation(
         self,
@@ -407,16 +365,18 @@ class AuthorityLineageService:
         grant = await self._grant_repo.get_by_grant_id(tenant_id, grant_id)
         if grant is None:
             raise ValueError("Authority grant not found")
-        current = grant
+        current: AuthorityGrant | None = grant
         max_depth = 0
         chain: list[dict[str, Any]] = []
         while current is not None:
-            chain.append({
-                "grant_id": current.grant_id,
-                "scope": current.scope.value,
-                "status": current.status.value,
-                "delegation_depth": current.delegation_depth,
-            })
+            chain.append(
+                {
+                    "grant_id": current.grant_id,
+                    "scope": current.scope.value,
+                    "status": current.status.value,
+                    "delegation_depth": current.delegation_depth,
+                }
+            )
             if current.delegation_depth > max_depth:
                 max_depth = current.delegation_depth
             if current.parent_authority_id is None:

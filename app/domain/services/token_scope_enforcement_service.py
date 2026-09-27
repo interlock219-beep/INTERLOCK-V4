@@ -1,10 +1,10 @@
-﻿from __future__ import annotations
+from __future__ import annotations
+
 import hashlib
 import logging
 from typing import Any
 
 from app.domain.value_objects.authorization_decision import AuthorizationDecision
-
 
 logger = logging.getLogger(__name__)
 
@@ -86,8 +86,7 @@ class TokenScopeEnforcementService:
             token_action = token_payload.get("action")
             if token_action != expected_action:
                 return AuthorizationDecision.DENY, (
-                    f"Token action mismatch: expected {expected_action}, "
-                    f"got {token_action}."
+                    f"Token action mismatch: expected {expected_action}, got {token_action}."
                 )
 
         if expected_resource is not None:
@@ -107,11 +106,10 @@ class TokenScopeEnforcementService:
             return AuthorizationDecision.DENY, "Token session mismatch."
 
         token_param_hash = token_payload.get("param_hash")
-        if expected_param_hash is not None:
-            if str(token_param_hash) != str(expected_param_hash):
-                return AuthorizationDecision.DENY, (
-                    "Token parameter hash mismatch - parameter substitution detected."
-                )
+        if expected_param_hash is not None and str(token_param_hash) != str(expected_param_hash):
+            return AuthorizationDecision.DENY, (
+                "Token parameter hash mismatch - parameter substitution detected."
+            )
 
         if expected_tenant_id is not None:
             token_tenant = token_payload.get("tenant_id")

@@ -25,9 +25,7 @@ class GetCurrentUserUseCase:
             raise InactiveUserError("User account is inactive.")
 
         if user.locked_until is not None and datetime.now(tz=UTC) < user.locked_until:
-            raise AccountLockedError(
-                "Account is locked due to multiple failed login attempts."
-            )
+            raise AccountLockedError("Account is locked due to multiple failed login attempts.")
 
         return UserResponse(
             id=user.id,

@@ -32,9 +32,7 @@ class SQLAlchemyPasswordResetRepository(PasswordResetRepository):
 
     async def get_by_token_hash(self, token_hash: str) -> PasswordResetToken | None:
         model = self._session.scalar(
-            select(PasswordResetTokenModel).where(
-                PasswordResetTokenModel.token_hash == token_hash
-            )
+            select(PasswordResetTokenModel).where(PasswordResetTokenModel.token_hash == token_hash)
         )
         if model is None:
             return None
@@ -53,9 +51,7 @@ class SQLAlchemyPasswordResetRepository(PasswordResetRepository):
 
     async def delete_expired(self, before: datetime) -> int:
         result = self._session.execute(
-            delete(PasswordResetTokenModel).where(
-                PasswordResetTokenModel.expires_at < before
-            )
+            delete(PasswordResetTokenModel).where(PasswordResetTokenModel.expires_at < before)
         )
         self._session.flush()
         return result.rowcount or 0

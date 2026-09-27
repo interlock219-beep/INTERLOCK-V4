@@ -19,6 +19,15 @@ class ExecutionTokenRepository(ABC):
     ) -> tuple[list[ExecutionToken], int]: ...
 
     @abstractmethod
+    async def list_by_tenant(
+        self,
+        tenant_id: str,
+        status: TokenStatus | None = None,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> tuple[list[ExecutionToken], int]: ...
+
+    @abstractmethod
     async def save(self, token: ExecutionToken) -> ExecutionToken: ...
 
     @abstractmethod

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import hashlib
-import struct
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from enum import StrEnum
@@ -116,11 +115,8 @@ class MerkleProof:
         if len(self.path) != len(self.path_directions):
             return False
         current = self.leaf_hash
-        for sibling, is_left in zip(self.path, self.path_directions):
-            if is_left:
-                current = _hash_node(current, sibling)
-            else:
-                current = _hash_node(sibling, current)
+        for sibling, is_left in zip(self.path, self.path_directions, strict=False):
+            current = _hash_node(current, sibling) if is_left else _hash_node(sibling, current)
         return current == self.root_hash
 
 
@@ -165,8 +161,13 @@ class EvidenceChainLink:
     def chain_entry_hash(self) -> str:
         """Hash of this chain link entry."""
         payload = (
-            self.link_id + self.tenant_id + self.parent_evidence_id + self.child_evidence_id
-            + self.parent_hash + self.child_hash + self.created_at.isoformat()
+            self.link_id
+            + self.tenant_id
+            + self.parent_evidence_id
+            + self.child_evidence_id
+            + self.parent_hash
+            + self.child_hash
+            + self.created_at.isoformat()
             + self.linking_actor
         )
         return hashlib.sha256(payload.encode("utf-8")).hexdigest()

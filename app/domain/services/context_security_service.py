@@ -9,6 +9,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from app.domain.services.intent_evaluator import IntentEvaluatorService
+from app.domain.services.policy_engine import PolicyEngine
 
 logger = logging.getLogger(__name__)
 
@@ -59,6 +60,8 @@ CONTEXT_POISONING_PATTERNS = [
     r"reset\s+(your\s+)?(memory|context|knowledge)",
     r"context\s+(reset|clear|invalidate)",
 ]
+
+
 @dataclass(frozen=True, slots=True)
 class InjectionSignal:
     signal_type: str
@@ -70,7 +73,7 @@ class InjectionSignal:
 
 
 class ContextSecurityService:
-    def __init__(self, policy_engine=None):
+    def __init__(self, policy_engine: PolicyEngine | None = None) -> None:
         self._policy_engine = policy_engine
         self._known_tool_descriptions: dict[str, str] = {}
         self._session_context_hashes: dict[str, str] = {}
@@ -82,18 +85,22 @@ class ContextSecurityService:
         content_lower = content.lower()
 
         if source_trust in (
-            "untrusted_content", "retrieved_content",
-            "user_input", "agent_message"
+            "untrusted_content",
+            "retrieved_content",
+            "user_input",
+            "agent_message",
         ):
             for pattern in IntentEvaluatorService.PROMPT_INJECTION_PATTERNS:
                 if re.search(pattern, content_lower, flags=re.IGNORECASE):
-                    signals.append(InjectionSignal(
-                        signal_type="indirect_prompt_injection",
-                        severity="high",
-                        source_trust_level=source_trust,
-                        evidence=pattern,
-                        explanation=f"Prompt injection pattern found in {source_trust}",
-                    ))
+                    signals.append(
+                        InjectionSignal(
+                            signal_type="indirect_prompt_injection",
+                            severity="high",
+                            source_trust_level=source_trust,
+                            evidence=pattern,
+                            explanation=f"Prompt injection pattern found in {source_trust}",
+                        )
+                    )
 
         hidden = self._detect_hidden_instructions(content)
         signals.extend(hidden)
@@ -105,28 +112,31 @@ class ContextSecurityService:
         for pattern in HIDDEN_INSTRUCTION_PATTERNS:
             matches = re.findall(pattern, content, re.IGNORECASE)
             for match in matches:
-                signals.append(InjectionSignal(
-                    signal_type="hidden_instruction",
-                    severity="medium",
-                    source_trust_level="unknown",
-                    evidence=match[:100],
-                    explanation=f"Hidden instruction pattern detected: {pattern}",
-                ))
+                signals.append(
+                    InjectionSignal(
+                        signal_type="hidden_instruction",
+                        severity="medium",
+                        source_trust_level="unknown",
+                        evidence=match[:100],
+                        explanation=f"Hidden instruction pattern detected: {pattern}",
+                    )
+                )
         return signals
 
     def detect_malicious_document(self, content: str, content_type: str = "text") -> dict[str, Any]:
         signals = []
 
         instruction_count = sum(
-            len(re.findall(p, content, re.IGNORECASE))
-            for p in HIDDEN_INSTRUCTION_PATTERNS
+            len(re.findall(p, content, re.IGNORECASE)) for p in HIDDEN_INSTRUCTION_PATTERNS
         )
         if instruction_count > 3:
-            signals.append({
-                "type": "excessive_instructions",
-                "severity": "high",
-                "count": instruction_count,
-            })
+            signals.append(
+                {
+                    "type": "excessive_instructions",
+                    "severity": "high",
+                    "count": instruction_count,
+                }
+            )
 
         encoded = self._detect_encoded_instructions(content)
         signals.extend(encoded)
@@ -141,19 +151,21 @@ class ContextSecurityService:
             "content_type": content_type,
         }
 
-    def _detect_encoded_instructions(self, content: str) -> list[dict]:
+    def _detect_encoded_instructions(self, content: str) -> list[dict[str, Any]]:
         signals = []
         for pattern, encoding_type in ENCODING_INDICATORS:
             matches = re.findall(pattern, content, re.IGNORECASE)
             for match in matches:
                 decoded = self._try_decode(match, encoding_type)
                 if decoded and self._contains_instructions(decoded):
-                    signals.append({
-                        "type": f"encoded_instruction_{encoding_type}",
-                        "severity": "high",
-                        "encoding": encoding_type,
-                        "preview": decoded[:100],
-                    })
+                    signals.append(
+                        {
+                            "type": f"encoded_instruction_{encoding_type}",
+                            "severity": "high",
+                            "encoding": encoding_type,
+                            "preview": decoded[:100],
+                        }
+                    )
         return signals
 
     def _try_decode(self, data: str, encoding_type: str) -> str | None:
@@ -165,6 +177,7 @@ class ContextSecurityService:
                 return bytes.fromhex(data).decode("utf-8", errors="ignore")
             if encoding_type == "rot13":
                 import codecs
+
                 return codecs.decode(data, "rot13")
         except Exception:  # noqa: S110
             pass
@@ -173,8 +186,14 @@ class ContextSecurityService:
     def _contains_instructions(self, text: str) -> bool:
         text_lower = text.lower()
         instruction_keywords = [
-            "ignore", "override", "disregard", "forget",
-            "pretend", "act as", "new instructions", "instruction"
+            "ignore",
+            "override",
+            "disregard",
+            "forget",
+            "pretend",
+            "act as",
+            "new instructions",
+            "instruction",
         ]
         return any(kw in text_lower for kw in instruction_keywords)
 
@@ -195,7 +214,8 @@ class ContextSecurityService:
             "signals": signals,
             "known_hash": (
                 hashlib.sha256(known_description.encode()).hexdigest()
-                if known_description else None
+                if known_description
+                else None
             ),
             "current_hash": hashlib.sha256(tool_description.encode()).hexdigest(),
         }
@@ -205,7 +225,8 @@ class ContextSecurityService:
     ) -> dict[str, Any]:
         hierarchy_index = (
             TRUST_HIERARCHY.index(content_trust)
-            if content_trust in TRUST_HIERARCHY else len(TRUST_HIERARCHY)
+            if content_trust in TRUST_HIERARCHY
+            else len(TRUST_HIERARCHY)
         )
 
         injection_patterns = IntentEvaluatorService.PROMPT_INJECTION_PATTERNS
@@ -213,12 +234,14 @@ class ContextSecurityService:
 
         for pattern in injection_patterns:
             if re.search(pattern, content, flags=re.IGNORECASE):
-                detected_attempts.append({
-                    "pattern": pattern,
-                    "attempted_override": True,
-                    "content_trust": content_trust,
-                    "hierarchy_index": hierarchy_index,
-                })
+                detected_attempts.append(
+                    {
+                        "pattern": pattern,
+                        "attempted_override": True,
+                        "content_trust": content_trust,
+                        "hierarchy_index": hierarchy_index,
+                    }
+                )
 
         return {
             "hierarchy_index": hierarchy_index,
@@ -228,16 +251,18 @@ class ContextSecurityService:
             "allowed_to_influence": hierarchy_index < 3,
         }
 
-    def detect_context_poisoning(self, content: str) -> list[dict]:
+    def detect_context_poisoning(self, content: str) -> list[dict[str, Any]]:
         signals = []
         content_lower = content.lower()
         for pattern in CONTEXT_POISONING_PATTERNS:
             if re.search(pattern, content_lower, flags=re.IGNORECASE):
-                signals.append({
-                    "type": "context_poisoning",
-                    "pattern": pattern,
-                    "severity": "high",
-                })
+                signals.append(
+                    {
+                        "type": "context_poisoning",
+                        "pattern": pattern,
+                        "severity": "high",
+                    }
+                )
         return signals
 
     def detect_memory_poisoning(self, memory_content: str, expected_source: str) -> dict[str, Any]:

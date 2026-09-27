@@ -1,20 +1,24 @@
 from __future__ import annotations
 
 import logging
-import uuid
+from datetime import UTC, datetime, timedelta
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
 from app.domain.services.emergency_control_service import EmergencyControlService
 from app.domain.services.token_revocation_service import TokenRevocationService
-from app.domain.value_objects.authorization_decision import AuthorizationDecision
+from app.presentation.api.dependencies.auth import (
+    CurrentUser,
+    UserResponse,
+    get_user_tenant_id,
+    require_role,
+)
 
 logger = logging.getLogger("intentlock.api.emergency")
 
 emergency_router = APIRouter(prefix="/emergency", tags=["emergency-control"])
-token_revocation_router = APIRouter(
-    prefix="/token-revocation", tags=["token-revocation"]
-)
+token_revocation_router = APIRouter(prefix="/token-revocation", tags=["token-revocation"])
 
 emergency_service = EmergencyControlService()
 token_revocation_service: TokenRevocationService | None = None
@@ -25,19 +29,41 @@ def set_token_revocation_service(service: TokenRevocationService) -> None:
     token_revocation_service = service
 
 
+def _require_emergency_admin(
+    current_user: CurrentUser,
+    tenant_id: str,
+) -> str:
+    user_tenant_id = get_user_tenant_id(current_user)
+    if user_tenant_id != tenant_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Cannot access emergency controls for another tenant.",
+        )
+    if current_user.role not in ("admin", "operator"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Insufficient permissions for emergency operations.",
+        )
+    return current_user.email or current_user.id.hex
+
+
 @emergency_router.post("/deny/{tenant_id}")
 async def activate_emergency_deny(
     tenant_id: str,
-    activated_by: str,
+    current_user: CurrentUser,
+    activated_by: str = "",
     reason: str = "",
     approval_ids: list[str] | None = None,
-) -> dict:
+) -> dict[str, Any]:
     """Activate emergency deny for a tenant.
 
     Blocks ALL execution. Requires explicit approval tracking.
     AUTH-030
     """
-    result = emergency_service.activate_emergency_deny(
+    if not activated_by:
+        activated_by = current_user.email or current_user.id.hex
+    _require_emergency_admin(current_user, tenant_id)
+    result = await emergency_service.activate_emergency_deny(
         tenant_id=tenant_id,
         activated_by=activated_by,
         reason=reason,
@@ -54,11 +80,15 @@ async def activate_emergency_deny(
 @emergency_router.post("/deny/{tenant_id}/deactivate")
 async def deactivate_emergency_deny(
     tenant_id: str,
-    deactivated_by: str,
+    current_user: CurrentUser,
+    deactivated_by: str = "",
     reason: str = "",
-) -> dict:
+) -> dict[str, Any]:
     """Deactivate emergency deny. AUTH-030."""
-    result = emergency_service.deactivate_emergency_deny(
+    if not deactivated_by:
+        deactivated_by = current_user.email or current_user.id.hex
+    _require_emergency_admin(current_user, tenant_id)
+    result = await emergency_service.deactivate_emergency_deny(
         tenant_id=tenant_id,
         deactivated_by=deactivated_by,
         reason=reason,
@@ -74,22 +104,23 @@ async def deactivate_emergency_deny(
 @emergency_router.post("/allow/{tenant_id}")
 async def activate_emergency_allow(
     tenant_id: str,
-    activated_by: str,
+    current_user: CurrentUser,
     allowed_actions: list[str],
     allowed_tools: list[str] | None = None,
     allowed_agents: list[str] | None = None,
     expires_hours: int = 1,
     approval_ids: list[str] | None = None,
     reason: str = "",
-) -> dict:
+) -> dict[str, Any]:
     """Activate emergency allow with explicit controls. AUTH-031.
 
     Requires explicit action list and time limit.
     """
-    from datetime import datetime, timedelta
+    activated_by = current_user.email or current_user.id.hex
+    _require_emergency_admin(current_user, tenant_id)
 
-    expires_at = datetime.now() + timedelta(hours=expires_hours)
-    result = emergency_service.activate_emergency_allow(
+    expires_at = datetime.now(UTC) + timedelta(hours=expires_hours)
+    result = await emergency_service.activate_emergency_allow(
         tenant_id=tenant_id,
         activated_by=activated_by,
         allowed_actions=allowed_actions,
@@ -110,10 +141,14 @@ async def activate_emergency_allow(
 @emergency_router.post("/allow/{tenant_id}/deactivate")
 async def deactivate_emergency_allow(
     tenant_id: str,
-    deactivated_by: str,
-) -> dict:
+    current_user: CurrentUser,
+    deactivated_by: str = "",
+) -> dict[str, Any]:
     """Deactivate emergency allow. AUTH-031."""
-    result = emergency_service.deactivate_emergency_allow(
+    if not deactivated_by:
+        deactivated_by = current_user.email or current_user.id.hex
+    _require_emergency_admin(current_user, tenant_id)
+    result = await emergency_service.deactivate_emergency_allow(
         tenant_id=tenant_id,
         deactivated_by=deactivated_by,
     )
@@ -126,13 +161,25 @@ async def deactivate_emergency_allow(
 
 
 @emergency_router.get("/status/{tenant_id}")
-async def get_emergency_status(tenant_id: str) -> dict:
+async def get_emergency_status(
+    tenant_id: str,
+    current_user: CurrentUser,
+) -> dict[str, Any]:
     """Get emergency control status for a tenant."""
-    return emergency_service.get_emergency_status(tenant_id)
+    user_tenant_id = get_user_tenant_id(current_user)
+    if user_tenant_id != tenant_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Cannot access emergency status for another tenant.",
+        )
+    return await emergency_service.get_emergency_status(tenant_id)
 
 
 @emergency_router.get("/log")
-async def get_emergency_log(limit: int = 100) -> dict:
+async def get_emergency_log(
+    current_user: Annotated[UserResponse, Depends(require_role(["admin", "operator"]))],
+    limit: int = 100,
+) -> dict[str, Any]:
     """Get emergency control audit log."""
     return {
         "entries": emergency_service.get_emergency_log(limit),
@@ -143,12 +190,16 @@ async def get_emergency_log(limit: int = 100) -> dict:
 @token_revocation_router.post("/revoke")
 async def revoke_token(
     tenant_id: str,
+    current_user: CurrentUser,
     token_id: str,
     reason: str = "manual",
-    revoked_by: str = "system",
+    revoked_by: str = "",
     cascade: bool = False,
-) -> dict:
+) -> dict[str, Any]:
     """Revoke a token with optional cascade. TOK-012."""
+    if not revoked_by:
+        revoked_by = current_user.email or current_user.id.hex
+    _require_emergency_admin(current_user, tenant_id)
     if token_revocation_service is None:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -167,10 +218,14 @@ async def revoke_token(
 async def revoke_agent_tokens(
     tenant_id: str,
     agent_id: str,
+    current_user: CurrentUser,
     reason: str = "compromised",
-    revoked_by: str = "system",
-) -> dict:
+    revoked_by: str = "",
+) -> dict[str, Any]:
     """Revoke all tokens for an agent. TOK-012."""
+    if not revoked_by:
+        revoked_by = current_user.email or current_user.id.hex
+    _require_emergency_admin(current_user, tenant_id)
     if token_revocation_service is None:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -192,10 +247,14 @@ async def revoke_agent_tokens(
 @token_revocation_router.post("/revoke-tenant/{tenant_id}")
 async def revoke_tenant_tokens(
     tenant_id: str,
+    current_user: CurrentUser,
     reason: str = "tenant_containment",
-    revoked_by: str = "system",
-) -> dict:
+    revoked_by: str = "",
+) -> dict[str, Any]:
     """Emergency revoke all tokens in a tenant. TOK-012."""
+    if not revoked_by:
+        revoked_by = current_user.email or current_user.id.hex
+    _require_emergency_admin(current_user, tenant_id)
     if token_revocation_service is None:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -216,17 +275,22 @@ async def revoke_tenant_tokens(
 @token_revocation_router.get("/log/{tenant_id}")
 async def get_revocation_log(
     tenant_id: str,
+    current_user: CurrentUser,
     limit: int = 100,
     offset: int = 0,
-) -> dict:
+) -> dict[str, Any]:
     """Get revocation audit log. TOK-012."""
+    user_tenant_id = get_user_tenant_id(current_user)
+    if user_tenant_id != tenant_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Cannot access revocation log for another tenant.",
+        )
     if token_revocation_service is None:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Token revocation service not configured",
         )
     return {
-        "entries": await token_revocation_service.get_revocation_log(
-            tenant_id, limit, offset
-        ),
+        "entries": await token_revocation_service.get_revocation_log(tenant_id, limit, offset),
     }

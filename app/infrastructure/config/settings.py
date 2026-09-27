@@ -32,6 +32,7 @@ class Settings(BaseSettings):
     execution_token_ttl_seconds: int = Field(default=30, ge=1, le=60)
 
     key_dir: str | None = None
+    key_encryption_secret: str = Field(default="")
 
     bcrypt_rounds: int = Field(default=12, ge=10, le=15)
 
@@ -191,6 +192,14 @@ class Settings(BaseSettings):
             )
         if self.app_env == "production" and self.database_url.startswith("sqlite"):
             raise ValueError("Production environments must use a PostgreSQL DATABASE_URL.")
+        if self.app_env == "production" and not self.authorization_require_tenant:
+            raise ValueError(
+                "AUTHORIZATION_REQUIRE_TENANT must be enabled in production environments."
+            )
+        if self.app_env == "production" and not self.authorization_default_deny:
+            raise ValueError(
+                "AUTHORIZATION_DEFAULT_DENY must be enabled in production environments."
+            )
         return self
 
 

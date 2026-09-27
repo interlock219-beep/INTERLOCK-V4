@@ -110,9 +110,7 @@ class ConfigRecoveryAdapter(RecoveryAdapter):
     ) -> RecoveryEvidence:
         self._verify_tenant_isolation(action)
         payload_str = json.dumps(action.tool_arguments, sort_keys=True, default=str)
-        evidence_hash = hashlib.sha256(
-            f"{action.action_id}:{payload_str}".encode()
-        ).hexdigest()
+        evidence_hash = hashlib.sha256(f"{action.action_id}:{payload_str}".encode()).hexdigest()
 
         config_dir = self._get_config_dir(execution_context)
         before_snapshot = None
@@ -328,10 +326,10 @@ class ConfigRecoveryAdapter(RecoveryAdapter):
             and before_snapshot.get("hash")
             and current_hash == before_snapshot["hash"]
         ):
-                return DriftResult(
-                    status=DriftStatus.NO_DRIFT,
-                    current_state={"hash": current_hash},
-                )
+            return DriftResult(
+                status=DriftStatus.NO_DRIFT,
+                current_state={"hash": current_hash},
+            )
 
         return DriftResult(
             status=DriftStatus.NO_DRIFT,
@@ -557,10 +555,8 @@ class ConfigRecoveryAdapter(RecoveryAdapter):
                             action_id=compensation.action_id,
                             verified=False,
                             details={
-                            "reason": (
-                                f"Config file should not exist but does: {config_file}"
-                            )
-                        },
+                                "reason": (f"Config file should not exist but does: {config_file}")
+                            },
                         )
                     return VerificationResult(
                         action_id=compensation.action_id,
@@ -621,9 +617,7 @@ class ConfigRecoveryAdapter(RecoveryAdapter):
             "requires_approval": Reversibility.is_conditional(action.reversibility),
         }
 
-    async def execute_recovery(
-        self, action: ProtectedAction, approved_by: str
-    ) -> dict[str, Any]:
+    async def execute_recovery(self, action: ProtectedAction, approved_by: str) -> dict[str, Any]:
         return {
             "adapter": "config_recovery",
             "action_id": action.action_id,
@@ -669,7 +663,7 @@ class ConfigRecoveryAdapter(RecoveryAdapter):
         prefixes = ["config:", "file:", "path:", "settings:"]
         for prefix in prefixes:
             if resource.startswith(prefix):
-                extracted = resource[len(prefix):]
+                extracted = resource[len(prefix) :]
                 if ".." in extracted:
                     raise ValueError("Path traversal detected in config resource identifier")
                 return extracted

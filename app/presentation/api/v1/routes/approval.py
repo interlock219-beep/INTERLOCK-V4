@@ -50,9 +50,7 @@ async def approve_request(
     correlation_id = getattr(request.state, "correlation_id", "")
     hitl_queue = _get_hitl_queue()
     try:
-        entry = await hitl_queue.approve_request(
-            request_id, decided_by=current_user.id
-        )
+        entry = await hitl_queue.approve_request(request_id, decided_by=current_user.id)
     except ApprovalError as exc:
         log_security_event(
             "approval_approve_failed",
@@ -86,9 +84,7 @@ async def reject_request(
     correlation_id = getattr(request.state, "correlation_id", "")
     hitl_queue = _get_hitl_queue()
     try:
-        entry = await hitl_queue.reject_request(
-            request_id, decided_by=current_user.id
-        )
+        entry = await hitl_queue.reject_request(request_id, decided_by=current_user.id)
     except ApprovalError as exc:
         log_security_event(
             "approval_reject_failed",

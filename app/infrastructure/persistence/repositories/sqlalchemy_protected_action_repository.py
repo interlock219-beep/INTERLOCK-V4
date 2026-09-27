@@ -159,7 +159,6 @@ class SQLAlchemyProtectedActionRepository(ProtectedActionRepository):
         self._session.flush()
         return self._to_entity(model)
 
-
     async def update_execution_result(
         self,
         tenant_id: str,
@@ -234,9 +233,7 @@ class SQLAlchemyProtectedActionRepository(ProtectedActionRepository):
             reversibility=Reversibility(model.reversibility),
             before_state_ref=model.before_state_ref,
             before_state_snapshot=(
-                json.loads(model.before_state_snapshot)
-                if model.before_state_snapshot
-                else None
+                json.loads(model.before_state_snapshot) if model.before_state_snapshot else None
             ),
             after_state_ref=model.after_state_ref,
             tool_arguments=tool_arguments,

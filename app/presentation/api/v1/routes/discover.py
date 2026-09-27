@@ -59,6 +59,7 @@ async def register_discovery(
     agent_repo: Annotated[AgentRepository, Depends(_get_agent_repo)],
 ) -> DiscoveryEventResponse:
     from app.domain.entities.discovery_event import DiscoverySource
+
     service = DiscoveryService(agent_repo, discovery_repo)
     source = DiscoverySource(body.source)
     agent, event = await service.register_agent(
@@ -96,6 +97,7 @@ async def ingest_discovery_event(
     agent_repo: Annotated[AgentRepository, Depends(_get_agent_repo)],
 ) -> DiscoveryEventResponse:
     from app.domain.entities.discovery_event import DiscoverySource
+
     service = DiscoveryService(agent_repo, discovery_repo)
     source = DiscoverySource(body.source)
     event = await service.ingest_discovery_event(
@@ -132,6 +134,7 @@ async def list_discovery_events(
     offset: int = Query(default=0, ge=0),
 ) -> dict[str, Any]:
     from app.domain.entities.discovery_event import DiscoverySource, DiscoveryStatus
+
     src = DiscoverySource(source) if source else None
     dst = DiscoveryStatus(discovery_status) if discovery_status else None
     items, total = await discovery_repo.list_by_tenant(

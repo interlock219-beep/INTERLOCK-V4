@@ -28,12 +28,8 @@ class RecoveryPlanModel(Base):
     plan_version: Mapped[str] = mapped_column(String(32), nullable=False, default="1.0")
     plan_hash: Mapped[str] = mapped_column(String(255), nullable=False, default="")
     topological_order: Mapped[str | None] = mapped_column(Text, nullable=True)
-    dependency_graph_reference: Mapped[str] = mapped_column(
-        String(255), nullable=False, default=""
-    )
-    execution_status: Mapped[str] = mapped_column(
-        String(32), nullable=False, default="pending"
-    )
+    dependency_graph_reference: Mapped[str] = mapped_column(String(255), nullable=False, default="")
+    execution_status: Mapped[str] = mapped_column(String(32), nullable=False, default="pending")
     approval_policy: Mapped[str] = mapped_column(
         String(32), nullable=False, default="single_approval"
     )

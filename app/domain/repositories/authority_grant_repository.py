@@ -49,3 +49,14 @@ class AuthorityGrantRepository(ABC):
     async def get_active_for_agent(
         self, tenant_id: str, agent_id: str, resource: str | None = None
     ) -> list[AuthorityGrant]: ...
+
+    @abstractmethod
+    async def list_by_tenant(
+        self,
+        tenant_id: str,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> tuple[list[AuthorityGrant], int]: ...
+
+    @abstractmethod
+    async def consume_one_shot(self, tenant_id: str, grant_id: str) -> AuthorityGrant | None: ...

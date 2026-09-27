@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import cast
+
 from fastapi import APIRouter, HTTPException, status
 
 from app.domain.services.policy_simulation_service import PolicySimulationService
@@ -44,7 +46,9 @@ async def diff_policies(
             detail="old_policies, new_policies, and test_texts must be non-empty",
         )
     comparison = _policy_service.compare_policies(
-        old_policies, new_policies, test_texts,
+        old_policies,
+        new_policies,
+        test_texts,
     )
     return comparison
 
@@ -86,70 +90,84 @@ async def lint_policy(
 
     for policy in policies:
         policy_name = policy.get("name", "unnamed")
-        blocked_patterns = policy.get("blocked_patterns", [])
+        blocked_patterns: list[str] = cast(list[str], policy.get("blocked_patterns", []))
         score_threshold = policy.get("score_threshold")
 
         if not policy_name or policy_name == "unnamed":
-            issues.append({
-                "policy": policy_name,
-                "severity": "error",
-                "message": "Policy must have a non-empty name",
-                "code": "MISSING_NAME",
-            })
+            issues.append(
+                {
+                    "policy": policy_name,
+                    "severity": "error",
+                    "message": "Policy must have a non-empty name",
+                    "code": "MISSING_NAME",
+                }
+            )
 
         if not blocked_patterns:
-            warnings.append({
-                "policy": policy_name,
-                "severity": "warning",
-                "message": "Policy has no blocked patterns defined",
-                "code": "NO_BLOCKED_PATTERNS",
-            })
+            warnings.append(
+                {
+                    "policy": policy_name,
+                    "severity": "warning",
+                    "message": "Policy has no blocked patterns defined",
+                    "code": "NO_BLOCKED_PATTERNS",
+                }
+            )
 
         if score_threshold is None:
-            warnings.append({
-                "policy": policy_name,
-                "severity": "warning",
-                "message": "Policy has no score_threshold defined",
-                "code": "NO_SCORE_THRESHOLD",
-            })
+            warnings.append(
+                {
+                    "policy": policy_name,
+                    "severity": "warning",
+                    "message": "Policy has no score_threshold defined",
+                    "code": "NO_SCORE_THRESHOLD",
+                }
+            )
 
         if score_threshold is not None:
             if not isinstance(score_threshold, (int, float)):
-                issues.append({
-                    "policy": policy_name,
-                    "severity": "error",
-                    "message": "score_threshold must be a number",
-                    "code": "INVALID_SCORE_THRESHOLD",
-                })
+                issues.append(
+                    {
+                        "policy": policy_name,
+                        "severity": "error",
+                        "message": "score_threshold must be a number",
+                        "code": "INVALID_SCORE_THRESHOLD",
+                    }
+                )
             elif score_threshold < 0 or score_threshold > 1:
-                issues.append({
-                    "policy": policy_name,
-                    "severity": "warning",
-                    "message": "score_threshold should be between 0 and 1",
-                    "code": "SCORE_THRESHOLD_OUT_OF_RANGE",
-                })
+                warnings.append(
+                    {
+                        "policy": policy_name,
+                        "severity": "warning",
+                        "message": "score_threshold should be between 0 and 1",
+                        "code": "SCORE_THRESHOLD_OUT_OF_RANGE",
+                    }
+                )
 
         pattern_counts: dict[str, int] = {}
         for pattern in blocked_patterns:
             if not isinstance(pattern, str) or not pattern.strip():
-                issues.append({
-                    "policy": policy_name,
-                    "severity": "error",
-                    "message": "blocked_patterns must contain non-empty strings",
-                    "code": "INVALID_PATTERN",
-                })
+                issues.append(
+                    {
+                        "policy": policy_name,
+                        "severity": "error",
+                        "message": "blocked_patterns must contain non-empty strings",
+                        "code": "INVALID_PATTERN",
+                    }
+                )
                 continue
             normalized = pattern.strip().lower()
             pattern_counts[normalized] = pattern_counts.get(normalized, 0) + 1
 
         for normalized, count in pattern_counts.items():
             if count > 1:
-                warnings.append({
-                    "policy": policy_name,
-                    "severity": "warning",
-                    "message": f"Duplicate pattern '{normalized}' appears {count} times",
-                    "code": "DUPLICATE_PATTERN",
-                })
+                warnings.append(
+                    {
+                        "policy": policy_name,
+                        "severity": "warning",
+                        "message": f"Duplicate pattern '{normalized}' appears {count} times",
+                        "code": "DUPLICATE_PATTERN",
+                    }
+                )
 
     has_errors = any(i["severity"] == "error" for i in issues)
     return {

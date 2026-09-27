@@ -33,14 +33,14 @@ from app.presentation.api.v1.routes.discover import router as discover_router
 from app.presentation.api.v1.routes.emergency import (
     token_revocation_router,
 )
+from app.presentation.api.v1.routes.evidence import router as evidence_router
+from app.presentation.api.v1.routes.identity_compromise import router as identity_compromise_router
 from app.presentation.api.v1.routes.incident import router as incident_router
 from app.presentation.api.v1.routes.incidents import router as incidents_router
 from app.presentation.api.v1.routes.mfa import email_router, mfa_router, password_router
 from app.presentation.api.v1.routes.session import session_router
 from app.presentation.api.v1.routes.sso import sso_router
 from app.presentation.api.v1.routes.webhook import router as webhook_router
-from app.presentation.api.v1.routes.evidence import router as evidence_router
-from app.presentation.api.v1.routes.identity_compromise import router as identity_compromise_router
 
 api_v1_router = APIRouter()
 api_v1_router.include_router(health.router)

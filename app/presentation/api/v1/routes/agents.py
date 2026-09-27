@@ -213,9 +213,17 @@ async def update_agent(
         return _agent_response(agent)
 
     updatable_fields = {
-        "name", "description", "trust_level", "risk_classification",
-        "environment", "version", "connected_tools", "metadata",
-        "model_provider", "model_name", "expires_at",
+        "name",
+        "description",
+        "trust_level",
+        "risk_classification",
+        "environment",
+        "version",
+        "connected_tools",
+        "metadata",
+        "model_provider",
+        "model_name",
+        "expires_at",
     }
     filtered = {k: v for k, v in update_data.items() if k in updatable_fields and v is not None}
     if not filtered:
@@ -233,12 +241,12 @@ async def update_agent(
         trust_level=(
             TrustLevel(filtered["trust_level"]) if "trust_level" in filtered else agent.trust_level
         ),
-        risk_classification=RiskClassification(
-            filtered["risk_classification"]
-        ) if "risk_classification" in filtered else agent.risk_classification,
-        environment=AgentEnvironment(
-            filtered["environment"]
-        ) if "environment" in filtered else agent.environment,
+        risk_classification=RiskClassification(filtered["risk_classification"])
+        if "risk_classification" in filtered
+        else agent.risk_classification,
+        environment=AgentEnvironment(filtered["environment"])
+        if "environment" in filtered
+        else agent.environment,
         version=filtered.get("version", agent.version),
         creator=agent.creator,
         registration_method=agent.registration_method,
@@ -298,9 +306,7 @@ async def kill_agent(
     if agent is None:
         raise HTTPException(status_code=404, detail="Agent not found")
     reason = body.get("reason", "")
-    await repo.update_status(
-        get_user_tenant_id(current_user), agent_id, AgentStatus.REVOKED
-    )
+    await repo.update_status(get_user_tenant_id(current_user), agent_id, AgentStatus.REVOKED)
     log_security_event(
         "agent_killed",
         tenant_id=get_user_tenant_id(current_user),

@@ -276,6 +276,8 @@ def test_settings_allows_production_with_redis() -> None:
         jwt_secret_key="a-very-long-production-secret-key-2026-abcdefgh",
         redis_url="redis://localhost:6379/0",
         database_url="postgresql+psycopg2://intentlock:secret@db:5432/intentlock",
+        authorization_require_tenant=True,
+        authorization_default_deny=True,
         _env_file=None,
     )
     assert settings.app_env == "production"
@@ -393,3 +395,4 @@ def test_settings_trusted_proxies_returns_empty_for_invalid_type() -> None:
         _env_file=None,
     )
     assert settings.trusted_proxies == []
+

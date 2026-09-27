@@ -1,7 +1,7 @@
 from datetime import datetime
 from uuid import UUID, uuid4
 
-from sqlalchemy import DateTime, Integer, String, Text, Uuid
+from sqlalchemy import Boolean, DateTime, Integer, String, Text, Uuid
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.infrastructure.persistence.database import Base
@@ -30,3 +30,9 @@ class AuthorityGrantModel(Base):
     grant_metadata: Mapped[str | None] = mapped_column("metadata", Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    is_jit: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    jit_created_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    jit_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    jit_consumed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    one_shot: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    usage_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)

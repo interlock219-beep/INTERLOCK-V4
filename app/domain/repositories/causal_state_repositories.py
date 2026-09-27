@@ -21,9 +21,7 @@ class StateCheckpointRepository(ABC):
     ) -> StateCheckpoint | None: ...
 
     @abstractmethod
-    async def get_by_action_id(
-        self, tenant_id: str, action_id: str
-    ) -> StateCheckpoint | None: ...
+    async def get_by_action_id(self, tenant_id: str, action_id: str) -> StateCheckpoint | None: ...
 
     @abstractmethod
     async def list_by_resource(
@@ -73,9 +71,7 @@ class ChangeSetRepository(ABC):
     ) -> AIChangeSet | None: ...
 
     @abstractmethod
-    async def get_by_incident(
-        self, tenant_id: str, incident_id: str
-    ) -> AIChangeSet | None: ...
+    async def get_by_incident(self, tenant_id: str, incident_id: str) -> AIChangeSet | None: ...
 
     @abstractmethod
     async def save(self, changeset: AIChangeSet) -> AIChangeSet: ...
@@ -85,9 +81,7 @@ class CausalStateGraphRepository(ABC):
     """Persistence port for CausalStateGraph."""
 
     @abstractmethod
-    async def get_by_graph_id(
-        self, tenant_id: str, graph_id: str
-    ) -> CausalStateGraph | None: ...
+    async def get_by_graph_id(self, tenant_id: str, graph_id: str) -> CausalStateGraph | None: ...
 
     @abstractmethod
     async def get_by_incident(
@@ -107,9 +101,7 @@ class ConfidenceRepository(ABC):
     ) -> RecoveryConfidence | None: ...
 
     @abstractmethod
-    async def get_by_plan(
-        self, tenant_id: str, plan_id: str
-    ) -> RecoveryConfidence | None: ...
+    async def get_by_plan(self, tenant_id: str, plan_id: str) -> RecoveryConfidence | None: ...
 
     @abstractmethod
     async def save(self, confidence: RecoveryConfidence) -> RecoveryConfidence: ...
@@ -119,9 +111,7 @@ class DurableExecutionRepository(ABC):
     """Persistence port for DurableExecutionStep."""
 
     @abstractmethod
-    async def get_by_step_id(
-        self, tenant_id: str, step_id: str
-    ) -> DurableExecutionStep | None: ...
+    async def get_by_step_id(self, tenant_id: str, step_id: str) -> DurableExecutionStep | None: ...
 
     @abstractmethod
     async def list_by_plan(
@@ -140,19 +130,13 @@ class RecoveryReportRepository(ABC):
     """Persistence port for RecoveryReport."""
 
     @abstractmethod
-    async def get_by_report_id(
-        self, tenant_id: str, report_id: str
-    ) -> RecoveryReport | None: ...
+    async def get_by_report_id(self, tenant_id: str, report_id: str) -> RecoveryReport | None: ...
 
     @abstractmethod
-    async def get_by_plan(
-        self, tenant_id: str, plan_id: str
-    ) -> RecoveryReport | None: ...
+    async def get_by_plan(self, tenant_id: str, plan_id: str) -> RecoveryReport | None: ...
 
     @abstractmethod
-    async def get_by_incident(
-        self, tenant_id: str, incident_id: str
-    ) -> RecoveryReport | None: ...
+    async def get_by_incident(self, tenant_id: str, incident_id: str) -> RecoveryReport | None: ...
 
     @abstractmethod
     async def save(self, report: RecoveryReport) -> RecoveryReport: ...
@@ -162,9 +146,7 @@ class StateDeltaRepository(ABC):
     """Persistence port for StateDelta."""
 
     @abstractmethod
-    async def get_by_delta_id(
-        self, tenant_id: str, delta_id: str
-    ) -> StateDelta | None: ...
+    async def get_by_delta_id(self, tenant_id: str, delta_id: str) -> StateDelta | None: ...
 
     @abstractmethod
     async def list_by_resource(

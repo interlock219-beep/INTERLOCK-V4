@@ -1,11 +1,11 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import hashlib
 import logging
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from enum import StrEnum
-from typing import Any
+from typing import Any, cast
 
 from app.domain.value_objects.authorization_decision import AuthorizationDecision
 
@@ -110,7 +110,12 @@ class ToolchainSecurityService:
             return False, f"Tool {tool_id} signature mismatch"
         return True, "Signature valid"
 
-    def track_tool_version(self, tool_id: str, version: str, change_description: str = "") -> dict[str, Any]:
+    def track_tool_version(
+        self,
+        tool_id: str,
+        version: str,
+        change_description: str = "",
+    ) -> dict[str, Any]:
         manifest = self._tool_manifests.get(tool_id)
         if not manifest:
             return {"error": "Tool not registered"}
@@ -132,13 +137,15 @@ class ToolchainSecurityService:
         self,
         tool_id: str,
         requested_permission: ToolPermission,
-        agent_grants: list[dict],
+        agent_grants: list[dict[str, Any]],
     ) -> tuple[bool, str]:
         manifest = self._tool_manifests.get(tool_id)
         if not manifest:
             return False, f"Tool {tool_id} not registered"
         if requested_permission not in manifest.permissions:
-            return False, f"Permission {requested_permission.value} not in tool\'s allowed permissions"
+            return False, (
+                f"Permission {requested_permission.value} not in tool's allowed permissions"
+            )
         hierarchy = {"read": 1, "write": 2, "execute": 3, "admin": 4}
         max_granted = max(
             (hierarchy.get(g.get("permission", "none"), 0) for g in agent_grants),
@@ -146,7 +153,9 @@ class ToolchainSecurityService:
         )
         required_level = hierarchy.get(requested_permission.value, 0)
         if max_granted < required_level:
-            return False, f"Insufficient permission: required {requested_permission.value}, max granted lower"
+            return False, (
+                f"Insufficient permission: required {requested_permission.value}, max granted lower"
+            )
         return True, "Permission check passed"
 
     def validate_capability_use(
@@ -161,11 +170,18 @@ class ToolchainSecurityService:
         if capability not in manifest.capabilities:
             return False, f"Tool {tool_id} does not declare capability {capability.value}"
         constraints = manifest.resource_constraints
-        if constraints.get("network_access") is False and capability == ToolCapability.NETWORK_ACCESS:
+        if (
+            constraints.get("network_access") is False
+            and capability == ToolCapability.NETWORK_ACCESS
+        ):
             return False, "Tool manifest declares no network access"
         return True, "Capability validated"
 
-    def validate_tool_arguments(self, tool_id: str, arguments: dict[str, Any]) -> tuple[bool, str | None]:
+    def validate_tool_arguments(
+        self,
+        tool_id: str,
+        arguments: dict[str, Any],
+    ) -> tuple[bool, str | None]:
         manifest = self._tool_manifests.get(tool_id)
         if not manifest:
             return False, f"Tool {tool_id} not registered"
@@ -177,9 +193,8 @@ class ToolchainSecurityService:
         types = schema.get("types", {})
         for key, value in arguments.items():
             expected_type = types.get(key)
-            if expected_type:
-                if not self._check_type(value, expected_type):
-                    return False, f"Parameter {key} type mismatch: expected {expected_type}"
+            if expected_type and not self._check_type(value, expected_type):
+                return False, f"Parameter {key} type mismatch: expected {expected_type}"
         return True, None
 
     @staticmethod
@@ -192,7 +207,7 @@ class ToolchainSecurityService:
             "array": list,
             "object": dict,
         }
-        expected = type_map.get(expected_type)
+        expected = cast(type | tuple[type, ...], type_map.get(expected_type))
         if expected is None:
             return True
         return isinstance(value, expected)
@@ -210,9 +225,8 @@ class ToolchainSecurityService:
         if output_schema is None:
             return True, None
         expected_type = output_schema.get("type")
-        if expected_type:
-            if not self._check_type(output, expected_type):
-                return False, f"Tool output type mismatch: expected {expected_type}"
+        if expected_type and not self._check_type(output, expected_type):
+            return False, f"Tool output type mismatch: expected {expected_type}"
         max_size = output_schema.get("max_size_bytes")
         if max_size and isinstance(output, (str, bytes)):
             actual_size = len(output) if isinstance(output, str) else len(output)
@@ -235,14 +249,18 @@ class ToolchainSecurityService:
         if manifest.resource_constraints.get("tenant_restricted"):
             allowed_tenants = manifest.resource_constraints.get("allowed_tenants", [])
             if tenant_id not in allowed_tenants:
-                return AuthorizationDecision.DENY, f"Tool {tool_id} not available for tenant {tenant_id}"
+                return AuthorizationDecision.DENY, (
+                    f"Tool {tool_id} not available for tenant {tenant_id}"
+                )
         args_valid, args_error = self.validate_tool_arguments(tool_id, arguments)
         if not args_valid:
             return AuthorizationDecision.DENY, f"Invalid arguments: {args_error}"
         required_permission = (
             ToolPermission(manifest.permissions[0]) if manifest.permissions else ToolPermission.READ
         )
-        perm_valid, perm_reason = self.check_tool_permission(tool_id, required_permission, authority_grants)
+        perm_valid, perm_reason = self.check_tool_permission(
+            tool_id, required_permission, authority_grants
+        )
         if not perm_valid:
             return AuthorizationDecision.DENY, f"Permission denied: {perm_reason}"
         for capability in manifest.capabilities:
@@ -251,8 +269,12 @@ class ToolchainSecurityService:
                 return AuthorizationDecision.DENY, f"Capability denied: {cap_reason}"
         return AuthorizationDecision.ALLOW, "Tool call authorized"
 
-    def detect_tool_anomalies(self, tool_id: str, recent_calls: list[ToolCallRecord]) -> list[ToolAnomalySignal]:
-        signals = []
+    def detect_tool_anomalies(
+        self,
+        tool_id: str,
+        recent_calls: list[ToolCallRecord],
+    ) -> list[ToolAnomalySignal]:
+        signals: list[ToolAnomalySignal] = []
         if not recent_calls:
             return signals
         if len(recent_calls) > 100:
@@ -272,21 +294,24 @@ class ToolchainSecurityService:
                     signal_type="repeated_identical_calls",
                     severity="medium",
                     evidence={"call_count": len(recent_calls), "unique_args": 1},
-                    explanation=f"Tool {tool_id} called with identical arguments {len(recent_calls)} times",
+                    explanation=(
+                        f"Tool {tool_id} called with identical arguments {len(recent_calls)} times"
+                    ),
                 )
             )
         for call in recent_calls:
             args = call.arguments
-            if isinstance(args, dict):
-                if args.get("admin") or args.get("sudo") or args.get("root"):
-                    signals.append(
-                        ToolAnomalySignal(
-                            signal_type="privilege_escalation_in_args",
-                            severity="critical",
-                            evidence={"call_id": call.call_id, "escalation_key": "admin/sudo/root"},
-                            explanation="Privilege escalation keyword in tool arguments",
-                        )
+            if isinstance(args, dict) and (
+                args.get("admin") or args.get("sudo") or args.get("root")
+            ):
+                signals.append(
+                    ToolAnomalySignal(
+                        signal_type="privilege_escalation_in_args",
+                        severity="critical",
+                        evidence={"call_id": call.call_id, "escalation_key": "admin/sudo/root"},
+                        explanation="Privilege escalation keyword in tool arguments",
                     )
+                )
         return signals
 
     def contain_mcp_tool(self, tool_id: str, reason: str) -> dict[str, Any]:

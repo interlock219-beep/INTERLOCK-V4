@@ -1,4 +1,4 @@
-﻿from abc import ABC, abstractmethod
+from abc import ABC, abstractmethod
 from typing import Any
 
 from app.domain.entities.protected_action import ActionStatus, ProtectedAction

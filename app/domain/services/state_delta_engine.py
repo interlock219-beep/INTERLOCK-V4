@@ -127,8 +127,13 @@ class StateDeltaEngine:
 
         if isinstance(after_ai_state, dict) and isinstance(current_state, dict):
             return await self._compute_dict_delta(
-                tenant_id, resource_id, after_ai_state, current_state,
-                "", delta_id, created_at,
+                tenant_id,
+                resource_id,
+                after_ai_state,
+                current_state,
+                "",
+                delta_id,
+                created_at,
             )
 
         delta = StateDelta(
@@ -363,11 +368,15 @@ class StateDeltaEngine:
         state_hash: str | None,
         recoverable_fields: dict[str, Any],
     ) -> str:
-        payload = json.dumps({
-            "checkpoint_id": checkpoint_id,
-            "action_id": action_id,
-            "resource_id": resource_id,
-            "state_hash": state_hash,
-            "fields": recoverable_fields,
-        }, sort_keys=True, default=str)
+        payload = json.dumps(
+            {
+                "checkpoint_id": checkpoint_id,
+                "action_id": action_id,
+                "resource_id": resource_id,
+                "state_hash": state_hash,
+                "fields": recoverable_fields,
+            },
+            sort_keys=True,
+            default=str,
+        )
         return hashlib.sha256(payload.encode()).hexdigest()

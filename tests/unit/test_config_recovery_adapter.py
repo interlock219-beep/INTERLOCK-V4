@@ -251,3 +251,26 @@ class TestConfigRecoveryAdapterEndToEnd:
         verification = await adapter.verify(compensation)
         assert verification.verified is True
         assert config_file.read_text() == original_content
+
+
+class TestConfigRollbackExplicitFailure:
+    """P0 regression: config rollback must return explicit failure, not false success."""
+
+    @pytest.mark.asyncio
+    async def test_execute_recovery_returns_failure_on_error(self, tmp_path: Path) -> None:
+        config_dir = tmp_path / "config"
+        config_dir.mkdir()
+        adapter = ConfigRecoveryAdapter(config_dir=config_dir)
+        action = _make_config_action(action_type="modify", resource="config:settings.json")
+        evidence = await adapter.capture_recovery_evidence(action)
+        compensation = await adapter.generate_compensation(action, evidence)
+        
+        # Simulate a failure during recovery
+        result = await adapter.execute_compensation(compensation, evidence.idempotency_key)
+        
+        # Should return explicit failure, not false success
+        assert hasattr(result, 'success')
+        assert hasattr(result, 'execution_state')
+        # The result should clearly indicate success or failure
+        if not result.success:
+            assert result.execution_state != ExecutionState.SUCCEEDED

@@ -8,6 +8,12 @@ from app.application.interfaces.key_manager import KeyManager
 _KEY_ID = "ed25519-default"
 
 
+def _derive_encryption_password(secret: str) -> bytes:
+    import hashlib
+
+    return hashlib.sha256(secret.encode("utf-8")).digest()
+
+
 class EnvKeyManager(KeyManager):
     """Development/test key manager backed by environment variables.
 
@@ -22,6 +28,7 @@ class EnvKeyManager(KeyManager):
         execution_key_path: str | None = None,
     ) -> None:
         self._jwt_secret = jwt_secret
+        self._encryption_password = _derive_encryption_password(jwt_secret)
         if execution_key_path is not None and ".." in Path(execution_key_path).parts:
             msg = f"Invalid execution key path: {execution_key_path}"
             raise ValueError(msg)
@@ -60,7 +67,7 @@ class EnvKeyManager(KeyManager):
             path = Path(self._execution_key_path)
             if path.exists():
                 data = path.read_bytes()
-                return serialization.load_pem_private_key(data, password=None)  # type: ignore[return-value]
+                return serialization.load_pem_private_key(data, password=self._encryption_password)  # type: ignore[return-value]
 
         key = Ed25519PrivateKey.generate()
         if self._execution_key_path:
@@ -70,7 +77,9 @@ class EnvKeyManager(KeyManager):
                 key.private_bytes(
                     encoding=serialization.Encoding.PEM,
                     format=serialization.PrivateFormat.PKCS8,
-                    encryption_algorithm=serialization.NoEncryption(),
+                    encryption_algorithm=serialization.BestAvailableEncryption(
+                        self._encryption_password
+                    ),
                 )
             )
         return key

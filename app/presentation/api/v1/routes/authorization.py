@@ -1,14 +1,14 @@
 from __future__ import annotations
 
+import contextlib
 from collections.abc import Generator
 from datetime import UTC, datetime
+from typing import Annotated, Any, cast
 
-import jwt
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.domain.repositories.user_repository import UserRepository
 from app.infrastructure.persistence.database import SessionLocal
 from app.infrastructure.persistence.models.audit_event_model import AuditEventModel
 from app.presentation.api.dependencies.auth import CurrentUser
@@ -28,10 +28,15 @@ def _get_session() -> Generator[Session, None, None]:
         session.close()
 
 
+def _get_session_dep() -> Session:
+    """Module-level singleton default to satisfy B008 (no Depends in defaults)."""
+    return cast(Session, Depends(_get_session))
+
+
 @router.get("/decisions")
 async def get_authorization_decisions(
     current_user: CurrentUser,
-    session: Session = Depends(_get_session),
+    session: Annotated[Session, _get_session_dep()],
     tenant_id: str | None = None,
     agent_id: str | None = None,
     limit: int = 100,
@@ -54,10 +59,9 @@ async def get_authorization_decisions(
         payload: dict[str, Any] = {}
         if row.payload:
             import json
-            try:
+
+            with contextlib.suppress(ValueError, TypeError):
                 payload = json.loads(row.payload)
-            except (ValueError, TypeError):
-                pass
 
         row_tenant = payload.get("tenant_id") if isinstance(payload, dict) else None
         row_agent = payload.get("agent_id") if isinstance(payload, dict) else None
@@ -67,14 +71,16 @@ async def get_authorization_decisions(
         if agent_id and row_agent != agent_id:
             continue
 
-        events.append({
-            "event_id": str(row.id),
-            "tenant_id": row_tenant,
-            "agent_id": row_agent,
-            "event_type": row.event_type,
-            "timestamp": row.created_at.isoformat() if row.created_at else None,
-            "payload": payload,
-        })
+        events.append(
+            {
+                "event_id": str(row.id),
+                "tenant_id": row_tenant,
+                "agent_id": row_agent,
+                "event_type": row.event_type,
+                "timestamp": row.created_at.isoformat() if row.created_at else None,
+                "payload": payload,
+            }
+        )
 
     return {
         "decisions": events,
@@ -88,7 +94,7 @@ async def get_authorization_decisions(
 async def replay_authorization_decision(
     event_id: str,
     current_user: CurrentUser,
-    session: Session = Depends(_get_session),
+    session: Annotated[Session, _get_session_dep()],
 ) -> dict[str, object]:
     """Replay an authorization decision for forensics. AUTH-050."""
     if current_user.role != "admin":
@@ -111,10 +117,9 @@ async def replay_authorization_decision(
     payload: dict[str, Any] = {}
     if row.payload:
         import json
-        try:
+
+        with contextlib.suppress(ValueError, TypeError):
             payload = json.loads(row.payload)
-        except (ValueError, TypeError):
-            pass
 
     return {
         "event_id": str(row.id),

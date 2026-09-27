@@ -13,9 +13,7 @@ class RecoveryExecutionModel(Base):
     __tablename__ = "recovery_executions"
 
     id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
-    execution_id: Mapped[str] = mapped_column(
-        String(64), unique=True, index=True, nullable=False
-    )
+    execution_id: Mapped[str] = mapped_column(String(64), unique=True, index=True, nullable=False)
     plan_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     action_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     tenant_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
@@ -24,9 +22,7 @@ class RecoveryExecutionModel(Base):
     target_resource: Mapped[str] = mapped_column(String(255), nullable=True)
     idempotency_key: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
     execution_order: Mapped[int] = mapped_column(Integer(), nullable=False, default=0)
-    execution_state: Mapped[str] = mapped_column(
-        String(32), nullable=False, default="pending"
-    )
+    execution_state: Mapped[str] = mapped_column(String(32), nullable=False, default="pending")
     success: Mapped[bool] = mapped_column(Boolean(), nullable=False, default=False)
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
     details: Mapped[str | None] = mapped_column(Text, nullable=True)

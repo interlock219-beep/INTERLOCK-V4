@@ -87,9 +87,7 @@ class RecoveryPlanningService:
         )
         return await self._plan_repo.save(plan)
 
-    async def simulate_plan(
-        self, tenant_id: str, plan_id: str
-    ) -> dict[str, Any]:
+    async def simulate_plan(self, tenant_id: str, plan_id: str) -> dict[str, Any]:
         plan = await self._plan_repo.get_by_plan_id(tenant_id, plan_id)
         if plan is None:
             raise ValueError("Recovery plan not found")
@@ -186,9 +184,7 @@ class RecoveryPlanningService:
         await self._plan_repo.save(plan)
         return simulation
 
-    async def execute_plan(
-        self, tenant_id: str, plan_id: str, executed_by: str
-    ) -> RecoveryPlan:
+    async def execute_plan(self, tenant_id: str, plan_id: str, executed_by: str) -> RecoveryPlan:
         plan = await self._plan_repo.get_by_plan_id(tenant_id, plan_id)
         if plan is None:
             raise ValueError("Recovery plan not found")
@@ -201,16 +197,12 @@ class RecoveryPlanningService:
             raise ValueError(f"Cannot execute plan with irreversible actions: {irreversible}")
         if plan.status == RecoveryStatus.SIMULATED:
             if not executed_by:
-                raise ValueError(
-                    "Recovery plan must be explicitly approved before execution"
-                )
+                raise ValueError("Recovery plan must be explicitly approved before execution")
             plan_approved_by = executed_by
         elif plan.status == RecoveryStatus.APPROVED:
             plan_approved_by = plan.approved_by or executed_by
         else:
-            raise ValueError(
-                f"Plan status '{plan.status.value}' does not allow execution"
-            )
+            raise ValueError(f"Plan status '{plan.status.value}' does not allow execution")
 
         action = await self._action_repo.get_by_action_id(tenant_id, plan.incident_action_id)
         if action is None:
@@ -230,11 +222,11 @@ class RecoveryPlanningService:
                 execution_results[a.action_id] = result
                 execution_states[a.action_id] = result.get("execution_state", "succeeded")
                 if result.get("execution_state") in (
-                    "failed", "blocked_by_conflict", "blocked_by_drift"
+                    "failed",
+                    "blocked_by_conflict",
+                    "blocked_by_drift",
                 ):
-                    stop_conditions = set(
-                        self._normalize_stop_conditions(plan.stop_conditions)
-                    )
+                    stop_conditions = set(self._normalize_stop_conditions(plan.stop_conditions))
                     if StopCondition.ON_FIRST_FAILURE in stop_conditions:
                         break
                     if (
@@ -248,13 +240,17 @@ class RecoveryPlanningService:
                     ):
                         break
 
-        all_succeeded = all(
-            result.get("execution_state") in ("succeeded", "unknown_external_outcome")
-            and result.get("verification_passed") is True
-            and result.get("adapter_selection")
-            and result.get("adapter") != "none"
-            for result in execution_results.values()
-        ) if execution_results else False
+        all_succeeded = (
+            all(
+                result.get("execution_state") in ("succeeded", "unknown_external_outcome")
+                and result.get("verification_passed") is True
+                and result.get("adapter_selection")
+                and result.get("adapter") != "none"
+                for result in execution_results.values()
+            )
+            if execution_results
+            else False
+        )
 
         plan = RecoveryPlan(
             plan_id=plan.plan_id,
@@ -283,7 +279,9 @@ class RecoveryPlanningService:
             affected_action_ids=plan.affected_action_ids,
         )
         plan = await self._plan_repo.update_status(
-            tenant_id, plan.plan_id, RecoveryStatus.EXECUTING,
+            tenant_id,
+            plan.plan_id,
+            RecoveryStatus.EXECUTING,
             outcome=plan.outcome.value,
             simulation_result=plan.simulation_result,
             steps=plan.steps,
@@ -369,9 +367,7 @@ class RecoveryPlanningService:
                     "preconditions_satisfied": precond.satisfied,
                     "warnings": impact.warnings,
                     "simulation_limitation": (
-                        impact.simulation_limitation.value
-                        if impact.simulation_limitation
-                        else None
+                        impact.simulation_limitation.value if impact.simulation_limitation else None
                     ),
                     "compensation_operation": impact.compensation_operation,
                     "expected_after_state": impact.expected_after_state,
@@ -399,12 +395,20 @@ class RecoveryPlanningService:
         """
         from app.domain.entities.surgical_recovery_types import AdapterCapability
 
-        is_filesystem_action = (
-            action.tool.lower()
-            in {"filesystem", "file", "fs", "storage"}
-            or action.action_type.lower()
-            in {"create", "write", "modify", "update", "delete", "rename", "move"}
-        )
+        is_filesystem_action = action.tool.lower() in {
+            "filesystem",
+            "file",
+            "fs",
+            "storage",
+        } or action.action_type.lower() in {
+            "create",
+            "write",
+            "modify",
+            "update",
+            "delete",
+            "rename",
+            "move",
+        }
 
         # Explicit adapter selection: prefer the production filesystem adapter
         # for filesystem actions.  Fail closed if it is unavailable.
@@ -569,9 +573,7 @@ class RecoveryPlanningService:
                 "adapter_selection": selection_reason,
             }
 
-    async def _preview_with_adapters(
-        self, action: ProtectedAction
-    ) -> dict[str, Any] | None:
+    async def _preview_with_adapters(self, action: ProtectedAction) -> dict[str, Any] | None:
         for adapter in self._adapters:
             capability = await adapter.can_recover(action)
             if capability in ("reversible", "reversible_with_approval"):
@@ -645,8 +647,7 @@ class RecoveryPlanningService:
     def _determine_stop_conditions(affected: list[ProtectedAction]) -> list[str]:
         """Determine stop conditions based on affected actions."""
         has_irreversible = any(
-            Reversibility.normalize(a.reversibility) == Reversibility.IRREVERSIBLE
-            for a in affected
+            Reversibility.normalize(a.reversibility) == Reversibility.IRREVERSIBLE for a in affected
         )
         stop_conditions = [StopCondition.ON_FIRST_FAILURE.value]
         if has_irreversible:

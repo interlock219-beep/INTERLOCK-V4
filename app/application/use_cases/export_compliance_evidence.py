@@ -31,30 +31,32 @@ class ExportComplianceEvidenceUseCase:
         policy_evidence: list[dict[str, Any]] = []
         if policy_set:
             for rule in policy_set.rules:
-                policy_evidence.append({
-                    "rule_id": rule.id,
-                    "version": rule.version,
-                    "effect": rule.effect,
-                    "description": rule.description,
-                    "priority": rule.priority,
-                    "match": {
-                        "tool": rule.match.tool,
-                        "action": rule.match.action,
-                        "resource": rule.match.resource,
-                        "agent_id": rule.match.agent_id,
-                        "user_id": rule.match.user_id,
-                        "tenant_id": rule.match.tenant_id,
-                        "service_id": rule.match.service_id,
-                    },
-                    "conditions": {
-                        "min_confidence": (
-                            rule.conditions.min_confidence if rule.conditions else None
-                        ),
-                        "max_risk_score": (
-                            rule.conditions.max_risk_score if rule.conditions else None
-                        ),
-                    },
-                })
+                policy_evidence.append(
+                    {
+                        "rule_id": rule.id,
+                        "version": rule.version,
+                        "effect": rule.effect,
+                        "description": rule.description,
+                        "priority": rule.priority,
+                        "match": {
+                            "tool": rule.match.tool,
+                            "action": rule.match.action,
+                            "resource": rule.match.resource,
+                            "agent_id": rule.match.agent_id,
+                            "user_id": rule.match.user_id,
+                            "tenant_id": rule.match.tenant_id,
+                            "service_id": rule.match.service_id,
+                        },
+                        "conditions": {
+                            "min_confidence": (
+                                rule.conditions.min_confidence if rule.conditions else None
+                            ),
+                            "max_risk_score": (
+                                rule.conditions.max_risk_score if rule.conditions else None
+                            ),
+                        },
+                    }
+                )
 
         audit_records: list[dict[str, Any]] = []
         if LOG_PATH.exists():
@@ -71,31 +73,37 @@ class ExportComplianceEvidenceUseCase:
         for record in audit_records:
             event_type = record.get("event_type", "")
             if event_type == "intent_verification":
-                authorization_logs.append({
-                    "timestamp": record.get("timestamp"),
-                    "correlation_id": record.get("correlation_id"),
-                    "agent_id": record.get("agent_id"),
-                    "proposed_tool": record.get("proposed_tool"),
-                    "verification_status": record.get("verification_status"),
-                    "rejection_reason": record.get("rejection_reason"),
-                })
+                authorization_logs.append(
+                    {
+                        "timestamp": record.get("timestamp"),
+                        "correlation_id": record.get("correlation_id"),
+                        "agent_id": record.get("agent_id"),
+                        "proposed_tool": record.get("proposed_tool"),
+                        "verification_status": record.get("verification_status"),
+                        "rejection_reason": record.get("rejection_reason"),
+                    }
+                )
             elif event_type in ("approval_approved", "approval_rejected", "approval_expired"):
-                hitl_history.append({
-                    "timestamp": record.get("timestamp"),
-                    "event_type": event_type,
-                    "correlation_id": record.get("correlation_id"),
-                    "request_id": record.get("request_id"),
-                    "user_id": record.get("user_id"),
-                    "risk_score": record.get("risk_score"),
-                })
+                hitl_history.append(
+                    {
+                        "timestamp": record.get("timestamp"),
+                        "event_type": event_type,
+                        "correlation_id": record.get("correlation_id"),
+                        "request_id": record.get("request_id"),
+                        "user_id": record.get("user_id"),
+                        "risk_score": record.get("risk_score"),
+                    }
+                )
             elif event_type in ("user_registered", "user_activated", "user_deactivated"):
-                rbac_evidence.append({
-                    "timestamp": record.get("timestamp"),
-                    "event_type": event_type,
-                    "user_id": record.get("user_id"),
-                    "email": record.get("email"),
-                    "role": record.get("role"),
-                })
+                rbac_evidence.append(
+                    {
+                        "timestamp": record.get("timestamp"),
+                        "event_type": event_type,
+                        "user_id": record.get("user_id"),
+                        "email": record.get("email"),
+                        "role": record.get("role"),
+                    }
+                )
 
         evidence_package = {
             "package_id": "",
@@ -136,9 +144,7 @@ class ExportComplianceEvidenceUseCase:
 
     def _compute_package_hash(self, package: dict[str, Any]) -> str:
         stable_payload = {
-            k: v
-            for k, v in package.items()
-            if k not in {"package_id", "generated_at"}
+            k: v for k, v in package.items() if k not in {"package_id", "generated_at"}
         }
         payload = json.dumps(stable_payload, sort_keys=True, default=str)
         return hmac.new(

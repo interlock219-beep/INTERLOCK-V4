@@ -74,9 +74,7 @@ class RecoverySimulationEngine:
             checkpoint = await self._checkpoint_repo.get_by_action_id(tenant_id, action.action_id)
             current_state = current_states.get(action.resource)
 
-            sim = await self._simulate_single_resource(
-                action, evidence, checkpoint, current_state
-            )
+            sim = await self._simulate_single_resource(action, evidence, checkpoint, current_state)
             resource_simulations[action.action_id] = sim
             total_resources += 1
 
@@ -181,9 +179,7 @@ class RecoverySimulationEngine:
                     drift_result = await adapter.detect_drift(action, evidence, current_state)
                     drift_status = drift_result.status
                 if hasattr(adapter, "check_conflicts"):
-                    conflict_result = await adapter.check_conflicts(
-                        action, evidence, current_state
-                    )
+                    conflict_result = await adapter.check_conflicts(action, evidence, current_state)
                     conflict_status = conflict_result.status
                 if hasattr(adapter, "simulate"):
                     impact = await adapter.simulate(action, evidence)
@@ -233,13 +229,9 @@ class RecoverySimulationEngine:
         ):
             sim["simulation_status"] = "recoverable"
             sim["proposed_recovery"] = "restore_before_state"
-            sim["expected_recovered_state"] = (
-                checkpoint.recoverable_fields if checkpoint else None
-            )
+            sim["expected_recovered_state"] = checkpoint.recoverable_fields if checkpoint else None
             if current_state and checkpoint:
-                ai_delta = self._compute_simple_delta(
-                    checkpoint.recoverable_fields, current_state
-                )
+                ai_delta = self._compute_simple_delta(checkpoint.recoverable_fields, current_state)
                 sim["ai_caused_delta"] = ai_delta
             sim["approval_requirement"] = (
                 "human_approval_required"
@@ -254,9 +246,7 @@ class RecoverySimulationEngine:
         return sim
 
     @staticmethod
-    def _compute_simple_delta(
-        before: dict[str, Any], current: dict[str, Any]
-    ) -> dict[str, Any]:
+    def _compute_simple_delta(before: dict[str, Any], current: dict[str, Any]) -> dict[str, Any]:
         """Compute a simple field-level delta for simulation display."""
         all_keys = set(before.keys()) | set(current.keys())
         changed: dict[str, Any] = {}

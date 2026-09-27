@@ -41,6 +41,7 @@ def get_key_manager() -> KeyManager:
         return VersionedKeyManager(
             key_dir=settings.key_dir,
             jwt_secret=settings.jwt_secret_key,
+            key_encryption_secret=settings.key_encryption_secret,
         )
     return EnvKeyManager(
         jwt_secret=settings.jwt_secret_key,
@@ -101,6 +102,7 @@ def get_mfa_service(
     from app.infrastructure.persistence.repositories.sqlalchemy_mfa_repository import (
         SQLAlchemyMFARepository,
     )
+
     return PyOTPMFAService(SQLAlchemyMFARepository(session), issuer_name=settings.mfa_issuer_name)
 
 
@@ -114,6 +116,7 @@ def get_password_reset_service(
     from app.infrastructure.persistence.repositories.sqlalchemy_user_repository import (
         SQLAlchemyUserRepository,
     )
+
     user_repo = SQLAlchemyUserRepository(session)
     return DefaultPasswordResetService(SQLAlchemyPasswordResetRepository(session), user_repo)
 
@@ -138,6 +141,7 @@ def get_session_service(
     from app.infrastructure.persistence.repositories.sqlalchemy_session_repository import (
         SQLAlchemySessionService,
     )
+
     return SQLAlchemySessionService(session)
 
 

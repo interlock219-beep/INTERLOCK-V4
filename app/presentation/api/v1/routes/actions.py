@@ -60,6 +60,7 @@ async def create_action(
         ActionStatus,
         ProtectedAction,
     )
+
     action_id = f"act-{secrets.token_hex(12)}"
     action = ProtectedAction(
         action_id=action_id,
@@ -164,6 +165,7 @@ async def evaluate_action(
     repo: Annotated[ProtectedActionRepository, Depends(_get_action_repository)],
 ) -> ProtectedActionResponse:
     from app.domain.entities.protected_action import ActionStatus
+
     action = await repo.get_by_action_id(get_user_tenant_id(current_user), action_id)
     if action is None:
         raise HTTPException(status_code=404, detail="Action not found")
@@ -179,6 +181,7 @@ async def evaluate_action(
     from app.domain.services.central_policy_engine import CentralPolicyEngine
     from app.domain.services.risk_engine import RiskEngine
     from app.domain.value_objects.authorization_context import AuthorizationContext
+
     authz = AuthorizationService()
     policy = CentralPolicyEngine.from_file()
     risk = RiskEngine()
@@ -199,36 +202,39 @@ async def evaluate_action(
         from app.infrastructure.persistence.repositories.sqlalchemy_authority_grant_repository import (  # noqa: E501
             SQLAlchemyAuthorityGrantRepository,
         )
+
         grant_repo = SQLAlchemyAuthorityGrantRepository(repo._session)  # type: ignore[attr-defined]
         grant_entity = await grant_repo.get_by_grant_id(action.tenant_id, action.authority_grant_id)
         if grant_entity:
-            authority_grants = [{
-                "grant_id": grant_entity.grant_id,
-                "scope": grant_entity.scope.value,
-                "resource": grant_entity.resource,
-                "expires_at": (
-                    grant_entity.expires_at.isoformat()
-                    if grant_entity.expires_at else None
-                ),
-                "status": grant_entity.status.value,
-            }]
+            authority_grants = [
+                {
+                    "grant_id": grant_entity.grant_id,
+                    "scope": grant_entity.scope.value,
+                    "resource": grant_entity.resource,
+                    "expires_at": (
+                        grant_entity.expires_at.isoformat() if grant_entity.expires_at else None
+                    ),
+                    "status": grant_entity.status.value,
+                }
+            ]
     else:
         from app.infrastructure.persistence.repositories.sqlalchemy_authority_grant_repository import (  # noqa: E501
             SQLAlchemyAuthorityGrantRepository,
         )
+
         grant_repo = SQLAlchemyAuthorityGrantRepository(repo._session)  # type: ignore[attr-defined]
         active_grants, _ = await grant_repo.list_by_grantee(action.tenant_id, action.agent_id)
         for g in active_grants:
             if g.status.value == "active":
-                authority_grants.append({
-                    "grant_id": g.grant_id,
-                    "scope": g.scope.value,
-                    "resource": g.resource,
-                    "expires_at": (
-                        g.expires_at.isoformat() if g.expires_at else None
-                    ),
-                    "status": g.status.value,
-                })
+                authority_grants.append(
+                    {
+                        "grant_id": g.grant_id,
+                        "scope": g.scope.value,
+                        "resource": g.resource,
+                        "expires_at": (g.expires_at.isoformat() if g.expires_at else None),
+                        "status": g.status.value,
+                    }
+                )
 
     dag = AgentActionDAG(
         user_prompt="",
@@ -350,7 +356,6 @@ async def get_incident_graph(
     )
 
 
-
 @router.patch(
     "/{action_id}/execution",
     response_model=ProtectedActionResponse,
@@ -362,6 +367,7 @@ async def update_action_execution(
     repo: Annotated[ProtectedActionRepository, Depends(_get_action_repository)],
 ) -> ProtectedActionResponse:
     from app.domain.entities.protected_action import ActionStatus
+
     action = await repo.get_by_action_id(get_user_tenant_id(current_user), action_id)
     if action is None:
         raise HTTPException(status_code=404, detail="Action not found")
@@ -422,6 +428,7 @@ async def capture_after_state(
 ) -> ProtectedActionResponse:
     import hashlib
     import json
+
     action = await repo.get_by_action_id(get_user_tenant_id(current_user), action_id)
     if action is None:
         raise HTTPException(status_code=404, detail="Action not found")
@@ -469,6 +476,7 @@ async def capture_after_state(
         evaluated_at=updated.evaluated_at,
         executed_at=updated.executed_at,
     )
+
 
 @router.post(
     "/{action_id}/rollback",

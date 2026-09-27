@@ -54,9 +54,7 @@ class SQLAlchemyAgentRepository(AgentRepository):
             count_stmt = count_stmt.where(AgentModel.status == status.value)
         if agent_type is not None:
             count_stmt = count_stmt.where(AgentModel.agent_type == agent_type.value)
-        total = self._session.scalar(
-            select(func.count()).select_from(count_stmt.subquery())
-        ) or 0
+        total = self._session.scalar(select(func.count()).select_from(count_stmt.subquery())) or 0
         stmt = stmt.order_by(AgentModel.created_at.desc()).limit(limit).offset(offset)
         models = self._session.scalars(stmt).all()
         return [self._to_entity(m) for m in models], total

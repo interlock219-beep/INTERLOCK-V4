@@ -114,12 +114,15 @@ class EnterpriseRecoveryPlatform:
                     AuditEventType,
                     AuditLogEntry,
                 )
+
                 entry = AuditLogEntry(
                     entry_id=f"audit-{tenant_id}-{incident.incident_id}-{secrets.token_hex(8)}",
                     tenant_id=tenant_id,
                     event_type=AuditEventType.INCIDENT_DETECTED,
                     severity=AuditEventSeverity.CRITICAL,
-                    description=f"Incident {incident.incident_id} detected for agent {incident.agent_id}",
+                    description=(
+                        f"Incident {incident.incident_id} detected for agent {incident.agent_id}"
+                    ),
                     actor="system",
                     resource_id=incident.agent_id,
                     event_data={
@@ -221,19 +224,13 @@ class EnterpriseRecoveryPlatform:
             error=error,
         )
 
-    async def _run_post_incident_chaos(
-        self, tenant_id: str, incident: Incident
-    ) -> dict[str, Any]:
+    async def _run_post_incident_chaos(self, tenant_id: str, incident: Incident) -> dict[str, Any]:
         """Run a chaos experiment to validate resilience after an incident."""
+
+        if self._chaos is None:
+            return {"error": "chaos_engine_not_configured"}
         from app.domain.entities.chaos_types import (
-            ChaosExperiment,
-            ChaosFault,
-            ChaosScenario,
-            ChaosType,
             DigitalTwin,
-            ExperimentStatus,
-            FaultInjectionStrategy,
-            ScenarioStatus,
             SimulationScenario,
         )
 
@@ -270,10 +267,10 @@ class EnterpriseRecoveryPlatform:
             "recommendations": sim_result.mitigation_recommendations,
         }
 
-    async def _trigger_self_healing(
-        self, tenant_id: str, incident: Incident
-    ) -> dict[str, Any]:
+    async def _trigger_self_healing(self, tenant_id: str, incident: Incident) -> dict[str, Any]:
         """Trigger self-healing checks for the affected agent."""
+        if self._healing is None:
+            return {"error": "self_healing_not_configured"}
         heal_result = await self._healing.check_health(
             tenant_id,
             incident.agent_id,
@@ -320,19 +317,11 @@ class EnterpriseRecoveryPlatform:
             component_metrics["orchestration"] = {
                 "total_incidents": float(len(results)),
                 "full_recovery_rate": float(
-                    sum(
-                        1
-                        for r in results
-                        if r.outcome == OrchestrationOutcome.FULLY_RECOVERED
-                    )
+                    sum(1 for r in results if r.outcome == OrchestrationOutcome.FULLY_RECOVERED)
                 )
                 / max(len(results), 1),
                 "contained_rate": float(
-                    sum(
-                        1
-                        for r in results
-                        if r.outcome == OrchestrationOutcome.CONTAINED
-                    )
+                    sum(1 for r in results if r.outcome == OrchestrationOutcome.CONTAINED)
                 )
                 / max(len(results), 1),
             }
@@ -341,9 +330,7 @@ class EnterpriseRecoveryPlatform:
             events = self._healing.get_healing_events(tenant_id, "")
             component_metrics["self_healing"] = {
                 "total_events": float(len(events)),
-                "recovery_rate": float(
-                    sum(1 for e in events if e.resolved) / max(len(events), 1)
-                ),
+                "recovery_rate": float(sum(1 for e in events if e.resolved) / max(len(events), 1)),
             }
 
         values = self._compute_overall_values(component_metrics)
@@ -395,9 +382,7 @@ class EnterpriseRecoveryPlatform:
         values["overall_resilience"] = values.get("overall_availability", 1.0)
         return values
 
-    async def get_recovery_summary(
-        self, tenant_id: str
-    ) -> RecoverySummary:
+    async def get_recovery_summary(self, tenant_id: str) -> RecoverySummary:
         """Get a high-level recovery summary for a tenant."""
         from app.domain.entities.self_healing_types import HealthStatus
 

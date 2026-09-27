@@ -86,7 +86,8 @@ class CircuitBreakerService:
                 self._reset_counts(resource)
                 logger.info(
                     "Circuit closed for %s after %d successes",
-                    resource, count,
+                    resource,
+                    count,
                 )
             return
         self._reset_counts(resource)
@@ -105,7 +106,8 @@ class CircuitBreakerService:
             self._opened_at[resource] = time.time()
             logger.warning(
                 "Circuit opened for %s after %d failures",
-                resource, self._failure_counts[resource],
+                resource,
+                self._failure_counts[resource],
             )
 
     def get_state(self, resource: str) -> dict[str, Any]:
@@ -136,7 +138,10 @@ class CircuitBreakerService:
         old_state = self._get_state(resource)
         self._states[resource] = new_state
         logger.debug(
-            "Circuit transition: %s %s -> %s", resource, old_state.value, new_state.value,
+            "Circuit transition: %s %s -> %s",
+            resource,
+            old_state.value,
+            new_state.value,
         )
 
     def _should_half_open(self, resource: str) -> bool:

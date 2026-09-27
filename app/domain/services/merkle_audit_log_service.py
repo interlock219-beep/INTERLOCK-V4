@@ -2,13 +2,11 @@ from __future__ import annotations
 
 import hashlib
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, cast
 
 from app.domain.entities.forensic_types import (
     AuditLogEntry,
     AuditLogVerificationError,
-    AuditEventSeverity,
-    AuditEventType,
     EvidenceChainLink,
     IntegrityProof,
     MerkleProof,
@@ -36,9 +34,7 @@ class MerkleAuditLogService:
         self._leaf_hashes: dict[str, list[str]] = {}
         self._roots: dict[str, tuple[str, int]] = {}
 
-    def compute_leaf_hash(
-        self, entry: AuditLogEntry
-    ) -> str:
+    def compute_leaf_hash(self, entry: AuditLogEntry) -> str:
         """Compute the Merkle leaf hash for an audit entry."""
         return entry.leaf_hash
 
@@ -56,10 +52,7 @@ class MerkleAuditLogService:
             next_level: list[str] = []
             for i in range(0, len(current_level), 2):
                 left = current_level[i]
-                if i + 1 < len(current_level):
-                    right = current_level[i + 1]
-                else:
-                    right = left
+                right = current_level[i + 1] if i + 1 < len(current_level) else left
                 next_level.append(self._hash_node(left, right))
             current_level = next_level
         return current_level[0]
@@ -121,9 +114,7 @@ class MerkleAuditLogService:
             path_directions=directions,
         )
 
-    def verify_inclusion(
-        self, proof: MerkleProof
-    ) -> bool:
+    def verify_inclusion(self, proof: MerkleProof) -> bool:
         """Verify a Merkle inclusion proof."""
         return proof.verify()
 
@@ -138,7 +129,7 @@ class MerkleAuditLogService:
                 f"Entry {entry.entry_id} already exists; log is append-only"
             )
 
-        saved = await self._repo.append_entry(tenant_id, entry)
+        saved: AuditLogEntry = await self._repo.append_entry(tenant_id, entry)
 
         leaf_hash = entry.leaf_hash
         if tenant_id not in self._leaf_hashes:
@@ -150,7 +141,9 @@ class MerkleAuditLogService:
         self._roots[tenant_id] = (root, size)
 
         snapshot = MerkleTreeSnapshot(
-            snapshot_id=f"snap-{tenant_id}-{root[:16]}-{int(datetime.now(UTC).timestamp() * 1_000_000)}",
+            snapshot_id=(
+                f"snap-{tenant_id}-{root[:16]}-{int(datetime.now(UTC).timestamp() * 1_000_000)}"
+            ),
             tenant_id=tenant_id,
             root_hash=root,
             tree_size=size,
@@ -172,23 +165,23 @@ class MerkleAuditLogService:
         for eid in entry_ids:
             entry = await self._repo.get_entry(tenant_id, eid)
             if entry is not None:
-                trail.append({
-                    "entry_id": eid,
-                    "leaf_hash": entry.leaf_hash,
-                    "event_type": entry.event_type.value,
-                    "timestamp": entry.timestamp.isoformat(),
-                    "description": entry.description,
-                })
+                trail.append(
+                    {
+                        "entry_id": eid,
+                        "leaf_hash": entry.leaf_hash,
+                        "event_type": entry.event_type.value,
+                        "timestamp": entry.timestamp.isoformat(),
+                        "description": entry.description,
+                    }
+                )
         return trail
 
-    async def get_root(
-        self, tenant_id: str
-    ) -> tuple[str, int] | None:
+    async def get_root(self, tenant_id: str) -> tuple[str, int] | None:
         """Get the current Merkle root and tree size for a tenant."""
         cached = self._roots.get(tenant_id)
         if cached is not None:
             return cached
-        return await self._repo.get_latest_merkle_root(tenant_id)
+        return cast(tuple[str, int] | None, await self._repo.get_latest_merkle_root(tenant_id))
 
     def build_integrity_proof(
         self,
@@ -204,7 +197,7 @@ class MerkleAuditLogService:
         entry_hashes: list[str] = []
         issues: list[str] = []
 
-        for i, eid in enumerate(entry_ids):
+        for _i, eid in enumerate(entry_ids):
             try:
                 idx = leaf_hashes.index(eid)
             except ValueError:
@@ -244,8 +237,13 @@ class MerkleAuditLogService:
         linking_actor: str = "system",
     ) -> EvidenceChainLink:
         """Create a signed chain link binding two evidence items."""
-        link_id = f"link-{tenant_id}-{hashlib.sha256((parent_evidence_id + child_evidence_id).encode()).hexdigest()[:16]}"
-        payload = link_id + tenant_id + parent_evidence_id + child_evidence_id + parent_hash + child_hash
+        link_id = (
+            f"link-{tenant_id}-"
+            f"{hashlib.sha256((parent_evidence_id + child_evidence_id).encode()).hexdigest()[:16]}"
+        )
+        payload = (
+            link_id + tenant_id + parent_evidence_id + child_evidence_id + parent_hash + child_hash
+        )
         link_hash = hashlib.sha256(payload.encode("utf-8")).hexdigest()
         return EvidenceChainLink(
             link_id=link_id,

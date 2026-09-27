@@ -1,4 +1,4 @@
-﻿from typing import Annotated, Any
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
@@ -126,9 +126,7 @@ def _get_adapters(
     adapters: list[Any] = []
 
     if settings.interlock_workspace_path:
-        adapters.append(
-            FilesystemRecoveryAdapter(base_path=settings.interlock_workspace_path)
-        )
+        adapters.append(FilesystemRecoveryAdapter(base_path=settings.interlock_workspace_path))
 
     adapters.append(DatabaseRecoveryAdapter())
     adapters.append(ConfigRecoveryAdapter())
@@ -186,9 +184,7 @@ def _plan_to_response(plan: RecoveryPlan) -> SurgicalRecoveryPlanResponse:
 )
 async def list_recovery_evidence(
     current_user: CurrentUser,
-    evidence_repo: Annotated[
-        RecoveryEvidenceRepository, Depends(_get_evidence_repo)
-    ],
+    evidence_repo: Annotated[RecoveryEvidenceRepository, Depends(_get_evidence_repo)],
     incident_id: str = Query(default="", min_length=0),
     root_action_id: str = Query(default="", min_length=0),
     limit: int = Query(default=DEFAULT_LIMIT, ge=1, le=MAX_LIMIT),
@@ -233,13 +229,9 @@ async def list_recovery_evidence(
 async def get_recovery_evidence(
     evidence_id: str,
     current_user: CurrentUser,
-    evidence_repo: Annotated[
-        RecoveryEvidenceRepository, Depends(_get_evidence_repo)
-    ],
+    evidence_repo: Annotated[RecoveryEvidenceRepository, Depends(_get_evidence_repo)],
 ) -> RecoveryEvidenceResponse:
-    evidence = await evidence_repo.get_by_evidence_id(
-        get_user_tenant_id(current_user), evidence_id
-    )
+    evidence = await evidence_repo.get_by_evidence_id(get_user_tenant_id(current_user), evidence_id)
     if evidence is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -259,9 +251,7 @@ async def get_recovery_evidence(
 )
 async def list_recovery_executions(
     current_user: CurrentUser,
-    execution_repo: Annotated[
-        RecoveryExecutionRepository, Depends(_get_execution_repo)
-    ],
+    execution_repo: Annotated[RecoveryExecutionRepository, Depends(_get_execution_repo)],
     plan_id: str = Query(default="", min_length=0),
     action_id: str = Query(default="", min_length=0),
     limit: int = Query(default=DEFAULT_LIMIT, ge=1, le=MAX_LIMIT),
@@ -306,9 +296,7 @@ async def list_recovery_executions(
 async def get_recovery_execution(
     execution_id: str,
     current_user: CurrentUser,
-    execution_repo: Annotated[
-        RecoveryExecutionRepository, Depends(_get_execution_repo)
-    ],
+    execution_repo: Annotated[RecoveryExecutionRepository, Depends(_get_execution_repo)],
 ) -> RecoveryExecutionResponse:
     execution = await execution_repo.get_by_execution_id(
         get_user_tenant_id(current_user), execution_id
@@ -354,9 +342,7 @@ async def create_recovery_plan(
     recovery_service: Annotated[RecoveryPlanningService, Depends(_get_recovery_service)],
     incident_action_id: str = Query(..., min_length=1, max_length=64),
 ) -> RecoveryPlanResponse:
-    plan = await recovery_service.create_plan(
-        get_user_tenant_id(current_user), incident_action_id
-    )
+    plan = await recovery_service.create_plan(get_user_tenant_id(current_user), incident_action_id)
     log_security_event(
         "recovery_plan_created",
         tenant_id=get_user_tenant_id(current_user),
@@ -400,9 +386,7 @@ async def simulate_recovery_plan(
     current_user: CurrentUser,
     recovery_service: Annotated[RecoveryPlanningService, Depends(_get_recovery_service)],
 ) -> dict[str, Any]:
-    simulation = await recovery_service.simulate_plan(
-        get_user_tenant_id(current_user), plan_id
-    )
+    simulation = await recovery_service.simulate_plan(get_user_tenant_id(current_user), plan_id)
     log_security_event(
         "recovery_plan_simulated",
         tenant_id=get_user_tenant_id(current_user),
@@ -433,7 +417,7 @@ async def execute_recovery_plan(
             detail="Recovery plan not found",
         )
 
-    if plan.status not in (RecoveryStatus.SIMULATED, RecoveryStatus.APPROVED):
+    if plan.status not in (RecoveryStatus.APPROVED,):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Plan status '{plan.status.value}' does not allow execution",
@@ -451,12 +435,8 @@ async def execute_recovery_plan(
     )
     affected = [action] + descendants
 
-    orchestrator = DistributedRecoveryOrchestrator(
-        evidence_repo, execution_repo, adapters
-    )
-    await orchestrator.create_durable_plan(
-        tenant_id, plan_id, affected, plan.topological_order
-    )
+    orchestrator = DistributedRecoveryOrchestrator(evidence_repo, execution_repo, adapters)
+    await orchestrator.create_durable_plan(tenant_id, plan_id, affected, plan.topological_order)
     execution_result = await orchestrator.execute_durable_plan(
         tenant_id, plan_id, plan.stop_conditions
     )
@@ -476,9 +456,7 @@ async def execute_recovery_plan(
         new_execution_status = "failed"
 
     updated_simulation = dict(plan.simulation_result)
-    updated_simulation["execution_results"] = execution_result.get(
-        "execution_results", {}
-    )
+    updated_simulation["execution_results"] = execution_result.get("execution_results", {})
 
     updated_plan = await plan_repo.update_status(
         tenant_id,
@@ -538,12 +516,8 @@ async def resume_recovery_plan(
             detail="Recovery plan not found",
         )
 
-    orchestrator = DistributedRecoveryOrchestrator(
-        evidence_repo, execution_repo, adapters
-    )
-    result = await orchestrator.resume_plan(
-        tenant_id, plan_id, plan.stop_conditions
-    )
+    orchestrator = DistributedRecoveryOrchestrator(evidence_repo, execution_repo, adapters)
+    result = await orchestrator.resume_plan(tenant_id, plan_id, plan.stop_conditions)
 
     log_security_event(
         "recovery_plan_resumed",
@@ -578,9 +552,7 @@ async def verify_recovery_plan(
     verification_service = ContinuousVerificationService(
         evidence_repo, execution_repo, report_repo, adapters
     )
-    report = await verification_service.verify_recovery(
-        tenant_id, plan_id, plan.incident_id
-    )
+    report = await verification_service.verify_recovery(tenant_id, plan_id, plan.incident_id)
 
     log_security_event(
         "recovery_plan_verified",
@@ -633,9 +605,7 @@ async def assess_recovery_confidence(
             affected.append(action)
 
     confidence_model = RecoveryConfidenceModel(confidence_repo, evidence_repo)
-    confidence = await confidence_model.assess_confidence(
-        tenant_id, plan_id, affected
-    )
+    confidence = await confidence_model.assess_confidence(tenant_id, plan_id, affected)
 
     log_security_event(
         "recovery_confidence_assessed",

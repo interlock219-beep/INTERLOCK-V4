@@ -101,15 +101,11 @@ class ContinuousVerificationService:
                 result["status"] = VerificationStatus.EXECUTION_FAILED.value
                 all_verified = False
                 limitations.append(f"Action {action_id}: execution failed")
-            elif step.execution_state in (
-                "blocked_by_drift", "blocked_by_conflict"
-            ):
+            elif step.execution_state in ("blocked_by_drift", "blocked_by_conflict"):
                 manual_required.append(action_id)
                 result["status"] = VerificationStatus.MANUAL_VERIFICATION_REQUIRED.value
                 all_verified = False
-                limitations.append(
-                    f"Action {action_id}: blocked by {step.execution_state}"
-                )
+                limitations.append(f"Action {action_id}: blocked by {step.execution_state}")
             elif step.execution_state == "requires_manual_action":
                 manual_required.append(action_id)
                 result["status"] = VerificationStatus.MANUAL_VERIFICATION_REQUIRED.value
@@ -156,9 +152,7 @@ class ContinuousVerificationService:
         )
         return await self._report_repo.save(report)
 
-    async def verify_single_action(
-        self, tenant_id: str, action_id: str
-    ) -> dict[str, Any]:
+    async def verify_single_action(self, tenant_id: str, action_id: str) -> dict[str, Any]:
         """Verify a single action's recovery outcome."""
         evidence = await self._evidence_repo.get_by_action_id(tenant_id, action_id)
         if evidence is None:

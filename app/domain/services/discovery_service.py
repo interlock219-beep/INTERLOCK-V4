@@ -52,9 +52,7 @@ class DiscoveryService:
                 "connector": RegistrationMethod.AUTO_DISCOVERED,
                 "event": RegistrationMethod.AUTO_DISCOVERED,
             }
-            registration_method = source_to_method.get(
-                source.value, RegistrationMethod.API
-            )
+            registration_method = source_to_method.get(source.value, RegistrationMethod.API)
             agent = Agent(
                 agent_id=agent_id,
                 tenant_id=tenant_id,

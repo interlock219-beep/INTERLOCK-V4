@@ -112,9 +112,7 @@ class SQLAlchemyStateCheckpointRepository(StateCheckpointRepository):
         result = self._session.execute(stmt).scalar_one_or_none()
         return self._to_entity(result) if result else None
 
-    async def get_by_action_id(
-        self, tenant_id: str, action_id: str
-    ) -> StateCheckpoint | None:
+    async def get_by_action_id(self, tenant_id: str, action_id: str) -> StateCheckpoint | None:
         stmt = select(StateCheckpointModel).where(
             StateCheckpointModel.action_id == action_id,
             StateCheckpointModel.tenant_id == tenant_id,
@@ -188,9 +186,7 @@ class SQLAlchemyResourceVersionRepository(ResourceVersionRepository):
             version_metadata=_deserialize_json_dict(model.version_metadata),
         )
 
-    async def get_by_version_id(
-        self, tenant_id: str, version_id: str
-    ) -> ResourceVersion | None:
+    async def get_by_version_id(self, tenant_id: str, version_id: str) -> ResourceVersion | None:
         stmt = select(ResourceVersionModel).where(
             ResourceVersionModel.version_id == version_id,
             ResourceVersionModel.tenant_id == tenant_id,
@@ -214,9 +210,7 @@ class SQLAlchemyResourceVersionRepository(ResourceVersionRepository):
         results = self._session.execute(stmt).scalars().all()
         return [self._to_entity(r) for r in results], len(results)
 
-    async def get_latest_version(
-        self, tenant_id: str, resource_id: str
-    ) -> ResourceVersion | None:
+    async def get_latest_version(self, tenant_id: str, resource_id: str) -> ResourceVersion | None:
         stmt = (
             select(ResourceVersionModel)
             .where(
@@ -274,9 +268,7 @@ class SQLAlchemyStateDeltaRepository(StateDeltaRepository):
             delta_metadata=_deserialize_json_dict(model.delta_metadata),
         )
 
-    async def get_by_delta_id(
-        self, tenant_id: str, delta_id: str
-    ) -> StateDelta | None:
+    async def get_by_delta_id(self, tenant_id: str, delta_id: str) -> StateDelta | None:
         stmt = select(StateDeltaModel).where(
             StateDeltaModel.delta_id == delta_id,
             StateDeltaModel.tenant_id == tenant_id,
@@ -351,9 +343,7 @@ class SQLAlchemyChangeSetRepository(ChangeSetRepository):
             external_effects=_deserialize_json_list(model.external_effects),
         )
 
-    async def get_by_changeset_id(
-        self, tenant_id: str, changeset_id: str
-    ) -> AIChangeSet | None:
+    async def get_by_changeset_id(self, tenant_id: str, changeset_id: str) -> AIChangeSet | None:
         stmt = select(AIChangeSetModel).where(
             AIChangeSetModel.changeset_id == changeset_id,
             AIChangeSetModel.tenant_id == tenant_id,
@@ -361,9 +351,7 @@ class SQLAlchemyChangeSetRepository(ChangeSetRepository):
         result = self._session.execute(stmt).scalar_one_or_none()
         return self._to_entity(result) if result else None
 
-    async def get_by_incident(
-        self, tenant_id: str, incident_id: str
-    ) -> AIChangeSet | None:
+    async def get_by_incident(self, tenant_id: str, incident_id: str) -> AIChangeSet | None:
         stmt = select(AIChangeSetModel).where(
             AIChangeSetModel.incident_id == incident_id,
             AIChangeSetModel.tenant_id == tenant_id,
@@ -446,9 +434,7 @@ class SQLAlchemyCausalStateGraphRepository(CausalStateGraphRepository):
             subgraph_extractions=_deserialize_json_list(model.subgraph_extractions),
         )
 
-    async def get_by_graph_id(
-        self, tenant_id: str, graph_id: str
-    ) -> CausalStateGraph | None:
+    async def get_by_graph_id(self, tenant_id: str, graph_id: str) -> CausalStateGraph | None:
         stmt = select(CausalStateGraphModel).where(
             CausalStateGraphModel.graph_id == graph_id,
             CausalStateGraphModel.tenant_id == tenant_id,
@@ -456,9 +442,7 @@ class SQLAlchemyCausalStateGraphRepository(CausalStateGraphRepository):
         result = self._session.execute(stmt).scalar_one_or_none()
         return self._to_entity(result) if result else None
 
-    async def get_by_incident(
-        self, tenant_id: str, incident_id: str
-    ) -> CausalStateGraph | None:
+    async def get_by_incident(self, tenant_id: str, incident_id: str) -> CausalStateGraph | None:
         stmt = select(CausalStateGraphModel).where(
             CausalStateGraphModel.incident_id == incident_id,
             CausalStateGraphModel.tenant_id == tenant_id,
@@ -545,9 +529,7 @@ class SQLAlchemyConfidenceRepository(ConfidenceRepository):
         result = self._session.execute(stmt).scalar_one_or_none()
         return self._to_entity(result) if result else None
 
-    async def get_by_plan(
-        self, tenant_id: str, plan_id: str
-    ) -> RecoveryConfidence | None:
+    async def get_by_plan(self, tenant_id: str, plan_id: str) -> RecoveryConfidence | None:
         stmt = select(RecoveryConfidenceModel).where(
             RecoveryConfidenceModel.plan_id == plan_id,
             RecoveryConfidenceModel.tenant_id == tenant_id,
@@ -606,9 +588,7 @@ class SQLAlchemyDurableExecutionRepository(DurableExecutionRepository):
             step_metadata=_deserialize_json_dict(model.step_metadata),
         )
 
-    async def get_by_step_id(
-        self, tenant_id: str, step_id: str
-    ) -> DurableExecutionStep | None:
+    async def get_by_step_id(self, tenant_id: str, step_id: str) -> DurableExecutionStep | None:
         stmt = select(DurableExecutionStepModel).where(
             DurableExecutionStepModel.step_id == step_id,
             DurableExecutionStepModel.tenant_id == tenant_id,
@@ -703,9 +683,7 @@ class SQLAlchemyRecoveryReportRepository(RecoveryReportRepository):
             limitations=_deserialize_json_list(model.limitations),
         )
 
-    async def get_by_report_id(
-        self, tenant_id: str, report_id: str
-    ) -> RecoveryReport | None:
+    async def get_by_report_id(self, tenant_id: str, report_id: str) -> RecoveryReport | None:
         stmt = select(RecoveryReportModel).where(
             RecoveryReportModel.report_id == report_id,
             RecoveryReportModel.tenant_id == tenant_id,
@@ -713,9 +691,7 @@ class SQLAlchemyRecoveryReportRepository(RecoveryReportRepository):
         result = self._session.execute(stmt).scalar_one_or_none()
         return self._to_entity(result) if result else None
 
-    async def get_by_plan(
-        self, tenant_id: str, plan_id: str
-    ) -> RecoveryReport | None:
+    async def get_by_plan(self, tenant_id: str, plan_id: str) -> RecoveryReport | None:
         stmt = select(RecoveryReportModel).where(
             RecoveryReportModel.plan_id == plan_id,
             RecoveryReportModel.tenant_id == tenant_id,
@@ -723,9 +699,7 @@ class SQLAlchemyRecoveryReportRepository(RecoveryReportRepository):
         result = self._session.execute(stmt).scalar_one_or_none()
         return self._to_entity(result) if result else None
 
-    async def get_by_incident(
-        self, tenant_id: str, incident_id: str
-    ) -> RecoveryReport | None:
+    async def get_by_incident(self, tenant_id: str, incident_id: str) -> RecoveryReport | None:
         stmt = select(RecoveryReportModel).where(
             RecoveryReportModel.incident_id == incident_id,
             RecoveryReportModel.tenant_id == tenant_id,

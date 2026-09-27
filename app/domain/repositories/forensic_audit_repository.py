@@ -13,14 +13,10 @@ class ForensicAuditRepository(ABC):
     """Persistence port for append-only forensic audit log entries."""
 
     @abstractmethod
-    async def append_entry(
-        self, tenant_id: str, entry: AuditLogEntry
-    ) -> AuditLogEntry: ...
+    async def append_entry(self, tenant_id: str, entry: AuditLogEntry) -> AuditLogEntry: ...
 
     @abstractmethod
-    async def get_entry(
-        self, tenant_id: str, entry_id: str
-    ) -> AuditLogEntry | None: ...
+    async def get_entry(self, tenant_id: str, entry_id: str) -> AuditLogEntry | None: ...
 
     @abstractmethod
     async def list_entries(
@@ -40,9 +36,7 @@ class ForensicAuditRepository(ABC):
     ) -> tuple[list[AuditLogEntry], int]: ...
 
     @abstractmethod
-    async def get_latest_entry(
-        self, tenant_id: str
-    ) -> AuditLogEntry | None: ...
+    async def get_latest_entry(self, tenant_id: str) -> AuditLogEntry | None: ...
 
     @abstractmethod
     async def save_merkle_root(
@@ -54,9 +48,7 @@ class ForensicAuditRepository(ABC):
     ) -> None: ...
 
     @abstractmethod
-    async def get_latest_merkle_root(
-        self, tenant_id: str
-    ) -> tuple[str, int] | None: ...
+    async def get_latest_merkle_root(self, tenant_id: str) -> tuple[str, int] | None: ...
 
     @abstractmethod
     async def save_chain_link(

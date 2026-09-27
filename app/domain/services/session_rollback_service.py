@@ -167,9 +167,7 @@ class SessionRollbackService:
             if session.status == AgentSessionStatus.ROLLING_BACK:
                 raise ValueError("Rollback already in progress")
 
-            await session_repo.update_status(
-                tenant_id, session_id, AgentSessionStatus.FROZEN
-            )
+            await session_repo.update_status(tenant_id, session_id, AgentSessionStatus.FROZEN)
             log_security_event(
                 "session_frozen_for_rollback",
                 tenant_id=tenant_id,
@@ -185,12 +183,8 @@ class SessionRollbackService:
 
             actions = await self._discover_session_actions(tenant_id, session_id)
 
-            await self._build_changeset(
-                tenant_id, incident.incident_id, session, actions
-            )
-            await self._build_causal_graph(
-                tenant_id, incident.incident_id, session, actions
-            )
+            await self._build_changeset(tenant_id, incident.incident_id, session, actions)
+            await self._build_causal_graph(tenant_id, incident.incident_id, session, actions)
 
             plan = await self._generate_recovery_plan(
                 tenant_id, session, actions, incident, stop_conditions
@@ -212,12 +206,17 @@ class SessionRollbackService:
 
             final_status = self._determine_final_status(verification, execution_result)
             await session_repo.update_status(
-                tenant_id, session_id, final_status,
-                ended_at=datetime.now(UTC) if final_status in (
+                tenant_id,
+                session_id,
+                final_status,
+                ended_at=datetime.now(UTC)
+                if final_status
+                in (
                     AgentSessionStatus.RECOVERED,
                     AgentSessionStatus.PARTIALLY_RECOVERED,
                     AgentSessionStatus.RECOVERY_FAILED,
-                ) else None,
+                )
+                else None,
             )
 
         return {
@@ -282,22 +281,21 @@ class SessionRollbackService:
         )
 
         changeset = await self._build_changeset(tenant_id, incident.incident_id, session, actions)
-        plan = await self._generate_recovery_plan(
-            tenant_id, session, actions, incident, None
-        )
+        plan = await self._generate_recovery_plan(tenant_id, session, actions, incident, None)
         simulation = await self._simulate_plan(tenant_id, plan, actions)
 
         affected_resources = list(changeset.affected_resources)
         recoverable = [
-            aid for aid, rec in changeset.recoverability.items()
+            aid
+            for aid, rec in changeset.recoverability.items()
             if rec in ("recoverable", "conditionally_recoverable")
         ]
         irreversible = [
-            aid for aid, rec in changeset.recoverability.items()
-            if rec == "irreversible"
+            aid for aid, rec in changeset.recoverability.items() if rec == "irreversible"
         ]
         unknown = [
-            aid for aid, rec in changeset.recoverability.items()
+            aid
+            for aid, rec in changeset.recoverability.items()
             if rec in ("unknown", "no_evidence", "no_before_state")
         ]
 
@@ -372,7 +370,8 @@ class SessionRollbackService:
             tenant_id, session.agent_id, limit=5000, offset=0
         )
         return [
-            a for a in actions
+            a
+            for a in actions
             if a.status not in (ActionStatus.CONTAINED,)
             and a.correlation_id == session.correlation_id
         ]
@@ -498,7 +497,8 @@ class SessionRollbackService:
         simulation["total_resources"] = resource_sim.get("total_resources", len(actions))
         simulation["recoverable_resources"] = resource_sim.get("recoverable_resources", 0)
         simulation["irreversible_resources"] = sum(
-            1 for v in resource_sim.get("resource_simulations", {}).values()
+            1
+            for v in resource_sim.get("resource_simulations", {}).values()
             if v.get("simulation_status") == "irreversible"
         )
         return simulation
@@ -516,9 +516,7 @@ class SessionRollbackService:
             self._plan_repo,
             adapters=self._adapters,
         )
-        executed_plan = await planning_service.execute_plan(
-            tenant_id, plan.plan_id, executed_by
-        )
+        executed_plan = await planning_service.execute_plan(tenant_id, plan.plan_id, executed_by)
 
         orchestrator = DistributedRecoveryOrchestrator(
             self._evidence_repo,
@@ -578,19 +576,19 @@ class SessionRollbackService:
     ) -> Any:
         report_id = f"rpt-{secrets.token_hex(12)}"
         ai_changes_recovered = [
-            a.action_id for a in actions
-            if a.reversibility in (
+            a.action_id
+            for a in actions
+            if a.reversibility
+            in (
                 Reversibility.AUTOMATICALLY_REVERSIBLE,
                 Reversibility.CONDITIONALLY_REVERSIBLE,
             )
         ]
         ai_changes_failed = [
-            a.action_id for a in actions
-            if a.reversibility == Reversibility.IRREVERSIBLE
+            a.action_id for a in actions if a.reversibility == Reversibility.IRREVERSIBLE
         ]
         manual_recovery_required = [
-            a.action_id for a in actions
-            if a.reversibility == Reversibility.MANUALLY_RECOVERABLE
+            a.action_id for a in actions if a.reversibility == Reversibility.MANUALLY_RECOVERABLE
         ]
 
         return _RecoveryReport(
@@ -635,8 +633,6 @@ class SessionRollbackService:
             return "none"
         if len(changeset.unknown_areas) > 0:
             return "unknown"
-        if any(
-            rec in ("irreversible", "unknown") for rec in changeset.recoverability.values()
-        ):
+        if any(rec in ("irreversible", "unknown") for rec in changeset.recoverability.values()):
             return "partial"
         return "full"

@@ -75,27 +75,89 @@ class DatabaseRecoveryAdapter(RecoveryAdapter):
         self._connection_string = connection_string
         self._db_path = Path(db_path) if db_path else None
         self._max_rows_per_operation = max_rows_per_operation
-        self._allowed_tables = frozenset({
-            "users", "agents", "actions", "grants", "sessions", "incidents",
-            "recovery_plans", "recovery_evidence", "recovery_executions",
-            "approval_requests", "discovery_events", "protected_actions",
-            "authority_grants", "execution_tokens", "password_resets",
-            "mfa_secrets", "email_verifications", "sso_identities",
-            "billing_accounts", "billing_invoices", "causal_states",
-        })
-        self._allowed_columns = frozenset({
-            "id", "uuid", "agent_id", "user_id", "tenant_id", "action_id",
-            "plan_id", "execution_id", "evidence_id", "grant_id", "session_id",
-            "incident_id", "request_id", "token_id", "grantor_id", "grantee_id",
-            "parent_id", "root_id", "correlation_id", "status", "created_at",
-            "updated_at", "deleted_at", "executed_at", "expires_at",
-            "name", "email", "role", "permissions", "scopes", "metadata",
-            "before_state", "after_state", "payload", "result", "error",
-            "details", "hash", "version", "resource", "tool", "action_type",
-            "reversibility", "approval_status", "approved_by", "executed_by",
-            "initiated_by", "authorized_by", "strategy", "compensation",
-            "verification", "confidence", "drift", "conflict",
-        })
+        self._allowed_tables = frozenset(
+            {
+                "users",
+                "agents",
+                "actions",
+                "grants",
+                "sessions",
+                "incidents",
+                "recovery_plans",
+                "recovery_evidence",
+                "recovery_executions",
+                "approval_requests",
+                "discovery_events",
+                "protected_actions",
+                "authority_grants",
+                "execution_tokens",
+                "password_resets",
+                "mfa_secrets",
+                "email_verifications",
+                "sso_identities",
+                "billing_accounts",
+                "billing_invoices",
+                "causal_states",
+            }
+        )
+        self._allowed_columns = frozenset(
+            {
+                "id",
+                "uuid",
+                "agent_id",
+                "user_id",
+                "tenant_id",
+                "action_id",
+                "plan_id",
+                "execution_id",
+                "evidence_id",
+                "grant_id",
+                "session_id",
+                "incident_id",
+                "request_id",
+                "token_id",
+                "grantor_id",
+                "grantee_id",
+                "parent_id",
+                "root_id",
+                "correlation_id",
+                "status",
+                "created_at",
+                "updated_at",
+                "deleted_at",
+                "executed_at",
+                "expires_at",
+                "name",
+                "email",
+                "role",
+                "permissions",
+                "scopes",
+                "metadata",
+                "before_state",
+                "after_state",
+                "payload",
+                "result",
+                "error",
+                "details",
+                "hash",
+                "version",
+                "resource",
+                "tool",
+                "action_type",
+                "reversibility",
+                "approval_status",
+                "approved_by",
+                "executed_by",
+                "initiated_by",
+                "authorized_by",
+                "strategy",
+                "compensation",
+                "verification",
+                "confidence",
+                "drift",
+                "conflict",
+            }
+        )
 
     def _validate_table_name(self, table_name: str) -> bool:
         return table_name.lower() in self._allowed_tables
@@ -109,7 +171,8 @@ class DatabaseRecoveryAdapter(RecoveryAdapter):
         if not column_name or not isinstance(column_name, str):
             return False
         import re
-        return bool(re.match(r'^[a-zA-Z_][a-zA-Z0-9_]*$', column_name))
+
+        return bool(re.match(r"^[a-zA-Z_][a-zA-Z0-9_]*$", column_name))
 
     async def can_recover(self, action: ProtectedAction) -> str:
         rev = Reversibility.normalize(action.reversibility)
@@ -160,9 +223,7 @@ class DatabaseRecoveryAdapter(RecoveryAdapter):
     ) -> RecoveryEvidence:
         self._verify_tenant_isolation(action)
         payload_str = json.dumps(action.tool_arguments, sort_keys=True, default=str)
-        evidence_hash = hashlib.sha256(
-            f"{action.action_id}:{payload_str}".encode()
-        ).hexdigest()
+        evidence_hash = hashlib.sha256(f"{action.action_id}:{payload_str}".encode()).hexdigest()
 
         db_path = self._get_db_path(execution_context)
         before_state = None
@@ -208,9 +269,7 @@ class DatabaseRecoveryAdapter(RecoveryAdapter):
         before_state_reference = (
             before_state.get("hash") if before_state else action.before_state_ref
         )
-        after_state_reference = (
-            after_state.get("hash") if after_state else action.after_state_ref
-        )
+        after_state_reference = after_state.get("hash") if after_state else action.after_state_ref
 
         return RecoveryEvidence(
             evidence_id=f"ev-{action.action_id}",
@@ -842,9 +901,7 @@ class DatabaseRecoveryAdapter(RecoveryAdapter):
             "requires_approval": Reversibility.is_conditional(action.reversibility),
         }
 
-    async def execute_recovery(
-        self, action: ProtectedAction, approved_by: str
-    ) -> dict[str, Any]:
+    async def execute_recovery(self, action: ProtectedAction, approved_by: str) -> dict[str, Any]:
         return {
             "adapter": "database_recovery",
             "action_id": action.action_id,
@@ -885,7 +942,7 @@ class DatabaseRecoveryAdapter(RecoveryAdapter):
         prefixes = ["table:", "db:", "database:", "sql:"]
         for prefix in prefixes:
             if resource.startswith(prefix):
-                table_name = resource[len(prefix):].split(":")[0]
+                table_name = resource[len(prefix) :].split(":")[0]
                 if self._validate_table_name(table_name):
                     return table_name
                 return None

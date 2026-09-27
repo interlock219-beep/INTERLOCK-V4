@@ -16,6 +16,7 @@ Security boundaries:
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import secrets
@@ -50,6 +51,7 @@ class VersionedKeyManager(KeyManager):
         key_dir: str | None = None,
         jwt_secret: str | None = None,
         hsm_provider: HSMKeyProvider | None = None,
+        key_encryption_secret: str | None = None,
     ) -> None:
         if key_dir is not None:
             if ".." in Path(key_dir).parts:
@@ -60,6 +62,13 @@ class VersionedKeyManager(KeyManager):
             self._key_dir = None
         self._jwt_secret = jwt_secret
         self._hsm_provider = hsm_provider
+        raw_secret = key_encryption_secret or jwt_secret or ""
+        self._key_encryption_secret = raw_secret if isinstance(raw_secret, str) else ""
+        self._encryption_password = (
+            hashlib.sha256(self._key_encryption_secret.encode("utf-8")).digest()
+            if self._key_encryption_secret
+            else None
+        )
         self._keys: dict[str, Ed25519PrivateKey] = {}
         self._active_key_id: str = ""
         self._previous_key_ids: list[str] = []
@@ -149,9 +158,7 @@ class VersionedKeyManager(KeyManager):
                 self._delete_key(retired)
 
         self._save_metadata()
-        logger.info(
-            "Key rotated: new active=%s, previous=%s", new_id, old_active
-        )
+        logger.info("Key rotated: new active=%s, previous=%s", new_id, old_active)
         return new_id
 
     # ------------------------------------------------------------------ #
@@ -208,10 +215,15 @@ class VersionedKeyManager(KeyManager):
     def _save_key(self, key_id: str, key: Ed25519PrivateKey) -> None:
         if self._key_dir is None:
             return
+        encryption_algorithm = (
+            serialization.BestAvailableEncryption(self._encryption_password)
+            if self._encryption_password is not None
+            else serialization.NoEncryption()
+        )
         pem = key.private_bytes(
             encoding=serialization.Encoding.PEM,
             format=serialization.PrivateFormat.PKCS8,
-            encryption_algorithm=serialization.NoEncryption(),
+            encryption_algorithm=encryption_algorithm,
         )
         (self._key_dir / f"{key_id}.pem").write_bytes(pem)
 
@@ -222,7 +234,8 @@ class VersionedKeyManager(KeyManager):
         if not key_file.exists():
             return None
         data = key_file.read_bytes()
-        result = serialization.load_pem_private_key(data, password=None)
+        password = self._encryption_password
+        result = serialization.load_pem_private_key(data, password=password)
         return result  # type: ignore[return-value]
 
     def _delete_key(self, key_id: str) -> None:

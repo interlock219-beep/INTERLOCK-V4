@@ -100,9 +100,7 @@ class VelocityTracker:
         reasons: list[str] = []
 
         if request_count > self._max_requests:
-            reasons.append(
-                f"Request velocity exceeded: {request_count} > {self._max_requests}"
-            )
+            reasons.append(f"Request velocity exceeded: {request_count} > {self._max_requests}")
 
         if window.cumulative_value > self._max_cumulative_value:
             reasons.append(

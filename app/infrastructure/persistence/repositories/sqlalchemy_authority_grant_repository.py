@@ -68,6 +68,23 @@ class SQLAlchemyAuthorityGrantRepository(AuthorityGrantRepository):
         models = self._session.scalars(stmt).all()
         return [self._to_entity(m) for m in models], total
 
+    async def list_by_tenant(
+        self,
+        tenant_id: str,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> tuple[list[AuthorityGrant], int]:
+        stmt = select(AuthorityGrantModel).where(
+            AuthorityGrantModel.tenant_id == tenant_id,
+        )
+        count_stmt = select(AuthorityGrantModel).where(
+            AuthorityGrantModel.tenant_id == tenant_id,
+        )
+        total = len(self._session.scalars(count_stmt).all())
+        stmt = stmt.order_by(AuthorityGrantModel.created_at.desc()).limit(limit).offset(offset)
+        models = self._session.scalars(stmt).all()
+        return [self._to_entity(m) for m in models], total
+
     async def list_descendants(
         self,
         tenant_id: str,
@@ -110,6 +127,12 @@ class SQLAlchemyAuthorityGrantRepository(AuthorityGrantRepository):
                 grant_metadata=json.dumps(grant.metadata),
                 created_at=grant.created_at,
                 updated_at=grant.updated_at,
+                is_jit=grant.is_jit,
+                jit_created_at=grant.jit_created_at,
+                jit_expires_at=grant.jit_expires_at,
+                jit_consumed_at=grant.jit_consumed_at,
+                one_shot=grant.one_shot,
+                usage_count=grant.usage_count,
             )
             self._session.add(model)
         else:
@@ -125,6 +148,12 @@ class SQLAlchemyAuthorityGrantRepository(AuthorityGrantRepository):
             model.revoked_by = grant.revoked_by
             model.grant_metadata = json.dumps(grant.metadata)
             model.updated_at = datetime.now(UTC)
+            model.is_jit = grant.is_jit
+            model.jit_created_at = grant.jit_created_at
+            model.jit_expires_at = grant.jit_expires_at
+            model.jit_consumed_at = grant.jit_consumed_at
+            model.one_shot = grant.one_shot
+            model.usage_count = grant.usage_count
         self._session.flush()
         return self._to_entity(model)
 
@@ -156,6 +185,32 @@ class SQLAlchemyAuthorityGrantRepository(AuthorityGrantRepository):
             stmt = stmt.where(AuthorityGrantModel.resource == resource)
         models = self._session.scalars(stmt).all()
         return [self._to_entity(m) for m in models]
+
+    async def consume_one_shot(self, tenant_id: str, grant_id: str) -> AuthorityGrant | None:
+        from datetime import UTC as _UTC
+
+        now = datetime.now(_UTC)
+        stmt = (
+            select(AuthorityGrantModel)
+            .where(
+                AuthorityGrantModel.tenant_id == tenant_id,
+                AuthorityGrantModel.grant_id == grant_id,
+                AuthorityGrantModel.status == AuthorityStatus.ACTIVE.value,
+                AuthorityGrantModel.one_shot.is_(True),
+                AuthorityGrantModel.usage_count == 0,
+                (AuthorityGrantModel.expires_at.is_(None) | (AuthorityGrantModel.expires_at > now)),
+            )
+            .with_for_update(skip_locked=True)
+        )
+        model = self._session.scalar(stmt)
+        if model is None:
+            return None
+        model.status = AuthorityStatus.ONE_SHOT_USED.value
+        model.usage_count = 1
+        model.jit_consumed_at = now
+        model.updated_at = now
+        self._session.flush()
+        return self._to_entity(model)
 
     @staticmethod
     def _to_entity(model: AuthorityGrantModel) -> AuthorityGrant:
@@ -189,4 +244,10 @@ class SQLAlchemyAuthorityGrantRepository(AuthorityGrantRepository):
             metadata=metadata,
             created_at=model.created_at,
             updated_at=model.updated_at,
+            is_jit=model.is_jit,
+            jit_created_at=model.jit_created_at,
+            jit_expires_at=model.jit_expires_at,
+            jit_consumed_at=model.jit_consumed_at,
+            one_shot=model.one_shot,
+            usage_count=model.usage_count,
         )

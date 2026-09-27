@@ -18,9 +18,7 @@ class SQLAlchemyIncidentRepository(IncidentRepository):
     def __init__(self, session: Session) -> None:
         self._session = session
 
-    async def get_by_incident_id(
-        self, tenant_id: str, incident_id: str
-    ) -> Incident | None:
+    async def get_by_incident_id(self, tenant_id: str, incident_id: str) -> Incident | None:
         stmt = select(IncidentModel).where(
             IncidentModel.tenant_id == tenant_id,
             IncidentModel.incident_id == incident_id,
@@ -63,11 +61,7 @@ class SQLAlchemyIncidentRepository(IncidentRepository):
         stmt = select(IncidentModel).where(IncidentModel.tenant_id == tenant_id)
         if status is not None:
             stmt = stmt.where(IncidentModel.status == status.value)
-        stmt = (
-            stmt.order_by(IncidentModel.created_at.desc())
-            .limit(limit)
-            .offset(offset)
-        )
+        stmt = stmt.order_by(IncidentModel.created_at.desc()).limit(limit).offset(offset)
         models = self._session.scalars(stmt).all()
         count_stmt = select(IncidentModel).where(IncidentModel.tenant_id == tenant_id)
         if status is not None:
@@ -76,9 +70,7 @@ class SQLAlchemyIncidentRepository(IncidentRepository):
         return [self._to_entity(m) for m in models], total
 
     async def save(self, incident: Incident) -> Incident:
-        stmt = select(IncidentModel).where(
-            IncidentModel.incident_id == incident.incident_id
-        )
+        stmt = select(IncidentModel).where(IncidentModel.incident_id == incident.incident_id)
         model = self._session.scalar(stmt)
         if model is None:
             model = IncidentModel(
@@ -95,25 +87,17 @@ class SQLAlchemyIncidentRepository(IncidentRepository):
                     else None
                 ),
                 affected_resources=(
-                    json.dumps(incident.affected_resources)
-                    if incident.affected_resources
-                    else None
+                    json.dumps(incident.affected_resources) if incident.affected_resources else None
                 ),
                 blast_radius=json.dumps(incident.blast_radius) if incident.blast_radius else None,
                 containment_state=(
-                    json.dumps(incident.containment_state)
-                    if incident.containment_state
-                    else None
+                    json.dumps(incident.containment_state) if incident.containment_state else None
                 ),
                 rollback_state=(
-                    json.dumps(incident.rollback_state)
-                    if incident.rollback_state
-                    else None
+                    json.dumps(incident.rollback_state) if incident.rollback_state else None
                 ),
                 verification_state=(
-                    json.dumps(incident.verification_state)
-                    if incident.verification_state
-                    else None
+                    json.dumps(incident.verification_state) if incident.verification_state else None
                 ),
                 created_at=incident.created_at,
                 resolved_at=incident.resolved_at,
@@ -123,36 +107,24 @@ class SQLAlchemyIncidentRepository(IncidentRepository):
             model.status = incident.status.value
             model.severity = incident.severity.value
             model.trigger = incident.trigger
-            model.session_ids = (
-                json.dumps(incident.session_ids) if incident.session_ids else None
-            )
+            model.session_ids = json.dumps(incident.session_ids) if incident.session_ids else None
             model.affected_action_ids = (
-                json.dumps(incident.affected_action_ids)
-                if incident.affected_action_ids
-                else None
+                json.dumps(incident.affected_action_ids) if incident.affected_action_ids else None
             )
             model.affected_resources = (
-                json.dumps(incident.affected_resources)
-                if incident.affected_resources
-                else None
+                json.dumps(incident.affected_resources) if incident.affected_resources else None
             )
             model.blast_radius = (
                 json.dumps(incident.blast_radius) if incident.blast_radius else None
             )
             model.containment_state = (
-                json.dumps(incident.containment_state)
-                if incident.containment_state
-                else None
+                json.dumps(incident.containment_state) if incident.containment_state else None
             )
             model.rollback_state = (
-                json.dumps(incident.rollback_state)
-                if incident.rollback_state
-                else None
+                json.dumps(incident.rollback_state) if incident.rollback_state else None
             )
             model.verification_state = (
-                json.dumps(incident.verification_state)
-                if incident.verification_state
-                else None
+                json.dumps(incident.verification_state) if incident.verification_state else None
             )
             model.resolved_at = incident.resolved_at
         self._session.flush()

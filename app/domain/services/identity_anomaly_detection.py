@@ -63,7 +63,7 @@ class IdentityAnomalyDetectionService:
         self._max_travel_speed_kmh = 1500.0
         self._max_actions_per_minute = 100
         self._max_child_creations_per_session = 3
-        self._impossible_time_window_seconds = 1
+        self._impossible_time_window_seconds = 1.0
         self._geographic_anomaly_threshold = 0.8
         self._behavioral_deviation_threshold = 2.5
 
@@ -78,39 +78,21 @@ class IdentityAnomalyDetectionService:
     ) -> list[AnomalyDetectionResult]:
         anomalies: list[AnomalyDetectionResult] = []
 
+        anomalies.extend(await self._check_impossible_travel(tenant_id, agent_id, current_location))
+        anomalies.extend(await self._check_impossible_delegation(tenant_id, agent_id))
+        anomalies.extend(await self._check_impossible_action_sequence(tenant_id, agent_id))
+        anomalies.extend(await self._check_rapid_identity_switching(tenant_id, agent_id))
+        anomalies.extend(await self._check_unauthorized_child_creation(tenant_id, agent_id))
         anomalies.extend(
-            await self._check_impossible_travel(
-                tenant_id, agent_id, current_location
-            )
+            await self._check_suspicious_session_pattern(tenant_id, agent_id, session_id)
         )
         anomalies.extend(
-            await self._check_impossible_delegation(tenant_id, agent_id)
-        )
-        anomalies.extend(
-            await self._check_impossible_action_sequence(tenant_id, agent_id)
-        )
-        anomalies.extend(
-            await self._check_rapid_identity_switching(tenant_id, agent_id)
-        )
-        anomalies.extend(
-            await self._check_unauthorized_child_creation(tenant_id, agent_id)
-        )
-        anomalies.extend(
-            await self._check_suspicious_session_pattern(
-                tenant_id, agent_id, session_id
-            )
-        )
-        anomalies.extend(
-            await self._check_anomalous_resource_access(
-                tenant_id, agent_id, current_action
-            )
+            await self._check_anomalous_resource_access(tenant_id, agent_id, current_action)
         )
 
         agent = await self._agent_repo.get_by_agent_id(tenant_id, agent_id)
         if agent is not None:
-            anomalies.extend(
-                await self._check_identity_impersonation(tenant_id, agent_id, agent)
-            )
+            anomalies.extend(await self._check_identity_impersonation(tenant_id, agent_id, agent))
 
         return anomalies
 
@@ -120,7 +102,11 @@ class IdentityAnomalyDetectionService:
         agent_id: str,
         current_location: dict[str, Any] | None,
     ) -> list[AnomalyDetectionResult]:
-        if not current_location or not current_location.get("latitude") or not current_location.get("longitude"):
+        if (
+            not current_location
+            or not current_location.get("latitude")
+            or not current_location.get("longitude")
+        ):
             return []
 
         sessions, _ = await self._session_repo.list_by_agent(tenant_id, agent_id, limit=50)
@@ -252,14 +238,9 @@ class IdentityAnomalyDetectionService:
 
         now = datetime.now(UTC)
         one_minute_ago = now - timedelta(minutes=1)
-        actions, _ = await self._action_repo.list_by_agent(
-            tenant_id, agent_id, limit=200
-        )
+        actions, _ = await self._action_repo.list_by_agent(tenant_id, agent_id, limit=200)
 
-        recent_actions = [
-            a for a in actions
-            if a.created_at and a.created_at >= one_minute_ago
-        ]
+        recent_actions = [a for a in actions if a.created_at and a.created_at >= one_minute_ago]
 
         if len(recent_actions) > self._max_actions_per_minute:
             return [
@@ -288,16 +269,12 @@ class IdentityAnomalyDetectionService:
         if self._action_repo is None:
             return []
 
-        actions, _ = await self._action_repo.list_by_agent(
-            tenant_id, agent_id, limit=100
-        )
+        actions, _ = await self._action_repo.list_by_agent(tenant_id, agent_id, limit=100)
 
         if len(actions) < 3:
             return []
 
-        timestamps = sorted(
-            [a.created_at for a in actions if a.created_at is not None]
-        )
+        timestamps = sorted([a.created_at for a in actions if a.created_at is not None])
 
         for i in range(2, len(timestamps)):
             if timestamps[i].tzinfo is None:
@@ -305,7 +282,9 @@ class IdentityAnomalyDetectionService:
             if timestamps[i - 2].tzinfo is None:
                 timestamps[i - 2] = timestamps[i - 2].replace(tzinfo=UTC)
 
-            if (timestamps[i] - timestamps[i - 2]).total_seconds() < self._impossible_time_window_seconds:
+            if (
+                timestamps[i] - timestamps[i - 2]
+            ).total_seconds() < self._impossible_time_window_seconds:
                 return [
                     AnomalyDetectionResult(
                         anomaly_type=AnomalyType.RAPID_IDENTITY_SWITCHING,
@@ -331,13 +310,10 @@ class IdentityAnomalyDetectionService:
         if self._action_repo is None:
             return []
 
-        actions, _ = await self._action_repo.list_by_agent(
-            tenant_id, agent_id, limit=500
-        )
+        actions, _ = await self._action_repo.list_by_agent(tenant_id, agent_id, limit=500)
 
         child_creations = [
-            a for a in actions
-            if a.action_type == "create_agent" and a.executed_at is not None
+            a for a in actions if a.action_type == "create_agent" and a.executed_at is not None
         ]
 
         if len(child_creations) > self._max_child_creations_per_session:
@@ -351,7 +327,10 @@ class IdentityAnomalyDetectionService:
                         f"child agents, exceeding limit of "
                         f"{self._max_child_creations_per_session}"
                     ),
-                    confidence=min(1.0, len(child_creations) / (self._max_child_creations_per_session * 5)),
+                    confidence=min(
+                        1.0,
+                        len(child_creations) / (self._max_child_creations_per_session * 5),
+                    ),
                     evidence={
                         "child_creations": len(child_creations),
                         "threshold": self._max_child_creations_per_session,
@@ -381,8 +360,7 @@ class IdentityAnomalyDetectionService:
 
         now = datetime.now(UTC)
         recent_sessions = [
-            s for s in sessions
-            if s.started_at and (now - s.started_at).total_seconds() < 60
+            s for s in sessions if s.started_at and (now - s.started_at).total_seconds() < 60
         ]
 
         if len(recent_sessions) > 5:
@@ -450,29 +428,32 @@ class IdentityAnomalyDetectionService:
             if parent is None:
                 return []
 
-            if parent.model_name != agent.model_name or parent.agent_type != agent.agent_type:
-                if agent.agent_type == "sub_agent" and parent.agent_type != "sub_agent":
-                    return [
-                        AnomalyDetectionResult(
-                            anomaly_type=AnomalyType.IDENTITY_IMPERSONATION,
-                            severity=AnomalySeverity.CRITICAL,
-                            agent_id=agent_id,
-                            explanation=(
-                                f"Agent '{agent_id}' created by parent "
-                                f"'{parent.agent_id}' has mismatched identity "
-                                f"characteristics (model: parent={parent.model_name}, "
-                                f"child={agent.model_name})"
-                            ),
-                            confidence=0.9,
-                            evidence={
-                                "parent_agent_id": parent.agent_id,
-                                "parent_model": parent.model_name,
-                                "child_model": agent.model_name,
-                                "parent_type": parent.agent_type.value,
-                                "child_type": agent.agent_type.value,
-                            },
-                        )
-                    ]
+            if (
+                (parent.model_name != agent.model_name or parent.agent_type != agent.agent_type)
+                and agent.agent_type == "sub_agent"
+                and parent.agent_type != "sub_agent"
+            ):
+                return [
+                    AnomalyDetectionResult(
+                        anomaly_type=AnomalyType.IDENTITY_IMPERSONATION,
+                        severity=AnomalySeverity.CRITICAL,
+                        agent_id=agent_id,
+                        explanation=(
+                            f"Agent '{agent_id}' created by parent "
+                            f"'{parent.agent_id}' has mismatched identity "
+                            f"characteristics (model: parent={parent.model_name}, "
+                            f"child={agent.model_name})"
+                        ),
+                        confidence=0.9,
+                        evidence={
+                            "parent_agent_id": parent.agent_id,
+                            "parent_model": parent.model_name,
+                            "child_model": agent.model_name,
+                            "parent_type": parent.agent_type.value,
+                            "child_type": agent.agent_type.value,
+                        },
+                    )
+                ]
 
         if behavioral_baselines and agent_id in behavioral_baselines:
             baseline = behavioral_baselines[agent_id]
@@ -484,10 +465,10 @@ class IdentityAnomalyDetectionService:
                 current_value = current_metrics[metric_name]
                 if historical_values:
                     mean_val = sum(historical_values) / len(historical_values)
-                    variance = sum(
-                        (x - mean_val) ** 2 for x in historical_values
-                    ) / len(historical_values)
-                    std_dev = variance ** 0.5
+                    variance = sum((x - mean_val) ** 2 for x in historical_values) / len(
+                        historical_values
+                    )
+                    std_dev = variance**0.5
 
                     if std_dev > 0:
                         deviations = abs(current_value - mean_val) / std_dev
@@ -522,7 +503,7 @@ class IdentityAnomalyDetectionService:
         metrics["tool_count"] = float(len(tool_list))
         if agent.metadata:
             metrics["metadata_keys"] = float(len(agent.metadata))
-            avg_key_len = sum(len(k) for k in agent.metadata.keys()) / max(1, len(agent.metadata))
+            avg_key_len = sum(len(k) for k in agent.metadata) / max(1, len(agent.metadata))
             metrics["avg_metadata_key_length"] = avg_key_len
         return metrics
 

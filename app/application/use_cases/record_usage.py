@@ -25,9 +25,7 @@ class RecordUsageUseCase:
         resource_type: str,
         quantity: int = 1,
     ) -> dict[str, object]:
-        subscription = (
-            await self._subscription_repository.get_active_by_user(user_id)
-        )
+        subscription = await self._subscription_repository.get_active_by_user(user_id)
         if subscription is None:
             return {"allowed": False, "reason": "no_active_subscription"}
 
@@ -42,10 +40,8 @@ class RecordUsageUseCase:
         period_start = subscription.current_period_start
         period_end = subscription.current_period_end
 
-        current_usage = (
-            await self._usage_repository.get_current_period_usage(
-                user_id, resource_type, period_start, period_end
-            )
+        current_usage = await self._usage_repository.get_current_period_usage(
+            user_id, resource_type, period_start, period_end
         )
         if current_usage + quantity > limit:
             return {

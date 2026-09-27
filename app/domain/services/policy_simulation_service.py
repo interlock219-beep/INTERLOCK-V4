@@ -4,7 +4,6 @@ import logging
 from datetime import UTC, datetime
 from typing import Any
 
-from app.domain.value_objects.authorization_decision import AuthorizationDecision
 from app.infrastructure.observability.metrics import metrics
 
 logger = logging.getLogger("intentlock.policy_simulation")
@@ -59,14 +58,14 @@ class PolicySimulationService:
             for policy in policies:
                 result = self._evaluate_single_policy(policy, text)
                 text_results.append(result)
-            results.append({
-                "text": text[:500],
-                "results": text_results,
-            })
+            results.append(
+                {
+                    "text": text[:500],
+                    "results": text_results,
+                }
+            )
 
-        blocked_count = sum(
-            1 for r in results for pr in r["results"] if pr["blocked"]
-        )
+        blocked_count = sum(1 for r in results for pr in r["results"] if pr["blocked"])
         total_checks = len(results) * len(policies)
 
         simulation = PolicySimulationResult(
@@ -92,7 +91,9 @@ class PolicySimulationService:
         return simulation
 
     def _evaluate_single_policy(
-        self, policy: dict[str, Any], text: str,
+        self,
+        policy: dict[str, Any],
+        text: str,
     ) -> dict[str, Any]:
         """Evaluate a single policy against a single text."""
         import re
@@ -108,7 +109,8 @@ class PolicySimulationService:
                 escaped = re.escape(pattern)
                 flexible = escaped.replace(r"\ ", r"\s+")
                 compiled = re.compile(
-                    rf"(?<!\w){flexible}(?!\w)", flags=re.IGNORECASE,
+                    rf"(?<!\w){flexible}(?!\w)",
+                    flags=re.IGNORECASE,
                 )
                 if compiled.search(normalized):
                     score += 0.35
@@ -116,13 +118,12 @@ class PolicySimulationService:
             except re.error:
                 continue
 
-        if not matched_patterns:
-            if "zero-width" in str(policy.get("name", "")).lower():
-                for char in {"\u200b", "\u200c", "\u200d", "\ufeff"}:
-                    if char in normalized:
-                        score += 0.35
-                        matched_patterns.append("zero-width-detected")
-                        break
+        if not matched_patterns and "zero-width" in str(policy.get("name", "")).lower():
+            for char in {"\u200b", "\u200c", "\u200d", "\ufeff"}:
+                if char in normalized:
+                    score += 0.35
+                    matched_patterns.append("zero-width-detected")
+                    break
 
         blocked = score >= score_threshold or bool(matched_patterns)
         return {
@@ -149,29 +150,37 @@ class PolicySimulationService:
 
         changes: list[dict[str, Any]] = []
         for old_result, new_result in zip(
-            old_sim.results, new_sim.results, strict=False,
+            old_sim.results,
+            new_sim.results,
+            strict=False,
         ):
             for old_pr, new_pr in zip(
-                old_result["results"], new_result["results"], strict=False,
+                old_result["results"],
+                new_result["results"],
+                strict=False,
             ):
                 if old_pr["blocked"] != new_pr["blocked"]:
-                    changes.append({
-                        "text": old_result["text"][:200],
-                        "policy": old_pr["policy_name"],
-                        "old_decision": old_pr["blocked"],
-                        "new_decision": new_pr["blocked"],
-                        "old_score": old_pr["score"],
-                        "new_score": new_pr["score"],
-                        "type": "decision_change",
-                    })
+                    changes.append(
+                        {
+                            "text": old_result["text"][:200],
+                            "policy": old_pr["policy_name"],
+                            "old_decision": old_pr["blocked"],
+                            "new_decision": new_pr["blocked"],
+                            "old_score": old_pr["score"],
+                            "new_score": new_pr["score"],
+                            "type": "decision_change",
+                        }
+                    )
                 elif old_pr["score"] != new_pr["score"]:
-                    changes.append({
-                        "text": old_result["text"][:200],
-                        "policy": old_pr["policy_name"],
-                        "old_score": old_pr["score"],
-                        "new_score": new_pr["score"],
-                        "type": "score_change",
-                    })
+                    changes.append(
+                        {
+                            "text": old_result["text"][:200],
+                            "policy": old_pr["policy_name"],
+                            "old_score": old_pr["score"],
+                            "new_score": new_pr["score"],
+                            "type": "score_change",
+                        }
+                    )
 
         return {
             "old_simulation_id": old_sim.simulation_id,
@@ -187,7 +196,8 @@ class PolicySimulationService:
             "summary": (
                 f"Deploying new policies would change {len(changes)} outcomes: "
                 f"block rate {old_sim.results and 'old'} → "
-                f"{sum(1 for r in new_sim.results for pr in r['results'] if pr['blocked'])} new blocks"
+                f"{sum(1 for r in new_sim.results for pr in r['results'] if pr['blocked'])}"
+                " new blocks"
             ),
         }
 

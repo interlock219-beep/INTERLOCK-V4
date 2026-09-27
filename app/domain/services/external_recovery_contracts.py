@@ -2,10 +2,11 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from enum import StrEnum
-from typing import Any, Iterable
+from typing import Any
 
 from app.domain.entities.surgical_recovery_types import (
     CompensationType,
@@ -184,10 +185,7 @@ class ExternalCapabilityContract:
 
     @property
     def dependency_status(self) -> dict[str, str]:
-        return {
-            dependency.name: dependency.status.value
-            for dependency in self.dependencies
-        }
+        return {dependency.name: dependency.status.value for dependency in self.dependencies}
 
     @property
     def execution_allowed(self) -> bool:
@@ -246,9 +244,7 @@ class ExternalCapabilityContract:
             "description": self.description,
             "dependencies": [dependency.to_dict() for dependency in self.dependencies],
             "dependency_status": self.dependency_status,
-            "missing_dependencies": [
-                dependency.name for dependency in self.missing_dependencies
-            ],
+            "missing_dependencies": [dependency.name for dependency in self.missing_dependencies],
             "reversibility": self.reversibility.value,
             "compensation_operations": list(self.compensation_operations),
             "evidence_requirements": list(self.evidence_requirements),
@@ -437,7 +433,8 @@ class ExternalCapabilityRegistry:
         key = (compensation.capability_id, compensation.operation)
         if key in self._compensations:
             raise ValueError(
-                f"Duplicate compensation operation: {compensation.capability_id}:{compensation.operation}"
+                f"Duplicate compensation operation: "
+                f"{compensation.capability_id}:{compensation.operation}"
             )
         self._compensations[key] = compensation
 

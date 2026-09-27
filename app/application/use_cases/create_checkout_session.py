@@ -40,21 +40,15 @@ class CreateCheckoutSessionUseCase:
     ) -> CreateCheckoutResponse:
         plan = await self._plan_repository.get_by_id(UUID(request.plan_id))
         if plan is None or not plan.is_active:
-            raise PlanNotFoundError(
-                f"Plan not found or inactive: {request.plan_id}"
-            )
+            raise PlanNotFoundError(f"Plan not found or inactive: {request.plan_id}")
 
-        active_subscription = (
-            await self._subscription_repository.get_active_by_user(user_id)
-        )
+        active_subscription = await self._subscription_repository.get_active_by_user(user_id)
         if active_subscription is not None:
             from app.domain.exceptions.billing_errors import (
                 SubscriptionAlreadyExistsError,
             )
 
-            raise SubscriptionAlreadyExistsError(
-                "User already has an active subscription."
-            )
+            raise SubscriptionAlreadyExistsError("User already has an active subscription.")
 
         base_url = (
             request.success_url.rsplit("?", 1)[0]
@@ -72,9 +66,7 @@ class CreateCheckoutSessionUseCase:
                 raise ValueError(f"Invalid checkout URL scheme: {parsed.scheme}")
             origin = f"{parsed.scheme}://{parsed.netloc}"
             if origin not in allowed_origins:
-                raise ValueError(
-                    f"Checkout URL origin not allowed: {origin}"
-                )
+                raise ValueError(f"Checkout URL origin not allowed: {origin}")
 
         provider_session = await self._payment_provider.create_checkout_session(
             CreateCheckoutRequest(
@@ -96,9 +88,7 @@ class CreateCheckoutSessionUseCase:
             status="open",
             success_url=success_url,
             cancel_url=cancel_url,
-            expires_at=datetime.fromtimestamp(
-                int(provider_session.expires_at), tz=UTC
-            ),
+            expires_at=datetime.fromtimestamp(int(provider_session.expires_at), tz=UTC),
         )
         await self._checkout_repository.save(checkout)
 

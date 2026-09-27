@@ -56,7 +56,10 @@ class DistributedLockService:
         if acquired:
             logger.info(
                 "Lock acquired: tenant=%s resource=%s owner=%s ttl=%ds",
-                tenant_id, resource, owner, ttl_seconds,
+                tenant_id,
+                resource,
+                owner,
+                ttl_seconds,
             )
             return {
                 "acquired": True,
@@ -71,7 +74,10 @@ class DistributedLockService:
         existing = self._redis.get(key)
         logger.warning(
             "Lock already held: tenant=%s resource=%s owner=%s existing_lock=%s",
-            tenant_id, resource, owner, existing,
+            tenant_id,
+            resource,
+            owner,
+            existing,
         )
         return {
             "acquired": False,
@@ -106,14 +112,19 @@ class DistributedLockService:
         if existing != lock_id:
             logger.warning(
                 "Lock release mismatch: tenant=%s resource=%s expected=%s actual=%s",
-                tenant_id, resource, lock_id, existing,
+                tenant_id,
+                resource,
+                lock_id,
+                existing,
             )
             return {"released": False, "error": "lock_owner_mismatch"}
 
         self._redis.delete(key)
         logger.info(
             "Lock released: tenant=%s resource=%s owner_lock=%s",
-            tenant_id, resource, lock_id,
+            tenant_id,
+            resource,
+            lock_id,
         )
         return {"released": True, "lock_id": lock_id}
 
@@ -156,7 +167,10 @@ class DistributedLockService:
         refreshed = self._redis.expire(key, ttl_seconds)
         logger.info(
             "Lock extended: tenant=%s resource=%s ttl=%ds refreshed=%s",
-            tenant_id, resource, ttl_seconds, refreshed,
+            tenant_id,
+            resource,
+            ttl_seconds,
+            refreshed,
         )
         return {
             "extended": bool(refreshed),

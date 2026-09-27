@@ -113,6 +113,7 @@ def get_session_service_dependency(
     from app.infrastructure.persistence.repositories.sqlalchemy_session_repository import (
         SQLAlchemySessionService,
     )
+
     return SQLAlchemySessionService(session)
 
 
@@ -231,6 +232,7 @@ def get_refresh_token_use_case(
     from app.infrastructure.persistence.repositories.sqlalchemy_session_repository import (
         SQLAlchemySessionService,
     )
+
     session_service = SQLAlchemySessionService(session)
     return RefreshTokenUseCase(
         user_repository,
@@ -248,6 +250,7 @@ def require_role(
     Returns the current user when authorized.
     Raises 403 when the user's role is not in the allowed set.
     """
+
     def _check(current_user: CurrentUser) -> UserResponse:
         if current_user.role not in allowed_roles:
             raise HTTPException(
@@ -255,6 +258,7 @@ def require_role(
                 detail="Insufficient permissions for this operation.",
             )
         return current_user
+
     return _check
 
 
@@ -322,4 +326,3 @@ __all__ = [
     "get_api_key_repository",
     "get_password_hasher",
 ]
-

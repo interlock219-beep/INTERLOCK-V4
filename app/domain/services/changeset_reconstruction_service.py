@@ -61,7 +61,11 @@ class ChangeSetReconstructionService:
         root_action = await self._action_repo.get_by_action_id(tenant_id, root_action_id)
         if root_action is None:
             return self._empty_changeset(
-                tenant_id, incident_id, agent_id, root_action_id, correlation_id,
+                tenant_id,
+                incident_id,
+                agent_id,
+                root_action_id,
+                correlation_id,
                 root_cause=f"Root action {root_action_id} not found",
             )
 
@@ -70,7 +74,11 @@ class ChangeSetReconstructionService:
         )
         if total > 1000:
             return self._empty_changeset(
-                tenant_id, incident_id, agent_id, root_action_id, correlation_id,
+                tenant_id,
+                incident_id,
+                agent_id,
+                root_action_id,
+                correlation_id,
                 root_cause=f"Root action {root_action_id} has too many descendants ({total})",
             )
         all_actions = [root_action] + descendants
@@ -225,7 +233,8 @@ class ChangeSetReconstructionService:
             )
 
         relevant_edges = [
-            e for e in graph.edges
+            e
+            for e in graph.edges
             if e.source_node_id in relevant_node_ids or e.target_node_id in relevant_node_ids
         ]
         relevant_nodes = [n for n in graph.nodes if n.node_id in relevant_node_ids]
@@ -237,12 +246,14 @@ class ChangeSetReconstructionService:
             root_action_id=graph.root_action_id,
             nodes=relevant_nodes,
             edges=relevant_edges,
-            subgraph_extractions=[{
-                "source_graph_id": graph_id,
-                "included_resources": target_resource_ids,
-                "node_count": len(relevant_nodes),
-                "edge_count": len(relevant_edges),
-            }],
+            subgraph_extractions=[
+                {
+                    "source_graph_id": graph_id,
+                    "included_resources": target_resource_ids,
+                    "node_count": len(relevant_nodes),
+                    "edge_count": len(relevant_edges),
+                }
+            ],
         )
 
     async def _collect_evidence(
@@ -315,20 +326,24 @@ class ChangeSetReconstructionService:
             graph["nodes"].append(node)
 
             if action.parent_action_id and action.parent_action_id in action_ids:
-                graph["edges"].append({
-                    "source": action.parent_action_id,
-                    "target": action.action_id,
-                    "relation": "parent_child",
-                })
+                graph["edges"].append(
+                    {
+                        "source": action.parent_action_id,
+                        "target": action.action_id,
+                        "relation": "parent_child",
+                    }
+                )
 
             if evidence:
                 for dep_id in evidence.dependency_edges:
                     if dep_id in action_ids:
-                        graph["edges"].append({
-                            "source": dep_id,
-                            "target": action.action_id,
-                            "relation": "dependency",
-                        })
+                        graph["edges"].append(
+                            {
+                                "source": dep_id,
+                                "target": action.action_id,
+                                "relation": "dependency",
+                            }
+                        )
 
             if action.resource:
                 if action.resource not in graph["resources"]:
@@ -406,11 +421,13 @@ class ChangeSetReconstructionService:
             if evidence is None:
                 continue
             if evidence.agent_id and evidence.agent_id != actions[0].agent_id:
-                unrelated.append({
-                    "action_id": action.action_id,
-                    "reason": "different_agent",
-                    "agent_id": evidence.agent_id,
-                })
+                unrelated.append(
+                    {
+                        "action_id": action.action_id,
+                        "reason": "different_agent",
+                        "agent_id": evidence.agent_id,
+                    }
+                )
 
         return unrelated
 

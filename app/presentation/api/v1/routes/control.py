@@ -72,6 +72,7 @@ def _get_recovery_repo(
     from app.infrastructure.persistence.repositories.sqlalchemy_containment_repository import (
         SQLAlchemyRecoveryPlanRepository,
     )
+
     return SQLAlchemyRecoveryPlanRepository(session)
 
 
@@ -87,9 +88,7 @@ def _build_recovery_adapters() -> list[Any]:
     settings = get_settings()
     adapters: list[Any] = [DatabaseRecoveryAdapter()]
     if settings.interlock_workspace_path:
-        adapters.append(
-            FilesystemRecoveryAdapter(base_path=settings.interlock_workspace_path)
-        )
+        adapters.append(FilesystemRecoveryAdapter(base_path=settings.interlock_workspace_path))
     adapters.append(ConfigRecoveryAdapter())
     if settings.app_env != "production":
         adapters.append(MockRecoveryAdapter())
@@ -120,6 +119,7 @@ async def create_containment(
     from app.infrastructure.persistence.repositories.sqlalchemy_protected_action_repository import (
         SQLAlchemyProtectedActionRepository,
     )
+
     session = SessionLocal()
     try:
         agent_repo = SQLAlchemyAgentRepository(session)
@@ -189,6 +189,7 @@ async def get_blast_radius(
     from app.infrastructure.persistence.repositories.sqlalchemy_protected_action_repository import (
         SQLAlchemyProtectedActionRepository,
     )
+
     session = SessionLocal()
     try:
         agent_repo = SQLAlchemyAgentRepository(session)
@@ -294,9 +295,7 @@ async def execute_recovery(
 
         adapters = _build_recovery_adapters()
 
-        plan = await repo.get_by_plan_id(
-            get_user_tenant_id(current_user), body.plan_id
-        )
+        plan = await repo.get_by_plan_id(get_user_tenant_id(current_user), body.plan_id)
         if plan is None:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,

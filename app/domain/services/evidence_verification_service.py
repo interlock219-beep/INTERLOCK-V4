@@ -13,7 +13,6 @@ from app.domain.entities.surgical_recovery_types import RecoveryEvidence
 from app.domain.repositories.recovery_evidence_repository import (
     RecoveryEvidenceRepository,
 )
-from app.infrastructure.observability.metrics import metrics
 
 logger = logging.getLogger("intentlock.evidence_verification")
 
@@ -40,7 +39,10 @@ class EvidenceVerificationService:
         import json
 
         canonical = json.dumps(
-            state, sort_keys=True, default=str, separators=(",", ":"),
+            state,
+            sort_keys=True,
+            default=str,
+            separators=(",", ":"),
         )
         return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
@@ -59,9 +61,7 @@ class EvidenceVerificationService:
         after_hash = self.compute_state_hash(after_state)
 
         hashes_match = before_hash == after_hash
-        expected_match = (
-            expected_hash is None or after_hash == expected_hash
-        )
+        expected_match = expected_hash is None or after_hash == expected_hash
 
         return {
             "before_hash": before_hash,
@@ -94,9 +94,13 @@ class EvidenceVerificationService:
         if not evidence.reversibility_classification:
             issues.append("Missing reversibility_classification")
 
-        if evidence.before_state_reference and evidence.after_state_reference:
-            if evidence.state_hash and not evidence.state_hash.startswith("sha256:"):
-                issues.append("Before-state reference missing or state_hash malformed")
+        if (
+            evidence.before_state_reference
+            and evidence.after_state_reference
+            and evidence.state_hash
+            and not evidence.state_hash.startswith("sha256:")
+        ):
+            issues.append("Before-state reference missing or state_hash malformed")
 
         integrity_ok = len(issues) == 0
 
@@ -185,8 +189,8 @@ class EvidenceVerificationService:
             return {"chain_valid": True, "evidence_count": 0, "gaps": []}
 
         sorted_evidences = sorted(
-            evidences, key=lambda e: e.created_at.timestamp()
-            if hasattr(e.created_at, 'timestamp') else 0,
+            evidences,
+            key=lambda e: e.created_at.timestamp() if hasattr(e.created_at, "timestamp") else 0,
         )
 
         gaps: list[str] = []
@@ -194,13 +198,10 @@ class EvidenceVerificationService:
             prev = sorted_evidences[i - 1]
             curr = sorted_evidences[i]
             if prev.created_at and curr.created_at:
-                gap = (
-                    curr.created_at.timestamp() - prev.created_at.timestamp()
-                )
+                gap = curr.created_at.timestamp() - prev.created_at.timestamp()
                 if gap > 3600:  # 1 hour gap
                     gaps.append(
-                        f"Large gap between {prev.evidence_id} and "
-                        f"{curr.evidence_id}: {gap:.0f}s"
+                        f"Large gap between {prev.evidence_id} and {curr.evidence_id}: {gap:.0f}s"
                     )
 
         return {

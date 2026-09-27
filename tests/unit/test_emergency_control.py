@@ -5,18 +5,25 @@ from unittest.mock import AsyncMock
 
 import pytest
 
+from app.domain.repositories.emergency_state_repository import EmergencyStateRepository
 from app.domain.services.emergency_control_service import EmergencyControlService
 from app.domain.value_objects.authorization_decision import AuthorizationDecision
 
 
 @pytest.fixture
-def service():
-    return EmergencyControlService()
+def repository():
+    return AsyncMock(spec=EmergencyStateRepository)
+
+
+@pytest.fixture
+def service(repository):
+    return EmergencyControlService(emergency_state_repository=repository)
 
 
 @pytest.mark.asyncio
-async def test_activate_emergency_deny(service):
-    result = service.activate_emergency_deny(
+async def test_activate_emergency_deny(service, repository):
+    repository.get_by_tenant.return_value = None
+    result = await service.activate_emergency_deny(
         tenant_id="tenant-1",
         activated_by="admin-1",
         reason="security incident",
@@ -29,11 +36,12 @@ async def test_activate_emergency_deny(service):
 
 
 @pytest.mark.asyncio
-async def test_deactivate_emergency_deny(service):
-    service.activate_emergency_deny(
+async def test_deactivate_emergency_deny(service, repository):
+    repository.get_by_tenant.return_value = None
+    await service.activate_emergency_deny(
         tenant_id="tenant-1", activated_by="admin-1",
     )
-    result = service.deactivate_emergency_deny(
+    result = await service.deactivate_emergency_deny(
         tenant_id="tenant-1", deactivated_by="admin-2",
     )
     assert result["success"] is True
@@ -41,17 +49,19 @@ async def test_deactivate_emergency_deny(service):
 
 
 @pytest.mark.asyncio
-async def test_is_emergency_deny_active(service):
-    assert service.is_emergency_deny_active("tenant-1") is False
-    service.activate_emergency_deny(
+async def test_is_emergency_deny_active(service, repository):
+    repository.get_by_tenant.return_value = None
+    assert await service.is_emergency_deny_active("tenant-1") is False
+    await service.activate_emergency_deny(
         tenant_id="tenant-1", activated_by="admin-1",
     )
-    assert service.is_emergency_deny_active("tenant-1") is True
+    assert await service.is_emergency_deny_active("tenant-1") is True
 
 
 @pytest.mark.asyncio
-async def test_activate_emergency_deny_requires_approval(service):
-    result = service.activate_emergency_deny(
+async def test_activate_emergency_deny_requires_approval(service, repository):
+    repository.get_by_tenant.return_value = None
+    result = await service.activate_emergency_deny(
         tenant_id="tenant-1",
         activated_by="admin-1",
         reason="test",
@@ -62,10 +72,11 @@ async def test_activate_emergency_deny_requires_approval(service):
 
 
 @pytest.mark.asyncio
-async def test_activate_emergency_allow_with_controls(service):
+async def test_activate_emergency_allow_with_controls(service, repository):
     from datetime import timedelta
     expires_at = datetime.now(UTC) + timedelta(hours=1)
-    result = service.activate_emergency_allow(
+    repository.get_by_tenant.return_value = None
+    result = await service.activate_emergency_allow(
         tenant_id="tenant-1",
         activated_by="admin-1",
         allowed_actions=["read", "write"],
@@ -83,8 +94,8 @@ async def test_activate_emergency_allow_with_controls(service):
 
 
 @pytest.mark.asyncio
-async def test_activate_emergency_allow_requires_actions(service):
-    result = service.activate_emergency_allow(
+async def test_activate_emergency_allow_requires_actions(service, repository):
+    result = await service.activate_emergency_allow(
         tenant_id="tenant-1",
         activated_by="admin-1",
         allowed_actions=[],
@@ -95,8 +106,8 @@ async def test_activate_emergency_allow_requires_actions(service):
 
 
 @pytest.mark.asyncio
-async def test_activate_emergency_allow_requires_expiry(service):
-    result = service.activate_emergency_allow(
+async def test_activate_emergency_allow_requires_expiry(service, repository):
+    result = await service.activate_emergency_allow(
         tenant_id="tenant-1",
         activated_by="admin-1",
         allowed_actions=["read"],
@@ -106,11 +117,12 @@ async def test_activate_emergency_allow_requires_expiry(service):
 
 
 @pytest.mark.asyncio
-async def test_emergency_deny_blocks_authorization(service):
-    service.activate_emergency_deny(
+async def test_emergency_deny_blocks_authorization(service, repository):
+    repository.get_by_tenant.return_value = None
+    await service.activate_emergency_deny(
         tenant_id="tenant-1", activated_by="admin-1",
     )
-    decision, reason = service.evaluate_authorization(
+    decision, reason = await service.evaluate_authorization(
         tenant_id="tenant-1",
         agent_id="agent-1",
         action="execute",
@@ -121,16 +133,17 @@ async def test_emergency_deny_blocks_authorization(service):
 
 
 @pytest.mark.asyncio
-async def test_emergency_allow_authorizes_listed_action(service):
+async def test_emergency_allow_authorizes_listed_action(service, repository):
     from datetime import timedelta
     expires_at = datetime.now(UTC) + timedelta(hours=1)
-    service.activate_emergency_allow(
+    repository.get_by_tenant.return_value = None
+    await service.activate_emergency_allow(
         tenant_id="tenant-1",
         activated_by="admin-1",
         allowed_actions=["execute"],
         expires_at=expires_at,
     )
-    decision, reason = service.evaluate_authorization(
+    decision, reason = await service.evaluate_authorization(
         tenant_id="tenant-1",
         agent_id="agent-1",
         action="execute",
@@ -140,18 +153,19 @@ async def test_emergency_allow_authorizes_listed_action(service):
 
 
 @pytest.mark.asyncio
-async def test_emergency_allow_denies_unlisted_action(service):
+async def test_emergency_allow_denies_unlisted_action(service, repository):
     from datetime import timedelta
     expires_at = datetime.now(UTC) + timedelta(hours=1)
-    service.activate_emergency_allow(
+    repository.get_by_tenant.return_value = None
+    await service.activate_emergency_allow(
         tenant_id="tenant-1",
         activated_by="admin-1",
         allowed_actions=["read"],
         expires_at=expires_at,
     )
-    decision, reason = service.evaluate_authorization(
+    decision, reason = await service.evaluate_authorization(
         tenant_id="tenant-1",
-        agent_id="agent-1",
+        agent_id="agent-999",
         action="execute",
         tool="file_reader",
     )
@@ -159,17 +173,18 @@ async def test_emergency_allow_denies_unlisted_action(service):
 
 
 @pytest.mark.asyncio
-async def test_emergency_allow_denies_expired(service):
+async def test_emergency_allow_denies_expired(service, repository):
     from datetime import timedelta
     expired = datetime.now(UTC) - timedelta(minutes=5)
-    service.activate_emergency_allow(
+    repository.get_by_tenant.return_value = None
+    await service.activate_emergency_allow(
         tenant_id="tenant-1",
         activated_by="admin-1",
         allowed_actions=["execute"],
         expires_at=datetime.now(UTC) + timedelta(hours=1),
     )
     service._emergency_allow_active["tenant-1"]["expires_at"] = expired.isoformat()
-    decision, reason = service.evaluate_authorization(
+    decision, reason = await service.evaluate_authorization(
         tenant_id="tenant-1",
         agent_id="agent-1",
         action="execute",
@@ -180,17 +195,18 @@ async def test_emergency_allow_denies_expired(service):
 
 
 @pytest.mark.asyncio
-async def test_emergency_allow_denies_unlisted_agent(service):
+async def test_emergency_allow_denies_unlisted_agent(service, repository):
     from datetime import timedelta
     expires_at = datetime.now(UTC) + timedelta(hours=1)
-    service.activate_emergency_allow(
+    repository.get_by_tenant.return_value = None
+    await service.activate_emergency_allow(
         tenant_id="tenant-1",
         activated_by="admin-1",
         allowed_actions=["execute"],
         allowed_agents=["agent-1"],
         expires_at=expires_at,
     )
-    decision, reason = service.evaluate_authorization(
+    decision, reason = await service.evaluate_authorization(
         tenant_id="tenant-1",
         agent_id="agent-999",
         action="execute",
@@ -201,18 +217,20 @@ async def test_emergency_allow_denies_unlisted_agent(service):
 
 
 @pytest.mark.asyncio
-async def test_get_emergency_status(service):
-    service.activate_emergency_deny(
+async def test_get_emergency_status(service, repository):
+    repository.get_by_tenant.return_value = None
+    await service.activate_emergency_deny(
         tenant_id="tenant-1", activated_by="admin-1",
     )
-    status = service.get_emergency_status("tenant-1")
+    status = await service.get_emergency_status("tenant-1")
     assert status["tenant_id"] == "tenant-1"
     assert status["emergency_deny_active"] is True
 
 
 @pytest.mark.asyncio
-async def test_get_emergency_log(service):
-    service.activate_emergency_deny(
+async def test_get_emergency_log(service, repository):
+    repository.get_by_tenant.return_value = None
+    await service.activate_emergency_deny(
         tenant_id="tenant-1", activated_by="admin-1",
     )
     log = service.get_emergency_log()
@@ -220,9 +238,10 @@ async def test_get_emergency_log(service):
     assert log[0]["action"] == "emergency_deny_activate"
 
 
-def test_emergency_control_serialization():
-    service = EmergencyControlService()
-    result = service.activate_emergency_deny(
+@pytest.mark.asyncio
+async def test_emergency_control_serialization(service, repository):
+    repository.get_by_tenant.return_value = None
+    result = await service.activate_emergency_deny(
         tenant_id="tenant-1", activated_by="admin-1",
     )
     record = result["record"]

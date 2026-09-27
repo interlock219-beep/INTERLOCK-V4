@@ -51,6 +51,7 @@ async def create_grant(
     from app.infrastructure.persistence.repositories.sqlalchemy_agent_repository import (
         SQLAlchemyAgentRepository,
     )
+
     session = SessionLocal()
     try:
         agent_repo = SQLAlchemyAgentRepository(session)
@@ -107,6 +108,14 @@ async def create_grant(
             parent_authority_id=body.parent_authority_id,
             root_authority_id=root_authority_id,
         )
+        grantor = await agent_repo.get_by_agent_id(
+            get_user_tenant_id(current_user), body.grantor_agent_id
+        )
+        if grantor is None:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Grantor agent not found or does not belong to your tenant.",
+            )
         grant = await repo.save(grant)
         log_security_event(
             "authority_granted",
@@ -233,6 +242,7 @@ async def revoke_grant(
     from app.infrastructure.persistence.repositories.sqlalchemy_agent_repository import (
         SQLAlchemyAgentRepository,
     )
+
     session = SessionLocal()
     try:
         agent_repo = SQLAlchemyAgentRepository(session)
@@ -280,6 +290,7 @@ async def get_grant_lineage(
     from app.infrastructure.persistence.repositories.sqlalchemy_agent_repository import (
         SQLAlchemyAgentRepository,
     )
+
     session = SessionLocal()
     try:
         agent_repo = SQLAlchemyAgentRepository(session)

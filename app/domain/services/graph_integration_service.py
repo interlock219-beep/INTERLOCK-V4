@@ -23,7 +23,6 @@ from app.domain.entities.surgical_recovery_types import RecoveryEvidence
 from app.domain.services.causal_graph_service import CausalGraphService
 from app.domain.services.recovery_intelligence import (
     DependencyGraph,
-    DependencyNode,
     RecoveryIntelligenceService,
 )
 
@@ -38,9 +37,7 @@ class _CausalGraphLike(Protocol):
         self, tenant_id: str, action_id: str, limit: int = 100, offset: int = 0
     ) -> tuple[list[Any], int]: ...
 
-    async def get_incident_graph(
-        self, tenant_id: str, action_id: str
-    ) -> dict[str, Any]: ...
+    async def get_incident_graph(self, tenant_id: str, action_id: str) -> dict[str, Any]: ...
 
 
 class GraphIntegrationService:
@@ -75,9 +72,7 @@ class GraphIntegrationService:
     def _node_id(self, kind: GraphNodeKind, entity_id: str, tenant_id: str) -> str:
         return f"{kind.value}:{tenant_id}:{entity_id}"
 
-    def _edge_id(
-        self, source: str, target: str, relation: GraphRelation, tenant_id: str
-    ) -> str:
+    def _edge_id(self, source: str, target: str, relation: GraphRelation, tenant_id: str) -> str:
         raw = f"{tenant_id}:{source}->{target}:{relation.value}"
         return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:24]
 
@@ -156,9 +151,7 @@ class GraphIntegrationService:
             },
         )
 
-    async def _build_raw_graph(
-        self, tenant_id: str, root_action_id: str
-    ) -> dict[str, Any]:
+    async def _build_raw_graph(self, tenant_id: str, root_action_id: str) -> dict[str, Any]:
         """Build a raw graph dict from the action repository directly."""
         nodes: list[dict[str, Any]] = []
         edges: list[dict[str, Any]] = []
@@ -175,24 +168,28 @@ class GraphIntegrationService:
             if action is None:
                 continue
 
-            nodes.append({
-                "action_id": action.action_id,
-                "agent_id": action.agent_id,
-                "tool": action.tool,
-                "resource": action.resource,
-                "action_type": action.action_type,
-                "status": getattr(action.status, "value", str(action.status)),
-                "parent_action_id": action.parent_action_id,
-                "created_at": action.created_at,
-            })
+            nodes.append(
+                {
+                    "action_id": action.action_id,
+                    "agent_id": action.agent_id,
+                    "tool": action.tool,
+                    "resource": action.resource,
+                    "action_type": action.action_type,
+                    "status": getattr(action.status, "value", str(action.status)),
+                    "parent_action_id": action.parent_action_id,
+                    "created_at": action.created_at,
+                }
+            )
 
             if action.parent_action_id and action.parent_action_id not in visited:
                 queue.append(action.parent_action_id)
-                edges.append({
-                    "source": action.parent_action_id,
-                    "target": current_id,
-                    "relation": "parent_child",
-                })
+                edges.append(
+                    {
+                        "source": action.parent_action_id,
+                        "target": current_id,
+                        "relation": "parent_child",
+                    }
+                )
 
             descendants, _ = await self._action_repo.list_descendants(
                 tenant_id, current_id, limit=1000, offset=0
@@ -200,11 +197,13 @@ class GraphIntegrationService:
             for desc in descendants:
                 if desc.action_id not in visited:
                     queue.append(desc.action_id)
-                    edges.append({
-                        "source": current_id,
-                        "target": desc.action_id,
-                        "relation": "parent_child",
-                    })
+                    edges.append(
+                        {
+                            "source": current_id,
+                            "target": desc.action_id,
+                            "relation": "parent_child",
+                        }
+                    )
 
         return {"root_action_id": root_action_id, "nodes": nodes, "edges": edges}
 
@@ -222,49 +221,55 @@ class GraphIntegrationService:
 
         for action_id, node in dep_graph.nodes.items():
             node_id = self._node_id(GraphNodeKind.ACTION, action_id, tenant_id)
-            nodes.append(GraphNode(
-                node_id=node_id,
-                tenant_id=tenant_id,
-                kind=GraphNodeKind.ACTION,
-                entity_id=action_id,
-                label=f"{node.tool} {node.resource}",
-                properties={
-                    "resource": node.resource,
-                    "tool": node.tool,
-                    "reversibility": node.reversibility.value,
-                    "depends_on": node.depends_on,
-                    "children": node.children,
-                },
-            ))
+            nodes.append(
+                GraphNode(
+                    node_id=node_id,
+                    tenant_id=tenant_id,
+                    kind=GraphNodeKind.ACTION,
+                    entity_id=action_id,
+                    label=f"{node.tool} {node.resource}",
+                    properties={
+                        "resource": node.resource,
+                        "tool": node.tool,
+                        "reversibility": node.reversibility.value,
+                        "depends_on": node.depends_on,
+                        "children": node.children,
+                    },
+                )
+            )
 
             parent_id = node.parent_action_id
             if parent_id:
                 parent_node = self._node_id(GraphNodeKind.ACTION, parent_id, tenant_id)
                 edge_id = self._edge_id(parent_node, node_id, GraphRelation.DEPENDS_ON, tenant_id)
-                edges.append(GraphEdge(
-                    edge_id=edge_id,
-                    tenant_id=tenant_id,
-                    source_node_id=parent_node,
-                    target_node_id=node_id,
-                    relation=GraphRelation.DEPENDS_ON,
-                    properties={},
-                ))
+                edges.append(
+                    GraphEdge(
+                        edge_id=edge_id,
+                        tenant_id=tenant_id,
+                        source_node_id=parent_node,
+                        target_node_id=node_id,
+                        relation=GraphRelation.DEPENDS_ON,
+                        properties={},
+                    )
+                )
 
             for dep_id in node.depends_on:
                 dep_node = self._node_id(GraphNodeKind.ACTION, dep_id, tenant_id)
                 dep_edge_id = self._edge_id(dep_node, node_id, GraphRelation.DEPENDS_ON, tenant_id)
-                edges.append(GraphEdge(
-                    edge_id=dep_edge_id,
-                    tenant_id=tenant_id,
-                    source_node_id=dep_node,
-                    target_node_id=node_id,
-                    relation=GraphRelation.DEPENDS_ON,
-                    properties={"inferred": True},
-                ))
+                edges.append(
+                    GraphEdge(
+                        edge_id=dep_edge_id,
+                        tenant_id=tenant_id,
+                        source_node_id=dep_node,
+                        target_node_id=node_id,
+                        relation=GraphRelation.DEPENDS_ON,
+                        properties={"inferred": True},
+                    )
+                )
 
         resource_nodes: dict[str, GraphNode] = {}
-        for node in nodes:
-            resource = node.properties.get("resource", "")
+        for graph_node in nodes:
+            resource = graph_node.properties.get("resource", "")
             if resource and resource not in resource_nodes:
                 rid = self._node_id(GraphNodeKind.RESOURCE, resource, tenant_id)
                 resource_nodes[resource] = GraphNode(
@@ -275,15 +280,22 @@ class GraphIntegrationService:
                     label=resource,
                     properties={},
                 )
-                r_edge_id = self._edge_id(rid, node.node_id, GraphRelation.OBSERVED_AT, tenant_id)
-                edges.append(GraphEdge(
-                    edge_id=r_edge_id,
-                    tenant_id=tenant_id,
-                    source_node_id=rid,
-                    target_node_id=node.node_id,
-                    relation=GraphRelation.OBSERVED_AT,
-                    properties={},
-                ))
+                r_edge_id = self._edge_id(
+                    rid,
+                    graph_node.node_id,
+                    GraphRelation.OBSERVED_AT,
+                    tenant_id,
+                )
+                edges.append(
+                    GraphEdge(
+                        edge_id=r_edge_id,
+                        tenant_id=tenant_id,
+                        source_node_id=rid,
+                        target_node_id=graph_node.node_id,
+                        relation=GraphRelation.OBSERVED_AT,
+                        properties={},
+                    )
+                )
 
         all_nodes = nodes + list(resource_nodes.values())
         graph_hash = self._compute_graph_hash(all_nodes, edges)
@@ -319,33 +331,42 @@ class GraphIntegrationService:
             if not ev.evidence_id:
                 continue
             ev_node_id = self._node_id(GraphNodeKind.VERIFICATION, ev.evidence_id, tenant_id)
-            new_nodes.append(GraphNode(
-                node_id=ev_node_id,
-                tenant_id=tenant_id,
-                kind=GraphNodeKind.VERIFICATION,
-                entity_id=ev.evidence_id,
-                label=f"evidence:{ev.target_resource}",
-                properties={
-                    "action_id": ev.action_id,
-                    "target_system": ev.target_system,
-                    "reversibility": ev.reversibility_classification.value,
-                    "adapter_capability": ev.adapter_capability.value if ev.adapter_capability else "",
-                },
-            ))
+            new_nodes.append(
+                GraphNode(
+                    node_id=ev_node_id,
+                    tenant_id=tenant_id,
+                    kind=GraphNodeKind.VERIFICATION,
+                    entity_id=ev.evidence_id,
+                    label=f"evidence:{ev.target_resource}",
+                    properties={
+                        "action_id": ev.action_id,
+                        "target_system": ev.target_system,
+                        "reversibility": ev.reversibility_classification.value,
+                        "adapter_capability": (
+                            ev.adapter_capability.value if ev.adapter_capability else ""
+                        ),
+                    },
+                )
+            )
 
             for action_node in graph.nodes:
-                if action_node.kind == GraphNodeKind.ACTION and action_node.entity_id == ev.action_id:
+                if (
+                    action_node.kind == GraphNodeKind.ACTION
+                    and action_node.entity_id == ev.action_id
+                ):
                     ev_edge_id = self._edge_id(
                         ev_node_id, action_node.node_id, GraphRelation.OBSERVED_AT, tenant_id
                     )
-                    new_edges.append(GraphEdge(
-                        edge_id=ev_edge_id,
-                        tenant_id=tenant_id,
-                        source_node_id=ev_node_id,
-                        target_node_id=action_node.node_id,
-                        relation=GraphRelation.OBSERVED_AT,
-                        properties={},
-                    ))
+                    new_edges.append(
+                        GraphEdge(
+                            edge_id=ev_edge_id,
+                            tenant_id=tenant_id,
+                            source_node_id=ev_node_id,
+                            target_node_id=action_node.node_id,
+                            relation=GraphRelation.OBSERVED_AT,
+                            properties={},
+                        )
+                    )
 
         return RecoveryGraph(
             graph_id=graph.graph_id,
@@ -396,10 +417,9 @@ class GraphIntegrationService:
 
         if graph.nodes:
             for edge in graph.edges:
-                if edge.valid_at and edge.valid_until:
-                    if edge.valid_at > edge.valid_until:
-                        temporal_violations.append(edge.edge_id)
-                        issues.append(f"Temporal violation: {edge.edge_id}")
+                if edge.valid_at and edge.valid_until and edge.valid_at > edge.valid_until:
+                    temporal_violations.append(edge.edge_id)
+                    issues.append(f"Temporal violation: {edge.edge_id}")
 
         return ConsistencyReport(
             report_id=f"consistency-{graph.tenant_id}-{secrets.token_hex(8)}",
@@ -544,13 +564,12 @@ class GraphIntegrationService:
             updated_at=datetime.now(UTC),
         )
 
-
     async def build_unified_recovery_graph(
         self,
         tenant_id: str,
         incident_id: str,
         root_action_id: str,
-        dep_graph,
+        dep_graph: DependencyGraph,
     ) -> RecoveryGraph:
         """Build a unified recovery/resource graph combining causal and dependency sources.
 
@@ -600,7 +619,11 @@ class GraphIntegrationService:
                 source_node = self._node_id(GraphNodeKind.ACTION, source_id, tenant_id)
                 target_node = self._node_id(GraphNodeKind.ACTION, target_id, tenant_id)
                 relation_str = raw_edge.get("relation", "depends_on")
-                relation = GraphRelation.DEPENDS_ON if relation_str == "parent_child" else GraphRelation(relation_str)
+                relation = (
+                    GraphRelation.DEPENDS_ON
+                    if relation_str == "parent_child"
+                    else GraphRelation(relation_str)
+                )
                 edge_id = self._edge_id(source_node, target_node, relation, tenant_id)
                 causal_edges[edge_id] = GraphEdge(
                     edge_id=edge_id,
@@ -668,7 +691,9 @@ class GraphIntegrationService:
                     properties={},
                 )
 
-        all_nodes = list(causal_nodes.values()) + list(dep_nodes.values()) + list(resource_nodes.values())
+        all_nodes = (
+            list(causal_nodes.values()) + list(dep_nodes.values()) + list(resource_nodes.values())
+        )
         all_edges = list(causal_edges.values()) + list(dep_edges.values())
         graph_hash = self._compute_graph_hash(all_nodes, all_edges)
 
@@ -724,7 +749,7 @@ class GraphIntegrationService:
             updated_at=datetime.now(UTC),
         )
 
-    def extract_recovery_plan(self, graph: RecoveryGraph) -> dict:
+    def extract_recovery_plan(self, graph: RecoveryGraph) -> dict[str, Any]:
         """Extract a recovery plan from graph relationships.
 
         Walks the graph to identify:
@@ -743,15 +768,14 @@ class GraphIntegrationService:
         dict
             Recovery plan with steps, dependencies, resources, and metadata.
         """
-        from app.domain.services.recovery_intelligence import DependencyGraph, DependencyNode
 
         action_nodes = [n for n in graph.nodes if n.kind == GraphNodeKind.ACTION]
         resource_nodes = [n for n in graph.nodes if n.kind == GraphNodeKind.RESOURCE]
-        action_node_ids = {n.node_id for n in action_nodes}
+        {n.node_id for n in action_nodes}
 
         dep_edges = [e for e in graph.edges if e.relation == GraphRelation.DEPENDS_ON]
 
-        step_map: dict[str, dict] = {}
+        step_map: dict[str, dict[str, Any]] = {}
         for node in action_nodes:
             step_map[node.node_id] = {
                 "step_id": node.node_id,
@@ -787,9 +811,9 @@ class GraphIntegrationService:
             if current in visited_steps:
                 continue
             visited_steps.add(current)
-            step = step_map.get(current)
-            if step:
-                reverse_steps.append(step)
+            found_step = step_map.get(current)
+            if found_step is not None:
+                reverse_steps.append(found_step)
             for edge in dep_edges:
                 if edge.source_node_id == current and edge.target_node_id not in visited_steps:
                     queue.append(edge.target_node_id)
@@ -800,7 +824,8 @@ class GraphIntegrationService:
                 "entity_id": r.entity_id,
                 "label": r.label,
                 "affected_actions": [
-                    n.node_id for n in action_nodes
+                    n.node_id
+                    for n in action_nodes
                     if n.properties.get("resource", "") == r.entity_id
                 ],
             }
@@ -813,10 +838,7 @@ class GraphIntegrationService:
             cycles = cycle_report.cycles
 
         consistency = self.check_consistency(graph)
-        is_valid = (
-            consistency.level == ConsistencyLevel.CONSISTENT
-            and not cycles
-        )
+        is_valid = consistency.level == ConsistencyLevel.CONSISTENT and not cycles
 
         return {
             "plan_id": f"plan-{graph.graph_id}-v{graph.version}",
@@ -839,18 +861,14 @@ class GraphIntegrationService:
             "issues": consistency.issues,
         }
 
-
     @staticmethod
-    def _compute_graph_hash(
-        nodes: list[GraphNode], edges: list[GraphEdge]
-    ) -> str:
+    def _compute_graph_hash(nodes: list[GraphNode], edges: list[GraphEdge]) -> str:
         """Compute a deterministic hash of the graph structure."""
         payload = {
             "nodes": sorted([n.node_id for n in nodes]),
-            "edges": sorted([
-                e.source_node_id + "->" + e.target_node_id + ":" + e.relation.value
-                for e in edges
-            ]),
+            "edges": sorted(
+                [e.source_node_id + "->" + e.target_node_id + ":" + e.relation.value for e in edges]
+            ),
         }
         encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"))
         return hashlib.sha256(encoded.encode("utf-8")).hexdigest()

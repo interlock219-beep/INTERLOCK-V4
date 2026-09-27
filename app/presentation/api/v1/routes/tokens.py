@@ -1,24 +1,26 @@
 from __future__ import annotations
 
-from typing import Annotated, Any
+from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, HTTPException
 
 from app.application.interfaces.execution_token_service import ExecutionTokenService
+from app.infrastructure.config.settings import get_settings
 from app.presentation.api.dependencies.auth import CurrentUser
+from app.presentation.api.dependencies.security import get_redis_client
 
 router = APIRouter(prefix="/tokens", tags=["Tokens"])
 
 
 def _get_token_service() -> ExecutionTokenService:
+    from app.infrastructure.redis.nonce_store import RedisNonceStore
     from app.infrastructure.security.ed25519_execution_token_service import (
         Ed25519ExecutionTokenService,
     )
     from app.infrastructure.security.env_key_manager import EnvKeyManager
-    from app.infrastructure.redis.nonce_store import RedisNonceStore
 
-    key_manager = EnvKeyManager()
-    nonce_store = RedisNonceStore()
+    key_manager = EnvKeyManager(jwt_secret=get_settings().jwt_secret_key)
+    nonce_store = RedisNonceStore(redis_client=get_redis_client())
     return Ed25519ExecutionTokenService(
         key_manager=key_manager,
         nonce_store=nonce_store,

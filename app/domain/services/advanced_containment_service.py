@@ -6,9 +6,8 @@ import secrets
 from datetime import UTC, datetime
 from typing import Any
 
-from app.domain.entities.agent import Agent, AgentStatus
+from app.domain.entities.agent import AgentStatus
 from app.domain.entities.authority_grant import (
-    AuthorityGrant,
     AuthorityScope,
     AuthorityStatus,
 )
@@ -143,20 +142,16 @@ class AdvancedContainmentService:
         if stage == ContainmentMode.OBSERVE:
             return
         if stage in (ContainmentMode.RESTRICT, ContainmentMode.SUSPEND):
-            await self._agent_repo.update_status(
-                tenant_id, agent_id, AgentStatus.SUSPENDED
-            )
+            await self._agent_repo.update_status(tenant_id, agent_id, AgentStatus.SUSPENDED)
         elif stage == ContainmentMode.QUARANTINE:
-            await self._agent_repo.update_status(
-                tenant_id, agent_id, AgentStatus.QUARANTINED
-            )
+            await self._agent_repo.update_status(tenant_id, agent_id, AgentStatus.QUARANTINED)
 
     async def _update_event_status(
         self,
         event: ContainmentEvent,
         status: ContainmentStatus,
         details: dict[str, str],
-    ) -> ContainmentEvent:
+    ) -> ContainmentEvent | None:
         merged = {**event.result_details, **details}
         return await self._containment_repo.update_status(
             event.tenant_id, event.containment_id, status, result_details=merged
@@ -166,9 +161,7 @@ class AdvancedContainmentService:
     # Feature 52 - Blast radius scoring
     # ------------------------------------------------------------------
 
-    async def compute_blast_radius_score(
-        self, tenant_id: str, agent_id: str
-    ) -> dict[str, Any]:
+    async def compute_blast_radius_score(self, tenant_id: str, agent_id: str) -> dict[str, Any]:
         """Compute a pre-execution blast-radius risk score for an agent."""
         agent = await self._agent_repo.get_by_agent_id(tenant_id, agent_id)
         if agent is None:
@@ -177,9 +170,7 @@ class AdvancedContainmentService:
         grants, _ = await self._grant_repo.list_by_grantee(
             tenant_id, agent_id, limit=1000, offset=0
         )
-        child_agents, _ = await self._agent_repo.list_by_tenant(
-            tenant_id, limit=1000, offset=0
-        )
+        child_agents, _ = await self._agent_repo.list_by_tenant(tenant_id, limit=1000, offset=0)
         descendants = [a for a in child_agents if a.parent_agent_id == agent_id]
 
         score = 0.0
@@ -247,37 +238,41 @@ class AdvancedContainmentService:
 
         agent = await self._agent_repo.get_by_agent_id(tenant_id, target_agent_id)
         if agent is None:
-            checks.append({
-                "check": "agent_quarantined",
-                "passed": False,
-                "detail": "Agent not found",
-            })
+            checks.append(
+                {
+                    "check": "agent_quarantined",
+                    "passed": False,
+                    "detail": "Agent not found",
+                }
+            )
             return {
                 "containment_id": containment_id,
                 "all_passed": False,
                 "checks": checks,
-            "status": ContainmentStatus.FAILED.value,
+                "status": ContainmentStatus.FAILED.value,
             }
 
         agent_quarantined = agent.status == AgentStatus.QUARANTINED
-        checks.append({
-            "check": "agent_quarantined",
-            "passed": agent_quarantined,
-            "detail": agent.status.value,
-        })
+        checks.append(
+            {
+                "check": "agent_quarantined",
+                "passed": agent_quarantined,
+                "detail": agent.status.value,
+            }
+        )
 
         grants, _ = await self._grant_repo.list_by_grantee(
             tenant_id, target_agent_id, limit=1000, offset=0
         )
-        active_remaining = sum(
-            1 for g in grants if g.status != AuthorityStatus.REVOKED
-        )
+        active_remaining = sum(1 for g in grants if g.status != AuthorityStatus.REVOKED)
         all_grants_revoked = active_remaining == 0
-        checks.append({
-            "check": "all_grants_revoked",
-            "passed": all_grants_revoked,
-            "detail": str(active_remaining) + " active remaining",
-        })
+        checks.append(
+            {
+                "check": "all_grants_revoked",
+                "passed": all_grants_revoked,
+                "detail": str(active_remaining) + " active remaining",
+            }
+        )
 
         tokens_revoked = True
         if self._token_repo is not None:
@@ -285,11 +280,13 @@ class AdvancedContainmentService:
                 tenant_id, target_agent_id, status=TokenStatus.ACTIVE, limit=1000, offset=0
             )
             tokens_revoked = len(tokens) == 0
-        checks.append({
-            "check": "tokens_revoked",
-            "passed": tokens_revoked,
-            "detail": "no active tokens" if tokens_revoked else "active tokens remain",
-        })
+        checks.append(
+            {
+                "check": "tokens_revoked",
+                "passed": tokens_revoked,
+                "detail": "no active tokens" if tokens_revoked else "active tokens remain",
+            }
+        )
 
         actions_contained = True
         if self._action_repo is not None:
@@ -303,17 +300,17 @@ class AdvancedContainmentService:
                 ActionStatus.DENIED,
             )
             actions_contained = all(a.status in terminal_statuses for a in pending)
-        checks.append({
-            "check": "pending_actions_contained",
-            "passed": actions_contained,
-            "detail": "all resolved" if actions_contained else "pending actions remain",
-        })
+        checks.append(
+            {
+                "check": "pending_actions_contained",
+                "passed": actions_contained,
+                "detail": "all resolved" if actions_contained else "pending actions remain",
+            }
+        )
 
         all_passed = all(c["passed"] for c in checks)
 
-        event = await self._containment_repo.get_by_containment_id(
-            tenant_id, containment_id
-        )
+        event = await self._containment_repo.get_by_containment_id(tenant_id, containment_id)
         if event is not None:
             verification_details = {
                 **event.result_details,
@@ -332,9 +329,7 @@ class AdvancedContainmentService:
             "all_passed": all_passed,
             "checks": checks,
             "status": (
-                ContainmentStatus.COMPLETED.value
-                if all_passed
-                else ContainmentStatus.FAILED.value
+                ContainmentStatus.COMPLETED.value if all_passed else ContainmentStatus.FAILED.value
             ),
         }
 
@@ -410,9 +405,7 @@ class AdvancedContainmentService:
                 )
                 for grant in grants:
                     if grant.status == AuthorityStatus.ACTIVE:
-                        await self._grant_repo.revoke(
-                            tenant_id, grant.grant_id, initiated_by
-                        )
+                        await self._grant_repo.revoke(tenant_id, grant.grant_id, initiated_by)
                         grant_id = grant.grant_id
                         actions_taken.append("grant_revoked:" + grant_id)
 
@@ -471,9 +464,7 @@ class AdvancedContainmentService:
         """Record a containment failure and optionally trigger fallback."""
         exception_id = "exc-" + secrets.token_hex(8)
 
-        event = await self._containment_repo.get_by_containment_id(
-            tenant_id, containment_id
-        )
+        event = await self._containment_repo.get_by_containment_id(tenant_id, containment_id)
 
         if event is not None:
             updated_details = {
@@ -522,8 +513,8 @@ class AdvancedContainmentService:
                     tenant_id, target_agent_id, AgentStatus.QUARANTINED
                 )
                 fallback_triggered = True
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.debug("Containment fallback error: %s", exc)
 
         return {
             "exception_id": exception_id,
@@ -548,9 +539,7 @@ class AdvancedContainmentService:
     ) -> dict[str, Any]:
         """Append an audit log entry to the containment event's result_details."""
         audit_id = "aud-" + secrets.token_hex(8)
-        event = await self._containment_repo.get_by_containment_id(
-            tenant_id, containment_id
-        )
+        event = await self._containment_repo.get_by_containment_id(tenant_id, containment_id)
 
         audit_entry: dict[str, Any] = {
             "audit_id": audit_id,
@@ -603,9 +592,7 @@ class AdvancedContainmentService:
         """Fan-out notification to affected parties about containment action."""
         notification_id = "notif-" + secrets.token_hex(8)
 
-        event = await self._containment_repo.get_by_containment_id(
-            tenant_id, containment_id
-        )
+        event = await self._containment_repo.get_by_containment_id(tenant_id, containment_id)
 
         if recipients is None:
             recipients = []
@@ -653,9 +640,7 @@ class AdvancedContainmentService:
         """Hand-off to recovery pipeline after containment is complete."""
         recovery_id = "rec-" + secrets.token_hex(8)
 
-        event = await self._containment_repo.get_by_containment_id(
-            tenant_id, containment_id
-        )
+        event = await self._containment_repo.get_by_containment_id(tenant_id, containment_id)
 
         terminal_statuses = (
             ContainmentStatus.COMPLETED,

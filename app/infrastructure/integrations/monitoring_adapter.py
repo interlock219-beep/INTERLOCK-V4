@@ -91,10 +91,12 @@ class MockMonitoringAdapter(MonitoringAdapter):
         tags: dict[str, str] | None = None,
     ) -> None:
         key = _tag_key(metric_name, tags)
-        self._histograms.setdefault(key, []).append({
-            "value": value,
-            "timestamp": datetime.now(tz=UTC).isoformat(),
-        })
+        self._histograms.setdefault(key, []).append(
+            {
+                "value": value,
+                "timestamp": datetime.now(tz=UTC).isoformat(),
+            }
+        )
         logger.debug("Mock histogram %s sample recorded", key)
 
     def health_check(self) -> bool:
@@ -153,10 +155,12 @@ class PrometheusMonitoringAdapter(MonitoringAdapter):
         if not self._config.enabled:
             return
         key = _tag_key(metric_name, tags)
-        self._histograms.setdefault(key, []).append({
-            "value": value,
-            "timestamp": datetime.now(tz=UTC).isoformat(),
-        })
+        self._histograms.setdefault(key, []).append(
+            {
+                "value": value,
+                "timestamp": datetime.now(tz=UTC).isoformat(),
+            }
+        )
         logger.debug("Prometheus histogram %s sample recorded", key)
 
     def health_check(self) -> bool:
@@ -215,10 +219,12 @@ class DatadogMonitoringAdapter(MonitoringAdapter):
         if not self._config.enabled:
             return
         key = _tag_key(metric_name, tags)
-        self._histograms.setdefault(key, []).append({
-            "value": value,
-            "timestamp": datetime.now(tz=UTC).isoformat(),
-        })
+        self._histograms.setdefault(key, []).append(
+            {
+                "value": value,
+                "timestamp": datetime.now(tz=UTC).isoformat(),
+            }
+        )
         logger.debug("Datadog histogram %s sample recorded", key)
 
     def health_check(self) -> bool:
@@ -277,10 +283,12 @@ class CloudWatchMonitoringAdapter(MonitoringAdapter):
         if not self._config.enabled:
             return
         key = _tag_key(metric_name, tags)
-        self._histograms.setdefault(key, []).append({
-            "value": value,
-            "timestamp": datetime.now(tz=UTC).isoformat(),
-        })
+        self._histograms.setdefault(key, []).append(
+            {
+                "value": value,
+                "timestamp": datetime.now(tz=UTC).isoformat(),
+            }
+        )
         logger.debug("CloudWatch histogram %s sample recorded", key)
 
     def health_check(self) -> bool:

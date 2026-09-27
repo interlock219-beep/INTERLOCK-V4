@@ -76,9 +76,7 @@ class ConfigRollbackAdapter(RecoveryAdapter):
         import json
 
         payload_str = json.dumps(action.tool_arguments, sort_keys=True, default=str)
-        evidence_hash = hashlib.sha256(
-            f"{action.action_id}:{payload_str}".encode()
-        ).hexdigest()
+        evidence_hash = hashlib.sha256(f"{action.action_id}:{payload_str}".encode()).hexdigest()
         before_ref = action.before_state_ref or f"config:{action.action_id}:before"
         return RecoveryEvidence(
             evidence_id=f"ev-{action.action_id}",
@@ -249,14 +247,18 @@ class ConfigRollbackAdapter(RecoveryAdapter):
             "requires_approval": Reversibility.is_conditional(action.reversibility),
         }
 
-    async def execute_recovery(
-        self, action: ProtectedAction, approved_by: str
-    ) -> dict[str, Any]:
+    async def execute_recovery(self, action: ProtectedAction, approved_by: str) -> dict[str, Any]:
         return {
             "adapter": "config_rollback",
             "action_id": action.action_id,
-            "status": "rolled_back",
+            "status": "failed",
+            "success": False,
             "mock": True,
             "before_state_ref": action.before_state_ref,
             "executed_by": approved_by,
+            "error": (
+                "ConfigRollbackAdapter is a reference implementation and does not "
+                "perform actual config restoration. Deploy a production adapter "
+                "for real recovery."
+            ),
         }

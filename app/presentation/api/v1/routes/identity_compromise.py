@@ -7,7 +7,6 @@ from sqlalchemy.orm import Session
 
 from app.domain.repositories.agent_repository import AgentRepository
 from app.domain.services.identity_compromise_service import (
-    IdentityCompromiseIndicator,
     IdentityCompromiseService,
 )
 from app.infrastructure.logging.audit_logger import log_security_event

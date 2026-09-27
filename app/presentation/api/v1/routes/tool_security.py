@@ -45,7 +45,7 @@ async def validate_tool_path(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(exc),
-        )
+        ) from exc
 
 
 @router.post("/validate-url")
@@ -62,4 +62,4 @@ async def validate_tool_url(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(exc),
-        )
+        ) from exc

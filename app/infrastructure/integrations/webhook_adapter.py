@@ -47,12 +47,13 @@ class WebhookAdapter(ABC):
                     raise WebhookProcessingError(
                         f"Webhook processing failed after {max_retries} attempts: {exc}"
                     ) from exc
-                time.sleep(2 ** attempt)
+                time.sleep(2**attempt)
         return {}
 
     @staticmethod
     def _parse_payload(payload: bytes) -> dict[str, Any]:
         import json
+
         try:
             return json.loads(payload)  # type: ignore[no-any-return]
         except (ValueError, TypeError) as exc:

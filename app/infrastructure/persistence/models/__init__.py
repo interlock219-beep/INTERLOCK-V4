@@ -16,6 +16,7 @@ from app.infrastructure.persistence.models.billing_models import (
 )
 from app.infrastructure.persistence.models.containment_event_model import ContainmentEventModel
 from app.infrastructure.persistence.models.discovery_event_model import DiscoveryEventModel
+from app.infrastructure.persistence.models.emergency_state_model import EmergencyStateModel
 from app.infrastructure.persistence.models.execution_token_model import ExecutionTokenModel
 from app.infrastructure.persistence.models.identity_models import (
     EmailVerificationTokenModel,
@@ -45,6 +46,7 @@ __all__ = [
     "ContainmentEventModel",
     "DiscoveryEventModel",
     "EmailVerificationTokenModel",
+    "EmergencyStateModel",
     "ExecutionTokenModel",
     "IdentityProviderModel",
     "InvoiceModel",
@@ -64,4 +66,3 @@ __all__ = [
     "WebhookEventModel",
     "IncidentModel",
 ]
-

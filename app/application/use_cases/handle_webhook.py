@@ -56,9 +56,7 @@ class HandleWebhookUseCase:
         self._plan_repository = plan_repository
         self._payment_provider = payment_provider
 
-    async def execute(
-        self, payload: bytes, signature: str, webhook_secret: str
-    ) -> None:
+    async def execute(self, payload: bytes, signature: str, webhook_secret: str) -> None:
         provider_event = await self._payment_provider.construct_webhook_event(
             payload, signature, webhook_secret
         )
@@ -70,13 +68,9 @@ class HandleWebhookUseCase:
             event_id = _get_str(getattr(provider_event, "id", ""))
             event_type = _get_str(getattr(provider_event, "type", ""))
         if not event_id or not event_type:
-            raise WebhookProcessingError(
-                "Webhook event missing id or type."
-            )
+            raise WebhookProcessingError("Webhook event missing id or type.")
 
-        existing = await self._webhook_repository.get_by_provider_event_id(
-            event_id
-        )
+        existing = await self._webhook_repository.get_by_provider_event_id(event_id)
         if existing is not None:
             if existing.processed:
                 logger.info(
@@ -86,8 +80,7 @@ class HandleWebhookUseCase:
                 return
             if existing.error_message:
                 raise WebhookProcessingError(
-                    f"Previous webhook processing failed: "
-                    f"{existing.error_message}"
+                    f"Previous webhook processing failed: {existing.error_message}"
                 )
 
         event_payload = (
@@ -131,9 +124,7 @@ class HandleWebhookUseCase:
                 created_at=webhook_event.created_at,
             )
             await self._webhook_repository.save(webhook_event)
-            raise WebhookProcessingError(
-                f"Webhook processing failed: {exc}"
-            ) from exc
+            raise WebhookProcessingError(f"Webhook processing failed: {exc}") from exc
 
     async def _process_event(self, provider_event: object) -> None:
         event_type = ""
@@ -145,9 +136,7 @@ class HandleWebhookUseCase:
             event_type = _get_str(getattr(provider_event, "type", ""))
             event_data = getattr(provider_event, "data", {})
             event_object = (
-                _get_dict(event_data).get("object", {})
-                if isinstance(event_data, dict)
-                else {}
+                _get_dict(event_data).get("object", {}) if isinstance(event_data, dict) else {}
             )
 
         if event_type in (
@@ -166,18 +155,12 @@ class HandleWebhookUseCase:
         else:
             logger.info("Unhandled webhook event type: %s", event_type)
 
-    async def _handle_checkout_complete(
-        self, event_object: dict[str, Any]
-    ) -> None:
+    async def _handle_checkout_complete(self, event_object: dict[str, Any]) -> None:
         provider_session_id = _get_str(event_object.get("id", ""))
         subscription_id = _get_str(event_object.get("subscription", ""))
         customer_id = _get_str(event_object.get("customer", ""))
 
-        checkout = (
-            await self._checkout_repository.get_by_provider_session_id(
-                provider_session_id
-            )
-        )
+        checkout = await self._checkout_repository.get_by_provider_session_id(provider_session_id)
         if checkout is None:
             return
 
@@ -190,9 +173,7 @@ class HandleWebhookUseCase:
             )
         plan = await self._plan_repository.get_by_id(plan_id)
         if plan is None:
-            raise WebhookProcessingError(
-                f"Plan not found for checkout: {plan_id}"
-            )
+            raise WebhookProcessingError(f"Plan not found for checkout: {plan_id}")
 
         if customer_id and checkout.customer_id != customer_id:
             await self._checkout_repository.update_customer_id(
@@ -215,14 +196,10 @@ class HandleWebhookUseCase:
         )
         await self._subscription_repository.save(subscription)
 
-    async def _handle_subscription_updated(
-        self, event_object: dict[str, Any]
-    ) -> None:
+    async def _handle_subscription_updated(self, event_object: dict[str, Any]) -> None:
         provider_subscription_id = _get_str(event_object.get("id", ""))
-        subscription = (
-            await self._subscription_repository.get_by_provider_id(
-                provider_subscription_id
-            )
+        subscription = await self._subscription_repository.get_by_provider_id(
+            provider_subscription_id
         )
         if subscription is None:
             return
@@ -237,9 +214,7 @@ class HandleWebhookUseCase:
             "unpaid": SubscriptionStatus.UNPAID,
         }
         raw_status = _get_str(event_object.get("status", "")).lower()
-        new_status = status_map.get(
-            raw_status, SubscriptionStatus(raw_status)
-        )
+        new_status = status_map.get(raw_status, SubscriptionStatus(raw_status))
 
         current_period_start = datetime.fromtimestamp(
             _get_int(event_object.get("current_period_start", 0)), tz=UTC
@@ -257,23 +232,17 @@ class HandleWebhookUseCase:
             interval=subscription.interval,
             current_period_start=current_period_start,
             current_period_end=current_period_end,
-            cancel_at_period_end=bool(
-                event_object.get("cancel_at_period_end", False)
-            ),
+            cancel_at_period_end=bool(event_object.get("cancel_at_period_end", False)),
             provider_subscription_id=subscription.provider_subscription_id,
             created_at=subscription.created_at,
             updated_at=datetime.now(tz=UTC),
         )
         await self._subscription_repository.save(updated_subscription)
 
-    async def _handle_subscription_deleted(
-        self, event_object: dict[str, Any]
-    ) -> None:
+    async def _handle_subscription_deleted(self, event_object: dict[str, Any]) -> None:
         provider_subscription_id = _get_str(event_object.get("id", ""))
-        subscription = (
-            await self._subscription_repository.get_by_provider_id(
-                provider_subscription_id
-            )
+        subscription = await self._subscription_repository.get_by_provider_id(
+            provider_subscription_id
         )
         if subscription is None:
             return
@@ -294,12 +263,8 @@ class HandleWebhookUseCase:
         )
         await self._subscription_repository.save(updated_subscription)
 
-    async def _handle_invoice_paid(
-        self, event_object: dict[str, Any]
-    ) -> None:
+    async def _handle_invoice_paid(self, event_object: dict[str, Any]) -> None:
         pass
 
-    async def _handle_invoice_payment_failed(
-        self, event_object: dict[str, Any]
-    ) -> None:
+    async def _handle_invoice_payment_failed(self, event_object: dict[str, Any]) -> None:
         pass

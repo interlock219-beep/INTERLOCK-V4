@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import secrets
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, cast
 
 from app.domain.entities.self_healing_types import (
     HealingAction,
@@ -99,7 +99,7 @@ class SelfHealingService:
             )
 
         if self._adapter is not None:
-            method = getattr(self._adapter, 'health_check', None)
+            method = getattr(self._adapter, "health_check", None)
             if method is not None:
                 result = await method(tenant_id, entity_id, check_type)
                 return HealthCheck(
@@ -171,7 +171,9 @@ class SelfHealingService:
 
         health_result = await self.check_health(tenant_id, entity_id, entity_type)
         overall_raw = health_result["overall_health"]
-        overall = HealthStatus(overall_raw) if not isinstance(overall_raw, HealthStatus) else overall_raw
+        overall = (
+            HealthStatus(overall_raw) if not isinstance(overall_raw, HealthStatus) else overall_raw
+        )
 
         actions_taken: list[str] = []
         healed = False
@@ -235,7 +237,7 @@ class SelfHealingService:
 
         if is_unhealthy:
             return True
-        return value < threshold
+        return cast(float, value) < threshold
 
     def _is_in_cooldown(self, policy: HealingPolicy) -> bool:
         """Check if a policy is in cooldown period."""
@@ -243,7 +245,7 @@ class SelfHealingService:
             return False
         key = f"{policy.tenant_id}:{policy.entity_id}:{policy.policy_id}"
         last = self._cooldowns.get(key, 0.0)
-        elapsed = (datetime.now(UTC).timestamp() - last)
+        elapsed = datetime.now(UTC).timestamp() - last
         return elapsed < policy.cooldown_seconds
 
     def _set_cooldown(self, policy: HealingPolicy) -> None:
@@ -275,7 +277,7 @@ class SelfHealingService:
 
         try:
             if self._adapter is not None:
-                method = getattr(self._adapter, 'execute_healing', None)
+                method = getattr(self._adapter, "execute_healing", None)
                 if method is not None:
                     result = await method(
                         tenant_id,
@@ -348,21 +350,15 @@ class SelfHealingService:
             self._events[key] = []
         self._events[key].append(event)
 
-    def get_health_history(
-        self, tenant_id: str, entity_id: str
-    ) -> list[HealthCheck]:
+    def get_health_history(self, tenant_id: str, entity_id: str) -> list[HealthCheck]:
         """Retrieve recorded health checks for an entity."""
         return self._checks.get(f"{tenant_id}:{entity_id}", [])
 
-    def get_healing_events(
-        self, tenant_id: str, entity_id: str
-    ) -> list[HealingEvent]:
+    def get_healing_events(self, tenant_id: str, entity_id: str) -> list[HealingEvent]:
         """Retrieve recorded healing events for an entity."""
         return self._events.get(f"{tenant_id}:{entity_id}", [])
 
-    def get_healing_actions(
-        self, tenant_id: str, entity_id: str
-    ) -> list[HealingAction]:
+    def get_healing_actions(self, tenant_id: str, entity_id: str) -> list[HealingAction]:
         """Retrieve recorded healing actions for an entity."""
         return self._actions.get(f"{tenant_id}:{entity_id}", [])
 

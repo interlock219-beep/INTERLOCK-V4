@@ -144,7 +144,11 @@ class IndependentVerificationReport:
     @property
     def any_failed(self) -> bool:
         return any(
-            r.outcome in (VerificationOutcome.VERIFICATION_FAILED, VerificationOutcome.EVIDENCE_TAMPERED)
+            r.outcome
+            in (
+                VerificationOutcome.VERIFICATION_FAILED,
+                VerificationOutcome.EVIDENCE_TAMPERED,
+            )
             for r in self.results
         )
 
@@ -174,6 +178,8 @@ class EvidenceAssessment:
         if self.is_inconclusive:
             return VerificationOutcome.INCONCLUSIVE
         return VerificationOutcome.UNKNOWN
+
+
 class VerificationLayer(StrEnum):
     """Multi-layer verification layers.
 
@@ -296,17 +302,26 @@ class VerificationConfidence:
 
     @property
     def can_claim_recovered(self) -> bool:
-        return self.confidence_level in (
-            ConfidenceLevel.HIGH_CONFIDENCE,
-            ConfidenceLevel.MEDIUM_CONFIDENCE,
-        ) and self.definitive_failures == 0
+        return (
+            self.confidence_level
+            in (
+                ConfidenceLevel.HIGH_CONFIDENCE,
+                ConfidenceLevel.MEDIUM_CONFIDENCE,
+            )
+            and self.definitive_failures == 0
+        )
 
     @property
     def requires_human_review(self) -> bool:
-        return self.confidence_level in (
-            ConfidenceLevel.LOW_CONFIDENCE,
-            ConfidenceLevel.INSUFFICIENT_EVIDENCE,
-        ) or self.inconclusive_layers > 0
+        return (
+            self.confidence_level
+            in (
+                ConfidenceLevel.LOW_CONFIDENCE,
+                ConfidenceLevel.INSUFFICIENT_EVIDENCE,
+            )
+            or self.inconclusive_layers > 0
+        )
+
 
 __all__ = [
     "ConfidenceLevel",

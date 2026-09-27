@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 from datetime import UTC, datetime
 from typing import Any
@@ -60,9 +60,7 @@ class ConditionalRuntimeAuthorizationEvaluator:
                 return AuthorizationDecision.ALLOW, "Within allowed time window"
         return AuthorizationDecision.DENY, "Outside allowed time window"
 
-    def _check_ip_range(
-        self, context: AuthorizationContext
-    ) -> tuple[AuthorizationDecision, str]:
+    def _check_ip_range(self, context: AuthorizationContext) -> tuple[AuthorizationDecision, str]:
         allowed_ips = getattr(self._settings, "authorization_allowed_ips", [])
         denied_ips = getattr(self._settings, "authorization_denied_ips", [])
         if not allowed_ips and not denied_ips:
@@ -88,7 +86,9 @@ class ConditionalRuntimeAuthorizationEvaluator:
         now = datetime.now(UTC)
         session_age = (now - session_created_at).total_seconds()
         if session_age > max_session_age:
-            return AuthorizationDecision.DENY, f"Session age {session_age}s exceeds limit {max_session_age}s"
+            return AuthorizationDecision.DENY, (
+                f"Session age {session_age}s exceeds limit {max_session_age}s"
+            )
         return AuthorizationDecision.ALLOW, "Session age is within limit"
 
     def _check_concurrent_sessions(
@@ -101,5 +101,7 @@ class ConditionalRuntimeAuthorizationEvaluator:
         if active_sessions is None:
             return AuthorizationDecision.DENY, "Active session count is unknown"
         if active_sessions > max_concurrent:
-            return AuthorizationDecision.DENY, f"Active sessions {active_sessions} exceeds limit {max_concurrent}"
+            return AuthorizationDecision.DENY, (
+                f"Active sessions {active_sessions} exceeds limit {max_concurrent}"
+            )
         return AuthorizationDecision.ALLOW, "Concurrent session count is within limit"

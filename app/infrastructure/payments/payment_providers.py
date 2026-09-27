@@ -48,8 +48,7 @@ class MockPaymentProvider(PaymentProvider):
         }
         return CheckoutSessionResponse(
             session_id=session_id,
-            url=f"/mock-checkout/{session_id}?plan={request.plan_id}"
-            f"&interval={request.interval}",
+            url=f"/mock-checkout/{session_id}?plan={request.plan_id}&interval={request.interval}",
             expires_at=str(int(time.time()) + 3600),
         )
 
@@ -64,9 +63,7 @@ class MockPaymentProvider(PaymentProvider):
             expires_at=str(int(time.time()) + 3600),
         )
 
-    async def construct_webhook_event(
-        self, payload: bytes, signature: str, secret: str
-    ) -> Any:
+    async def construct_webhook_event(self, payload: bytes, signature: str, secret: str) -> Any:
         expected = hmac.new(secret.encode(), payload, hashlib.sha256).hexdigest()
         actual = signature
         for part in signature.split(","):
@@ -94,7 +91,7 @@ class StripePaymentProvider(PaymentProvider):
         publishable_key: str | None = None,
     ) -> None:
         try:
-            import stripe  # type: ignore
+            import stripe
         except ImportError as exc:
             raise ImportError(
                 "stripe package is required for StripePaymentProvider. "
@@ -144,9 +141,7 @@ class StripePaymentProvider(PaymentProvider):
         session = stripe.checkout.Session.create(**params)
         url = session.url or ""
         expires_at = (
-            str(int(session.expires_at))
-            if session.expires_at
-            else str(int(time.time()) + 3600)
+            str(int(session.expires_at)) if session.expires_at else str(int(time.time()) + 3600)
         )
         return CheckoutSessionResponse(
             session_id=session.id,
@@ -172,9 +167,7 @@ class StripePaymentProvider(PaymentProvider):
             expires_at=str(int(time.time()) + 3600),
         )
 
-    async def construct_webhook_event(
-        self, payload: bytes, signature: str, secret: str
-    ) -> Any:
+    async def construct_webhook_event(self, payload: bytes, signature: str, secret: str) -> Any:
         import stripe
 
         return stripe.Webhook.construct_event(payload, signature, secret)

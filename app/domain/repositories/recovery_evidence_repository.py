@@ -12,9 +12,7 @@ class RecoveryEvidenceRepository(ABC):
     ) -> RecoveryEvidence | None: ...
 
     @abstractmethod
-    async def get_by_action_id(
-        self, tenant_id: str, action_id: str
-    ) -> RecoveryEvidence | None: ...
+    async def get_by_action_id(self, tenant_id: str, action_id: str) -> RecoveryEvidence | None: ...
 
     @abstractmethod
     async def list_by_incident(

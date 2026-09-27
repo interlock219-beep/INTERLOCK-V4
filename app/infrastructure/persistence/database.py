@@ -42,6 +42,7 @@ def init_db() -> None:
         ContainmentEventModel,
         DiscoveryEventModel,
         EmailVerificationTokenModel,
+        EmergencyStateModel,
         ExecutionTokenModel,
         IdentityProviderModel,
         IncidentModel,

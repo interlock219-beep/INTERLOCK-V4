@@ -114,7 +114,7 @@ async def test_revoke_tokens_by_agent_no_active(service, token_repo):
 async def test_revoke_tokens_by_tenant(service, token_repo):
     active = build_token("token-1")
     revoked = build_token("token-1", status=TokenStatus.REVOKED)
-    token_repo.list_all.return_value = ([active, revoked], 2)
+    token_repo.list_by_tenant.return_value = ([active, revoked], 2)
     token_repo.revoke.return_value = revoked
 
     result = await service.revoke_tokens_by_tenant(
@@ -147,7 +147,7 @@ async def test_is_revoked_false(service, token_repo):
 @pytest.mark.asyncio
 async def test_get_revocation_log(service, token_repo):
     revoked_token = build_token(status=TokenStatus.REVOKED)
-    token_repo.list_all.return_value = ([revoked_token, build_token()], 2)
+    token_repo.list_by_tenant.return_value = ([revoked_token, build_token()], 2)
 
     log = await service.get_revocation_log("tenant-1", limit=10, offset=0)
     assert len(log) == 1
@@ -157,7 +157,7 @@ async def test_get_revocation_log(service, token_repo):
 
 @pytest.mark.asyncio
 async def test_get_revocation_log_empty_on_error(service, token_repo):
-    token_repo.list_all.side_effect = Exception("db error")
+    token_repo.list_by_tenant.side_effect = Exception("db error")
 
     log = await service.get_revocation_log("tenant-1")
     assert log == []

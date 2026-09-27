@@ -1,38 +1,31 @@
 from __future__ import annotations
 
 import hashlib
-import json
-import secrets
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from typing import Any
 
 from app.domain.entities.causal_state_types import (
-    ConfidenceLevel,
     DurableExecutionStep,
     RecoveryConfidence,
-    VerificationStatus,
 )
 from app.domain.entities.durable_recovery_types import (
-    DurablePlanStatus,
     PlanCoordinationState,
 )
 from app.domain.entities.surgical_recovery_types import (
     ConflictStatus,
-    DriftStatus,
     ExecutionState,
-    RecoveryEvidence,
     Reversibility,
 )
 from app.domain.repositories.causal_state_repositories import (
     DurableExecutionRepository,
     RecoveryReportRepository,
 )
-from app.domain.repositories.recovery_evidence_repository import (
-    RecoveryEvidenceRepository,
-)
 from app.domain.repositories.durable_recovery_repository import (
     RecoveryReconciliationRepository,
+)
+from app.domain.repositories.recovery_evidence_repository import (
+    RecoveryEvidenceRepository,
 )
 from app.domain.services.recovery_confidence_model import RecoveryConfidenceModel
 
@@ -191,21 +184,15 @@ class RecoveryScoreService:
         )
         evidence_score = await self._assess_evidence_integrity(tenant_id, plan_id, actions)
         state_certainty = await self._assess_state_certainty(tenant_id, plan_id, actions)
-        recovery_coverage = await self._assess_recovery_coverage(
-            tenant_id, plan_id, actions
-        )
-        dependency_certainty = await self._assess_dependency_certainty(
-            tenant_id, plan_id, actions
-        )
+        recovery_coverage = await self._assess_recovery_coverage(tenant_id, plan_id, actions)
+        dependency_certainty = await self._assess_dependency_certainty(tenant_id, plan_id, actions)
         conflict_weight = await self._assess_conflicts(tenant_id, plan_id, actions)
         irreversibility_penalty = await self._assess_irreversibility(tenant_id, plan_id, actions)
         external_side_effect_score = await self._assess_external_side_effects(
             tenant_id, plan_id, actions
         )
         verification_coverage = verification_assessment.verification_rate
-        adapter_reliability = await self._assess_adapter_reliability(
-            tenant_id, plan_id, actions
-        )
+        adapter_reliability = await self._assess_adapter_reliability(tenant_id, plan_id, actions)
         unresolved_uncertainty = await self._assess_unresolved_uncertainty(
             tenant_id, plan_id, actions
         )
@@ -233,7 +220,9 @@ class RecoveryScoreService:
             "unresolved_uncertainty_penalty": 1.0 - unresolved_uncertainty,
         }
 
-        weighted_score = self._compute_weighted_score(sub_scores, execution_assessment, verification_assessment)
+        weighted_score = self._compute_weighted_score(
+            sub_scores, execution_assessment, verification_assessment
+        )
 
         cannot_claim_recovered = self._should_block_recovery_claim(
             execution_assessment,
@@ -243,7 +232,9 @@ class RecoveryScoreService:
         )
 
         if cannot_claim_recovered:
-            limitations.append("Recovery cannot be claimed: verification or uncertainty criteria not met")
+            limitations.append(
+                "Recovery cannot be claimed: verification or uncertainty criteria not met"
+            )
         if evidence_score < 0.5:
             limitations.append(f"Evidence completeness low ({evidence_score:.2f})")
             recommendations.append("Capture before-state references for all actions")
@@ -260,7 +251,9 @@ class RecoveryScoreService:
             limitations.append(f"Conflicts detected (weight={conflict_weight:.2f})")
             recommendations.append("Resolve conflicts before recovery")
         if irreversibility_penalty > 0.3:
-            limitations.append(f"Irreversible actions present (penalty={irreversibility_penalty:.2f})")
+            limitations.append(
+                f"Irreversible actions present (penalty={irreversibility_penalty:.2f})"
+            )
             recommendations.append("Manual recovery required for irreversible actions")
         if external_side_effect_score < 0.5:
             limitations.append("External side effects not fully accounted")
@@ -330,9 +323,7 @@ class RecoveryScoreService:
             },
         )
 
-    async def _assess_execution(
-        self, tenant_id: str, plan_id: str
-    ) -> ExecutionAssessment:
+    async def _assess_execution(self, tenant_id: str, plan_id: str) -> ExecutionAssessment:
         """Assess execution status from durable execution steps."""
         if self._execution_repo is None:
             return ExecutionAssessment(
@@ -443,9 +434,7 @@ class RecoveryScoreService:
                 failed += 1
             elif state == ExecutionState.UNKNOWN_EXTERNAL_OUTCOME.value:
                 unknown += 1
-            elif state == ExecutionState.REQUIRES_MANUAL_ACTION.value:
-                manual += 1
-            elif state in (
+            elif state == ExecutionState.REQUIRES_MANUAL_ACTION.value or state in (
                 ExecutionState.BLOCKED_BY_DRIFT.value,
                 ExecutionState.BLOCKED_BY_CONFLICT.value,
             ):
@@ -459,11 +448,7 @@ class RecoveryScoreService:
             verification_rate = 0.0
 
         all_verified = (
-            verified == total
-            and unverified == 0
-            and failed == 0
-            and unknown == 0
-            and total > 0
+            verified == total and unverified == 0 and failed == 0 and unknown == 0 and total > 0
         )
 
         return VerificationAssessment(
@@ -540,9 +525,8 @@ class RecoveryScoreService:
 
         for action in actions:
             evidence = await self._evidence_repo.get_by_action_id(tenant_id, action.action_id)
-            if evidence is not None:
-                if evidence.recovery_adapter_type.value != "unsupported":
-                    covered += 1
+            if evidence is not None and evidence.recovery_adapter_type.value != "unsupported":
+                covered += 1
 
         return covered / total if total > 0 else 0.0
 
@@ -568,9 +552,7 @@ class RecoveryScoreService:
 
         return certain / total if total > 0 else 0.0
 
-    async def _assess_conflicts(
-        self, tenant_id: str, plan_id: str, actions: list[Any]
-    ) -> float:
+    async def _assess_conflicts(self, tenant_id: str, plan_id: str, actions: list[Any]) -> float:
         """Assess conflict weight (0 = no conflicts, 1 = all conflicted)."""
         if self._evidence_repo is None or not actions:
             return 0.0
@@ -599,7 +581,11 @@ class RecoveryScoreService:
         unknown = 0
 
         for action in actions:
-            rev = Reversibility.normalize(action.reversibility) if hasattr(action, "reversibility") else Reversibility.UNKNOWN
+            rev = (
+                Reversibility.normalize(action.reversibility)
+                if hasattr(action, "reversibility")
+                else Reversibility.UNKNOWN
+            )
             if rev == Reversibility.IRREVERSIBLE:
                 irreversible += 1
             elif rev == Reversibility.UNKNOWN:
@@ -647,6 +633,7 @@ class RecoveryScoreService:
 
             if evidence is not None:
                 from app.domain.entities.surgical_recovery_types import AdapterCapability
+
                 capability = evidence.adapter_capability
                 if capability in (
                     AdapterCapability.PRODUCTION_VALIDATED,
@@ -673,7 +660,11 @@ class RecoveryScoreService:
         unknown_outcome_steps = 0
 
         for action in actions:
-            rev = Reversibility.normalize(action.reversibility) if hasattr(action, "reversibility") else Reversibility.UNKNOWN
+            rev = (
+                Reversibility.normalize(action.reversibility)
+                if hasattr(action, "reversibility")
+                else Reversibility.UNKNOWN
+            )
             if rev == Reversibility.UNKNOWN:
                 unknown_reversibility += 1
 
@@ -739,13 +730,9 @@ class RecoveryScoreService:
             return True
         if execution_assessment.failed_steps > 0:
             return True
-        if execution_assessment.blocked_steps > 0:
-            return True
-        return False
+        return execution_assessment.blocked_steps > 0
 
-    def _determine_band(
-        self, score: float, cannot_claim_recovered: bool
-    ) -> str:
+    def _determine_band(self, score: float, cannot_claim_recovered: bool) -> str:
         """Determine the confidence band label."""
         if cannot_claim_recovered:
             if score >= self.HIGH_THRESHOLD:
@@ -833,14 +820,10 @@ class RecoveryScoreService:
         else:
             external_side_effect_score = 1.0
 
-        conflict_weight = (
-            conflict_count / total_actions if total_actions > 0 else 0.0
-        )
+        conflict_weight = conflict_count / total_actions if total_actions > 0 else 0.0
 
         unresolved_uncertainty = (
-            (unknown_steps + irreversible_count) / total_actions
-            if total_actions > 0
-            else 0.0
+            (unknown_steps + irreversible_count) / total_actions if total_actions > 0 else 0.0
         )
 
         state_certainty = evidence_completeness
@@ -895,8 +878,10 @@ class RecoveryScoreService:
         )
 
         cannot_claim = self._should_block_recovery_claim(
-            execution_assessment, verification_assessment,
-            unresolved_uncertainty, irreversibility_penalty,
+            execution_assessment,
+            verification_assessment,
+            unresolved_uncertainty,
+            irreversibility_penalty,
         )
 
         band = self._determine_band(weighted_score, cannot_claim)
@@ -906,7 +891,9 @@ class RecoveryScoreService:
         limitations: list[str] = []
 
         if cannot_claim:
-            limitations.append("Recovery cannot be claimed: verification or uncertainty criteria not met")
+            limitations.append(
+                "Recovery cannot be claimed: verification or uncertainty criteria not met"
+            )
 
         if evidence_completeness < 0.5:
             limitations.append(f"Evidence completeness low ({evidence_completeness:.2f})")
@@ -920,10 +907,9 @@ class RecoveryScoreService:
             limitations.append(f"{unknown_steps} steps have unknown external outcome")
             recommendations.append("Resolve unknown external outcomes")
 
-        if irreducible := irreversibility_penalty:
-            if irreversible_count > 0:
-                limitations.append(f"{irreversible_count} irreversible actions present")
-                recommendations.append("Manual recovery required for irreversible actions")
+        if irreversibility_penalty and irreversible_count > 0:
+            limitations.append(f"{irreversible_count} irreversible actions present")
+            recommendations.append("Manual recovery required for irreversible actions")
 
         return RecoveryScore(
             score=weighted_score,
@@ -974,9 +960,7 @@ class RecoveryScoreService:
         executed_steps = sum(
             1 for s in steps if s.execution_state == ExecutionState.SUCCEEDED.value
         )
-        failed_steps = sum(
-            1 for s in steps if s.execution_state == ExecutionState.FAILED.value
-        )
+        failed_steps = sum(1 for s in steps if s.execution_state == ExecutionState.FAILED.value)
         unknown_steps = sum(
             1 for s in steps if s.execution_state == ExecutionState.UNKNOWN_EXTERNAL_OUTCOME.value
         )

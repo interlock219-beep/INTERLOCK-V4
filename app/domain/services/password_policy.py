@@ -26,9 +26,7 @@ class PasswordPolicy:
 
     def validate(self, password: str) -> None:
         if len(password) < self._min_length:
-            raise PasswordPolicyError(
-                f"Password must be at least {self._min_length} characters."
-            )
+            raise PasswordPolicyError(f"Password must be at least {self._min_length} characters.")
         if self._require_uppercase and not re.search(r"[A-Z]", password):
             raise PasswordPolicyError("Password must contain at least one uppercase letter.")
         if self._require_lowercase and not re.search(r"[a-z]", password):

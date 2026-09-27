@@ -57,8 +57,7 @@ class AuthenticateUserUseCase:
                 locked_until = locked_until.replace(tzinfo=UTC)
             if datetime.now(tz=UTC) < locked_until:
                 raise AccountLockedError(
-                    "Account is locked due to multiple failed login attempts. "
-                    "Try again later."
+                    "Account is locked due to multiple failed login attempts. Try again later."
                 )
 
         reset_user = await self._user_repository.reset_failed_login(user.id)

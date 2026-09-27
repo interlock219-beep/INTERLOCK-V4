@@ -208,3 +208,38 @@ def test_verify_evidence_chain_with_gaps():
     assert result["chain_valid"] is False
     assert len(result["gaps"]) > 0
     assert result["evidence_count"] == 2
+
+
+
+def test_verify_evidence_chain_immutable():
+    """P1 regression: evidence chain verification must be immutable/idempotent."""
+    from app.domain.services.evidence_verification_service import EvidenceVerificationService
+    
+    service = EvidenceVerificationService()
+    
+    evidence = RecoveryEvidence(
+        evidence_id="ev-immutable-1",
+        action_id="act-1",
+        tenant_id="tenant-1",
+        agent_id="agent-1",
+        authority_grant_id="ag-1",
+        parent_action_id=None,
+        root_action_id=None,
+        correlation_id="corr-1",
+        incident_id="inc-1",
+        target_resource="db.table",
+        reversibility_classification=Reversibility.AUTOMATICALLY_REVERSIBLE,
+        before_state_reference="s3://bucket/before/1",
+        after_state_reference="s3://bucket/after/1",
+        state_hash="sha256:abc123",
+    )
+    
+    # First verification
+    result1 = service.verify_evidence_integrity(evidence)
+    
+    # Second verification with same evidence should return same result
+    result2 = service.verify_evidence_integrity(evidence)
+    
+    assert result1["integrity_ok"] == result2["integrity_ok"]
+    assert result1["verified"] == result2["verified"]
+    assert result1["issues"] == result2["issues"]

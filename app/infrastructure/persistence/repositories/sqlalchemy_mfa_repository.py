@@ -16,9 +16,7 @@ class SQLAlchemyMFARepository(MFARepository):
         self._session = session
 
     async def get_by_user_id(self, user_id: UUID) -> UserMFA | None:
-        model = self._session.scalar(
-            select(UserMFAModel).where(UserMFAModel.user_id == user_id)
-        )
+        model = self._session.scalar(select(UserMFAModel).where(UserMFAModel.user_id == user_id))
         if model is None:
             return None
         return UserMFA(
@@ -56,9 +54,7 @@ class SQLAlchemyMFARepository(MFARepository):
         )
 
     async def delete(self, user_id: UUID) -> None:
-        model = self._session.scalar(
-            select(UserMFAModel).where(UserMFAModel.user_id == user_id)
-        )
+        model = self._session.scalar(select(UserMFAModel).where(UserMFAModel.user_id == user_id))
         if model is not None:
             self._session.delete(model)
             self._session.flush()

@@ -1,4 +1,4 @@
-﻿"""Production-grade filesystem recovery adapter.
+"""Production-grade filesystem recovery adapter.
 
 Performs real filesystem operations for recovery:
 - File creation recovery (delete the created file)
@@ -15,13 +15,14 @@ from __future__ import annotations
 
 import base64
 import contextlib
+import dataclasses
 import hashlib
 import json
 import os
 import stat
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from app.domain.entities.causal_state_types import (
     AdapterCapabilityDeclaration,
@@ -76,7 +77,7 @@ class FilesystemRecoveryAdapter(RecoveryAdapter):
         self._preserve_metadata = preserve_metadata
         self._preserve_ownership = preserve_ownership
         self._preserve_acl = preserve_acl
-        self._capture_xattrs = capture_xattrs
+        self._capture_xattrs_enabled = capture_xattrs
 
     @staticmethod
     def _now() -> str:
@@ -92,8 +93,7 @@ class FilesystemRecoveryAdapter(RecoveryAdapter):
             return str(value)
         if isinstance(value, dict):
             return {
-                str(key): FilesystemRecoveryAdapter._json_safe(item)
-                for key, item in value.items()
+                str(key): FilesystemRecoveryAdapter._json_safe(item) for key, item in value.items()
             }
         if isinstance(value, (list, tuple, set)):
             return [FilesystemRecoveryAdapter._json_safe(item) for item in value]
@@ -151,15 +151,15 @@ class FilesystemRecoveryAdapter(RecoveryAdapter):
         try:
             names = os.listxattr(path) if hasattr(os, "listxattr") else []
             acl_names = [name for name in names if "acl" in name.lower()]
-            entries: dict[str, str] = {}
+            xattr_entries: dict[str, str] = {}
             getxattr = getattr(os, "getxattr", None)
             if getxattr is not None:
                 for name in acl_names:
-                    entries[name] = base64.b64encode(getxattr(path, name)).decode("ascii")
+                    xattr_entries[name] = base64.b64encode(getxattr(path, name)).decode("ascii")
             result.update(
                 {
-                    "available": bool(entries),
-                    "entries": entries,
+                    "available": bool(xattr_entries),
+                    "entries": xattr_entries,
                     "xattr_names": [str(name) for name in names],
                 }
             )
@@ -225,9 +225,7 @@ class FilesystemRecoveryAdapter(RecoveryAdapter):
             if truncated:
                 raw_bytes = raw_bytes[:max_size_bytes]
             digest = (
-                hashlib.sha256(raw_bytes).hexdigest()
-                if stat.S_ISREG(file_stat.st_mode)
-                else None
+                hashlib.sha256(raw_bytes).hexdigest() if stat.S_ISREG(file_stat.st_mode) else None
             )
             text: str | None = None
             encoding: str | None = None
@@ -263,13 +261,13 @@ class FilesystemRecoveryAdapter(RecoveryAdapter):
             try:
                 import pwd
 
-                ownership["owner"] = pwd.getpwuid(file_stat.st_uid).pw_name
+                ownership["owner"] = pwd.getpwuid(file_stat.st_uid).pw_name  # type: ignore[attr-defined]
             except (ImportError, KeyError):
                 pass
             try:
                 import grp
 
-                ownership["group"] = grp.getgrgid(file_stat.st_gid).gr_name
+                ownership["group"] = grp.getgrgid(file_stat.st_gid).gr_name  # type: ignore[attr-defined]
             except (ImportError, KeyError):
                 pass
             snapshot = {
@@ -279,22 +277,22 @@ class FilesystemRecoveryAdapter(RecoveryAdapter):
                 "resource": str(path),
                 "exists": True,
                 "type": (
-                "symlink"
-                if is_link
-                else "directory"
-                if metadata["is_directory"]
-                else "file"
-                if metadata["is_file"]
-                else "other"
-            ),
+                    "symlink"
+                    if is_link
+                    else "directory"
+                    if metadata["is_directory"]
+                    else "file"
+                    if metadata["is_file"]
+                    else "other"
+                ),
                 "size": file_stat.st_size,
                 "hash": digest,
                 "content": text,
                 "content_b64": (
-                base64.b64encode(raw_bytes).decode("ascii")
-                if stat.S_ISREG(file_stat.st_mode)
-                else None
-            ),
+                    base64.b64encode(raw_bytes).decode("ascii")
+                    if stat.S_ISREG(file_stat.st_mode)
+                    else None
+                ),
                 "raw_bytes_length": len(raw_bytes),
                 "binary": binary,
                 "byte_exact": not truncated,
@@ -348,17 +346,21 @@ class FilesystemRecoveryAdapter(RecoveryAdapter):
             for key in sorted(set(before) | set(after)):
                 child_path = f"{path}.{key}" if path else str(key)
                 if key not in before:
-                    changes.append({
-                    "path": child_path,
-                    "change": "added",
-                    "after": cls._json_safe(after[key]),
-                })
+                    changes.append(
+                        {
+                            "path": child_path,
+                            "change": "added",
+                            "after": cls._json_safe(after[key]),
+                        }
+                    )
                 elif key not in after:
-                    changes.append({
-                    "path": child_path,
-                    "change": "removed",
-                    "before": cls._json_safe(before[key]),
-                })
+                    changes.append(
+                        {
+                            "path": child_path,
+                            "change": "removed",
+                            "before": cls._json_safe(before[key]),
+                        }
+                    )
                 else:
                     changes.extend(cls._diff_values(before[key], after[key], child_path))
             return changes
@@ -366,27 +368,33 @@ class FilesystemRecoveryAdapter(RecoveryAdapter):
             for index in range(max(len(before), len(after))):
                 child_path = f"{path}[{index}]"
                 if index >= len(before):
-                    changes.append({
-                    "path": child_path,
-                    "change": "added",
-                    "after": cls._json_safe(after[index]),
-                })
+                    changes.append(
+                        {
+                            "path": child_path,
+                            "change": "added",
+                            "after": cls._json_safe(after[index]),
+                        }
+                    )
                 elif index >= len(after):
-                    changes.append({
-                    "path": child_path,
-                    "change": "removed",
-                    "before": cls._json_safe(before[index]),
-                })
+                    changes.append(
+                        {
+                            "path": child_path,
+                            "change": "removed",
+                            "before": cls._json_safe(before[index]),
+                        }
+                    )
                 else:
                     changes.extend(cls._diff_values(before[index], after[index], child_path))
             return changes
         if before != after:
-            changes.append({
-                "path": path or "$",
-                "change": "changed",
-                "before": cls._json_safe(before),
-                "after": cls._json_safe(after),
-            })
+            changes.append(
+                {
+                    "path": path or "$",
+                    "change": "changed",
+                    "before": cls._json_safe(before),
+                    "after": cls._json_safe(after),
+                }
+            )
         return changes
 
     @classmethod
@@ -401,25 +409,25 @@ class FilesystemRecoveryAdapter(RecoveryAdapter):
         after_bytes = base64.b64decode(after_b64) if isinstance(after_b64, str) else b""
         common = min(len(before_bytes), len(after_bytes))
         first = next(
-                (index for index in range(common) if before_bytes[index] != after_bytes[index]),
-                common,
-            )
+            (index for index in range(common) if before_bytes[index] != after_bytes[index]),
+            common,
+        )
         last_before = next(
-                (
-                    index
-                    for index in range(common - 1, first - 1, -1)
-                    if before_bytes[index] != after_bytes[index]
-                ),
-                first - 1,
-            )
+            (
+                index
+                for index in range(common - 1, first - 1, -1)
+                if before_bytes[index] != after_bytes[index]
+            ),
+            first - 1,
+        )
         last_after = next(
-                (
-                    index
-                    for index in range(len(after_bytes) - 1, first - 1, -1)
-                    if index >= len(before_bytes) or before_bytes[index] != after_bytes[index]
-                ),
-                first - 1,
-            )
+            (
+                index
+                for index in range(len(after_bytes) - 1, first - 1, -1)
+                if index >= len(before_bytes) or before_bytes[index] != after_bytes[index]
+            ),
+            first - 1,
+        )
         changed = before_bytes != after_bytes
         return {
             "changed": changed,
@@ -427,9 +435,7 @@ class FilesystemRecoveryAdapter(RecoveryAdapter):
             "after_hash": after.get("hash") if after else None,
             "before_size": len(before_bytes),
             "after_size": len(after_bytes),
-            "changed_ranges": [
-                {"start": first, "end": max(last_before, last_after) + 1}
-            ]
+            "changed_ranges": [{"start": first, "end": max(last_before, last_after) + 1}]
             if changed and first < max(len(before_bytes), len(after_bytes))
             else [],
         }
@@ -443,35 +449,31 @@ class FilesystemRecoveryAdapter(RecoveryAdapter):
         before_semantic = cls._semantic_value(before)
         after_semantic = cls._semantic_value(after)
         semantic_changes = (
-                cls._diff_values(before_semantic, after_semantic)
-                if before_semantic is not None or after_semantic is not None
-                else []
-            )
+            cls._diff_values(before_semantic, after_semantic)
+            if before_semantic is not None or after_semantic is not None
+            else []
+        )
         before_meta = (
-                before.get("metadata")
-                if before and isinstance(before.get("metadata"), dict)
-                else {}
-            ) or {}
+            before.get("metadata") if before and isinstance(before.get("metadata"), dict) else {}
+        ) or {}
         after_meta = (
-                after.get("metadata")
-                if after and isinstance(after.get("metadata"), dict)
-                else {}
-            ) or {}
+            after.get("metadata") if after and isinstance(after.get("metadata"), dict) else {}
+        ) or {}
         metadata_keys = ["size", "mode", "uid", "gid", "mtime_ns"]
         metadata_changes = {
             key: {"before": before_meta.get(key), "after": after_meta.get(key)}
             for key in metadata_keys
             if before_meta.get(key) != after_meta.get(key)
         }
-        before_permissions = before.get("permissions") or {}
-        after_permissions = after.get("permissions") or {}
+        before_permissions = (before or {}).get("permissions") or {}
+        after_permissions = (after or {}).get("permissions") or {}
         permission_changes = {
             key: {"before": before_permissions.get(key), "after": after_permissions.get(key)}
             for key in set(before_permissions) | set(after_permissions)
             if before_permissions.get(key) != after_permissions.get(key)
         }
-        before_ownership = before.get("ownership") or {}
-        after_ownership = after.get("ownership") or {}
+        before_ownership = (before or {}).get("ownership") or {}
+        after_ownership = (after or {}).get("ownership") or {}
         ownership_changes = {
             key: {"before": before_ownership.get(key), "after": after_ownership.get(key)}
             for key in set(before_ownership) | set(after_ownership)
@@ -520,7 +522,9 @@ class FilesystemRecoveryAdapter(RecoveryAdapter):
     def _snapshot_state_signature(cls, snapshot: dict[str, Any] | None) -> dict[str, Any]:
         if not snapshot:
             return {"exists": False}
-        metadata = snapshot.get("metadata") if isinstance(snapshot.get("metadata"), dict) else {}
+        metadata = snapshot.get("metadata")
+        if not isinstance(metadata, dict):
+            metadata = {}
         return {
             "exists": bool(snapshot.get("exists", True)),
             "type": snapshot.get("type"),
@@ -570,7 +574,7 @@ class FilesystemRecoveryAdapter(RecoveryAdapter):
         }
         volatile_metadata = {"atime", "atime_ns", "ctime", "ctime_ns", "inode", "device", "nlink"}
 
-        def normalized(snapshot: dict[str, Any]) -> dict[str, Any]:
+        def normalized(snapshot: dict[str, Any]) -> Any:
             result = {key: value for key, value in snapshot.items() if key not in excluded}
             metadata = result.get("metadata")
             if isinstance(metadata, dict):
@@ -579,7 +583,7 @@ class FilesystemRecoveryAdapter(RecoveryAdapter):
                 }
             return cls._json_safe(result)
 
-        return normalized(left) == normalized(right)
+        return bool(normalized(left) == normalized(right))
 
     @classmethod
     def _human_change_analysis(
@@ -595,8 +599,7 @@ class FilesystemRecoveryAdapter(RecoveryAdapter):
         return {
             "agent_change_detected": after_diff["changed"],
             "human_or_concurrent_change_detected": (
-                not current_matches_after
-                and not current_matches_before
+                not current_matches_after and not current_matches_before
             ),
             "current_matches_after": current_matches_after,
             "current_matches_before": current_matches_before,
@@ -663,9 +666,7 @@ class FilesystemRecoveryAdapter(RecoveryAdapter):
             "invariant_diff": diff["invariants"],
             "human_change_analysis": human,
             "concurrent_modification": concurrent,
-            "warnings": [
-                "current state differs from captured post-action state"
-            ]
+            "warnings": ["current state differs from captured post-action state"]
             if concurrent["detected"]
             else [],
         }
@@ -679,7 +680,7 @@ class FilesystemRecoveryAdapter(RecoveryAdapter):
         current: dict[str, Any] | None,
         preview: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
-        state_hash = cls._hash_json({'before': before, 'after': after, 'current': current})
+        state_hash = cls._hash_json({"before": before, "after": after, "current": current})
         bundle_id_hash = hashlib.sha256(state_hash.encode()).hexdigest()[:12]
         bundle = {
             "schema_version": "1.0",
@@ -721,16 +722,18 @@ class FilesystemRecoveryAdapter(RecoveryAdapter):
             "before_snapshot": before,
             "expected_snapshot": before,
             "observed_snapshot": current,
-            "verification": verification.to_dict(),
+            "verification": dataclasses.asdict(verification),
             "verified": verification.verified,
             "integrity": {
                 "algorithm": "sha256",
-                "hash": cls._hash_json({
-                    "before": before,
-                    "after": after,
-                    "current": current,
-                    "verification": verification.to_dict(),
-                }),
+                "hash": cls._hash_json(
+                    {
+                        "before": before,
+                        "after": after,
+                        "current": current,
+                        "verification": dataclasses.asdict(verification),
+                    }
+                ),
             },
         }
         proof["proof_hash"] = cls._hash_json(proof)
@@ -772,14 +775,14 @@ class FilesystemRecoveryAdapter(RecoveryAdapter):
         before: dict[str, Any] | None,
         after: dict[str, Any] | None,
     ) -> dict[str, Any]:
-        return self._diff_snapshots(before, after)["structural"]
+        return cast(dict[str, Any], self._diff_snapshots(before, after)["structural"])
 
     def semantic_diff(
         self,
         before: dict[str, Any] | None,
         after: dict[str, Any] | None,
     ) -> list[dict[str, Any]]:
-        return self._diff_snapshots(before, after)["semantic"]
+        return cast(list[dict[str, Any]], self._diff_snapshots(before, after)["semantic"])
 
     def binary_diff(
         self,
@@ -793,42 +796,42 @@ class FilesystemRecoveryAdapter(RecoveryAdapter):
         before: dict[str, Any] | None,
         after: dict[str, Any] | None,
     ) -> dict[str, Any]:
-        return self._diff_snapshots(before, after)["metadata"]
+        return cast(dict[str, Any], self._diff_snapshots(before, after)["metadata"])
 
     def permission_diff(
         self,
         before: dict[str, Any] | None,
         after: dict[str, Any] | None,
     ) -> dict[str, Any]:
-        return self._diff_snapshots(before, after)["permissions"]
+        return cast(dict[str, Any], self._diff_snapshots(before, after)["permissions"])
 
     def ownership_diff(
         self,
         before: dict[str, Any] | None,
         after: dict[str, Any] | None,
     ) -> dict[str, Any]:
-        return self._diff_snapshots(before, after)["ownership"]
+        return cast(dict[str, Any], self._diff_snapshots(before, after)["ownership"])
 
     def acl_diff(
         self,
         before: dict[str, Any] | None,
         after: dict[str, Any] | None,
     ) -> dict[str, Any]:
-        return self._diff_snapshots(before, after)["acl"]
+        return cast(dict[str, Any], self._diff_snapshots(before, after)["acl"])
 
     def schema_diff(
         self,
         before: dict[str, Any] | None,
         after: dict[str, Any] | None,
     ) -> dict[str, Any]:
-        return self._diff_snapshots(before, after)["schema"]
+        return cast(dict[str, Any], self._diff_snapshots(before, after)["schema"])
 
     def invariant_diff(
         self,
         before: dict[str, Any] | None,
         after: dict[str, Any] | None,
     ) -> list[dict[str, Any]]:
-        return self._diff_snapshots(before, after)["invariants"]
+        return cast(list[dict[str, Any]], self._diff_snapshots(before, after)["invariants"])
 
     def detect_concurrent_modification(
         self,
@@ -948,7 +951,9 @@ class FilesystemRecoveryAdapter(RecoveryAdapter):
             after_snapshot = self._capture_file_snapshot(file_path, self._max_file_size_bytes)
             current_snapshot = after_snapshot
 
-        state_json = self._hash_json({'before': before_snapshot, 'after': after_snapshot, 'current': current_snapshot})
+        state_json = self._hash_json(
+            {"before": before_snapshot, "after": after_snapshot, "current": current_snapshot}
+        )
         evidence_hash = hashlib.sha256(
             f"{action.action_id}:{payload_str}:{state_json}".encode()
         ).hexdigest()
@@ -1184,6 +1189,7 @@ class FilesystemRecoveryAdapter(RecoveryAdapter):
         before_snapshot = compensation_payload.get("before_snapshot")
         operation = compensation_payload.get("operation", "")
         action_type = action.action_type.lower()
+        expected_snapshot: dict[str, Any] | None
         if operation == "restore_deleted_file" or action_type == "delete":
             expected_snapshot = self._missing_snapshot()
         elif operation == "rename_back":
@@ -1206,8 +1212,7 @@ class FilesystemRecoveryAdapter(RecoveryAdapter):
             status=DriftStatus.DRIFT_DETECTED,
             current_state=current_snapshot or {"exists": False},
             evidence_version=(
-                (after_snapshot or {}).get("snapshot_hash")
-                or (after_snapshot or {}).get("hash")
+                (after_snapshot or {}).get("snapshot_hash") or (after_snapshot or {}).get("hash")
             ),
             details={
                 "reason": "Current filesystem state differs from the captured after-agent state",
@@ -1243,15 +1248,16 @@ class FilesystemRecoveryAdapter(RecoveryAdapter):
         before_snapshot = compensation_payload.get("before_snapshot")
         after_snapshot = compensation_payload.get("after_snapshot")
         current_snapshot = (
-                self._capture_file_snapshot(full_path, self._max_file_size_bytes)
-                if full_path.exists() or full_path.is_symlink()
-                else self._capture_file_snapshot(full_path, self._max_file_size_bytes)
-            )
+            self._capture_file_snapshot(full_path, self._max_file_size_bytes)
+            if full_path.exists() or full_path.is_symlink()
+            else self._capture_file_snapshot(full_path, self._max_file_size_bytes)
+        )
 
         if not before_snapshot:
             return ConflictResult(status=ConflictStatus.NO_CONFLICT)
 
         operation = compensation_payload.get("operation", "")
+        expected_snapshot: dict[str, Any] | None
         if operation == "restore_deleted_file":
             expected_snapshot = {
                 "schema_version": "1.0",
@@ -1274,8 +1280,7 @@ class FilesystemRecoveryAdapter(RecoveryAdapter):
                 status=ConflictStatus.CONCURRENT_MUTATION,
                 details={
                     "reason": (
-                        "Current filesystem state differs from the "
-                        "captured post-action state"
+                        "Current filesystem state differs from the captured post-action state"
                     ),
                     "file": file_path_str,
                     "expected_snapshot": expected_snapshot,
@@ -1405,9 +1410,7 @@ class FilesystemRecoveryAdapter(RecoveryAdapter):
     ) -> VerificationResult:
         expected_hash = before_snapshot.get("hash") if before_snapshot else None
         expected_size = before_snapshot.get("size") if before_snapshot else None
-        expected_raw_len = (
-            before_snapshot.get("raw_bytes_length") if before_snapshot else None
-        )
+        expected_raw_len = before_snapshot.get("raw_bytes_length") if before_snapshot else None
         checks_passed: list[str] = []
         checks_failed: list[str] = []
 
@@ -1586,9 +1589,7 @@ class FilesystemRecoveryAdapter(RecoveryAdapter):
             "requires_approval": Reversibility.is_conditional(action.reversibility),
         }
 
-    async def execute_recovery(
-        self, action: ProtectedAction, approved_by: str
-    ) -> dict[str, Any]:
+    async def execute_recovery(self, action: ProtectedAction, approved_by: str) -> dict[str, Any]:
         return {
             "adapter": "filesystem_recovery",
             "action_id": action.action_id,
@@ -1639,7 +1640,7 @@ class FilesystemRecoveryAdapter(RecoveryAdapter):
         prefixes = ["file:", "path:", "fs:"]
         for prefix in prefixes:
             if resource.startswith(prefix):
-                extracted = resource[len(prefix):]
+                extracted = resource[len(prefix) :]
                 if ".." in extracted:
                     raise ValueError("Path traversal detected in resource identifier")
                 return extracted
@@ -1657,9 +1658,7 @@ class FilesystemRecoveryAdapter(RecoveryAdapter):
             base = base_path.absolute()
             target = candidate.absolute()
         if base != target and base not in target.parents:
-            raise ValueError(
-                f"Resolved path {candidate} is outside base path {base_path}"
-            )
+            raise ValueError(f"Resolved path {candidate} is outside base path {base_path}")
 
     def _restore_metadata(self, path: Path, snapshot: dict[str, Any] | None) -> list[str]:
         if not snapshot or not self._preserve_metadata:
@@ -1846,8 +1845,7 @@ class FilesystemRecoveryAdapter(RecoveryAdapter):
                     "success": False,
                     "execution_state": ExecutionState.FAILED,
                     "error": (
-                        f"Post-write hash mismatch: expected {expected_hash}, "
-                        f"got {restored_hash}"
+                        f"Post-write hash mismatch: expected {expected_hash}, got {restored_hash}"
                     ),
                 }
 
@@ -2002,8 +2000,7 @@ class FilesystemRecoveryAdapter(RecoveryAdapter):
                     "success": False,
                     "execution_state": ExecutionState.FAILED,
                     "error": (
-                        f"Post-write hash mismatch: expected {expected_hash}, "
-                        f"got {restored_hash}"
+                        f"Post-write hash mismatch: expected {expected_hash}, got {restored_hash}"
                     ),
                 }
 
@@ -2069,4 +2066,3 @@ class FilesystemRecoveryAdapter(RecoveryAdapter):
             "execution_state": ExecutionState.FAILED,
             "error": f"File does not exist at expected path: {file_path_str}",
         }
-

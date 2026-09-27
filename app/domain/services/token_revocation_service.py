@@ -55,13 +55,19 @@ class TokenRevocationService:
             revoked_ids.append(token_id)
             logger.info(
                 "Token revoked: tenant=%s token=%s reason=%s by=%s",
-                tenant_id, token_id, reason, revoked_by,
+                tenant_id,
+                token_id,
+                reason,
+                revoked_by,
             )
             metrics.increment_security_exception("token_revoked")
 
         if cascade:
             cascade_ids = await self._cascade_revoke(
-                tenant_id, token_id, reason, revoked_by,
+                tenant_id,
+                token_id,
+                reason,
+                revoked_by,
             )
             revoked_ids.extend(cascade_ids)
 
@@ -84,7 +90,11 @@ class TokenRevocationService:
     ) -> list[str]:
         """Revoke all active tokens for an agent."""
         tokens, _ = await self._token_repo.list_by_agent(
-            tenant_id, agent_id, status=TokenStatus.ACTIVE, limit=1000, offset=0,
+            tenant_id,
+            agent_id,
+            status=TokenStatus.ACTIVE,
+            limit=1000,
+            offset=0,
         )
         revoked: list[str] = []
         for token in tokens:
@@ -95,7 +105,9 @@ class TokenRevocationService:
         if revoked:
             logger.info(
                 "Revoked %d tokens for agent %s: reason=%s",
-                len(revoked), agent_id, reason,
+                len(revoked),
+                agent_id,
+                reason,
             )
             metrics.increment_security_exception("agent_tokens_revoked")
 
@@ -108,7 +120,7 @@ class TokenRevocationService:
         revoked_by: str = "system",
     ) -> list[str]:
         """Emergency revoke all tokens in a tenant."""
-        tokens, _ = await self._token_repo.list_all(tenant_id, limit=1000, offset=0)
+        tokens, _ = await self._token_repo.list_by_tenant(tenant_id, limit=1000, offset=0)
         active_tokens = [t for t in tokens if t.status == TokenStatus.ACTIVE]
 
         revoked: list[str] = []
@@ -120,7 +132,9 @@ class TokenRevocationService:
         if revoked:
             logger.warning(
                 "Emergency revocation: %d tokens revoked in tenant %s: reason=%s",
-                len(revoked), tenant_id, reason,
+                len(revoked),
+                tenant_id,
+                reason,
             )
             metrics.increment_security_exception("tenant_emergency_revocation")
 
@@ -130,13 +144,16 @@ class TokenRevocationService:
         """Check if a token is in the revocation list."""
         try:
             tokens, _ = await self._token_repo.list_by_agent(
-                tenant_id, token_id, limit=1, offset=0,
+                tenant_id,
+                token_id,
+                limit=1,
+                offset=0,
             )
             for t in tokens:
                 if t.token_id == token_id and t.status == TokenStatus.REVOKED:
                     return True
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.debug("is_revoked lookup error: %s", exc)
         return False
 
     async def get_revocation_log(
@@ -147,8 +164,10 @@ class TokenRevocationService:
     ) -> list[dict[str, Any]]:
         """Get revocation audit log."""
         try:
-            tokens, total = await self._token_repo.list_all(
-                tenant_id, limit=limit, offset=offset,
+            tokens, total = await self._token_repo.list_by_tenant(
+                tenant_id,
+                limit=limit,
+                offset=offset,
             )
             revoked = [
                 {
@@ -179,7 +198,10 @@ class TokenRevocationService:
         cascade_ids: list[str] = []
         try:
             tokens, _ = await self._token_repo.list_by_agent(
-                tenant_id, token_id, limit=1000, offset=0,
+                tenant_id,
+                token_id,
+                limit=1000,
+                offset=0,
             )
             for t in tokens:
                 if t.status == TokenStatus.ACTIVE:

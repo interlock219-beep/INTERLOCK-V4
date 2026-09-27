@@ -16,6 +16,7 @@ router = APIRouter(tags=["Webhook"])
 
 def _get_webhook_adapter() -> WebhookAdapter:
     from app.infrastructure.integrations.webhook_adapter import MockWebhookAdapter
+
     return MockWebhookAdapter()
 
 
@@ -60,6 +61,7 @@ async def ingest_webhook(
     if timestamp:
         try:
             import time
+
             event_time = int(timestamp)
             now = int(time.time())
             if abs(now - event_time) > 300:

@@ -94,8 +94,8 @@ class DefaultSSOService(SSOService):
                 error="Invalid or expired state token.",
             )
 
-        provider = (
-            await self._identity_provider_repository.get_by_name("mock-provider", state.tenant_id)
+        provider = await self._identity_provider_repository.get_by_name(
+            "mock-provider", state.tenant_id
         )
         if provider is None:
             return SSOCallbackResult(

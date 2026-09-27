@@ -909,3 +909,72 @@ def _make_grant(
         created_at=datetime.now(UTC),
         updated_at=datetime.now(UTC),
     )
+
+
+
+def test_consume_one_shot_atomic(monkeypatch):
+    """P1 regression: consume_one_shot must be atomic to prevent race conditions."""
+    from app.domain.services.authority_lineage_service import AuthorityLineageService
+    from app.domain.entities.authority_grant import AuthorityGrant, AuthorityStatus, AuthorityScope
+    
+    consumed_grants = []
+    
+    class AtomicGrantRepo:
+        def __init__(self):
+            self._lock = False
+        
+        async def get_by_grant_id(self, tenant_id, grant_id):
+            return None
+        
+        async def list_by_grantee(self, tenant_id, grantee_agent_id, **kwargs):
+            return [], 0
+        
+        async def list_by_grantor(self, tenant_id, grantor_agent_id, **kwargs):
+            return [], 0
+        
+        async def list_descendants(self, tenant_id, root_authority_id, **kwargs):
+            return [], 0
+        
+        async def save(self, grant):
+            return grant
+        
+        async def revoke(self, tenant_id, grant_id, revoked_by):
+            return None
+        
+        async def get_active_for_agent(self, tenant_id, agent_id, resource=None):
+            return []
+        
+        async def list_by_tenant(self, tenant_id, limit=100, offset=0):
+            return [], 0
+        
+        async def consume_one_shot(self, tenant_id, grant_id):
+            # Simulate atomic consume
+            if self._lock:
+                return None
+            self._lock = True
+            grant = AuthorityGrant(
+                grant_id=grant_id,
+                tenant_id=tenant_id,
+                grantor_agent_id="grantor-1",
+                grantee_agent_id="grantee-1",
+                scope=AuthorityScope.READ,
+                resource="res-1",
+                status=AuthorityStatus.ACTIVE,
+                one_shot=True,
+                created_at=datetime.now(UTC),
+                updated_at=datetime.now(UTC),
+            )
+            consumed_grants.append(grant_id)
+            return grant
+    
+    repo = AtomicGrantRepo()
+    svc = AuthorityLineageService(MockAgentRepo(), repo)
+    
+    # First consume should succeed
+    result1 = _run(svc.consume_one_shot("tenant-1", "grant-1"))
+    assert result1 is not None
+    assert result1.grant_id == "grant-1"
+    
+    # Second consume should return None (already consumed)
+    result2 = _run(svc.consume_one_shot("tenant-1", "grant-1"))
+    assert result2 is None

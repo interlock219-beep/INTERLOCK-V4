@@ -169,9 +169,7 @@ class RecoveryAdapter(ABC):
         pass
 
     @abstractmethod
-    async def execute_recovery(
-        self, action: ProtectedAction, approved_by: str
-    ) -> dict[str, Any]:
+    async def execute_recovery(self, action: ProtectedAction, approved_by: str) -> dict[str, Any]:
         """Legacy: execute recovery for *action*."""
         pass
 
@@ -242,11 +240,7 @@ class RecoveryAdapter(ABC):
             compensation_operation="reverse",
             compensation_payload=evidence.compensation_payload,
             external_api_calls=[],
-            warnings=(
-                []
-                if preview.get("reversible")
-                else ["No before-state reference available"]
-            ),
+            warnings=([] if preview.get("reversible") else ["No before-state reference available"]),
             simulation_limitation=SimulationLimitation.SIMULATION_LIMITED,
             expected_after_state=None,
         )
@@ -367,12 +361,12 @@ class RecoveryAdapter(ABC):
         cap = getattr(self, "capability", "")
         if cap and cap in AdapterCapability._value2member_map_:
             return AdapterCapability(cap)
-        if getattr(self, "adapter_name", "") and "mock" in getattr(
-            self, "adapter_name", ""
-        ).lower():
+        if (
+            getattr(self, "adapter_name", "")
+            and "mock" in getattr(self, "adapter_name", "").lower()
+        ):
             return AdapterCapability.MOCK
         return AdapterCapability.STUB
-
 
     # -- Security helpers for tenant isolation, authorization, and defensive copying --
 
@@ -419,9 +413,7 @@ class RecoveryAdapter(ABC):
         payload["_action_status"] = action.status.value if action.status else None
         return payload
 
-    def _verify_compensation_authorization(
-        self, compensation: CompensationAction
-    ) -> None:
+    def _verify_compensation_authorization(self, compensation: CompensationAction) -> None:
         """Verify that a compensation action is authorized for execution.
 
         Checks:

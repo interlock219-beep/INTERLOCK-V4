@@ -511,11 +511,7 @@ async def simulate_policy(
     """
     correlation_id = getattr(request.state, "correlation_id", "")
 
-    if (
-        current_user.tenant_id
-        and body.tenant_id
-        and current_user.tenant_id != body.tenant_id
-    ):
+    if current_user.tenant_id and body.tenant_id and current_user.tenant_id != body.tenant_id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Tenant mismatch: request tenant does not match user tenant.",

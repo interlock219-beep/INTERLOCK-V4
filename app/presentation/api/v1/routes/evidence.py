@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.domain.repositories.recovery_evidence_repository import RecoveryEvidenceRepository
@@ -47,9 +47,7 @@ async def verify_evidence_integrity(
     if not evidence_id:
         raise HTTPException(status_code=400, detail="evidence_id is required")
 
-    evidence = await evidence_repo.get_by_evidence_id(
-        get_user_tenant_id(current_user), evidence_id
-    )
+    evidence = await evidence_repo.get_by_evidence_id(get_user_tenant_id(current_user), evidence_id)
     if evidence is None:
         raise HTTPException(status_code=404, detail="Evidence not found")
 
@@ -77,14 +75,10 @@ async def verify_state_transition(
     expected_hash = body.get("expected_hash")
 
     if before_state is None or after_state is None:
-        raise HTTPException(
-            status_code=400, detail="before_state and after_state are required"
-        )
+        raise HTTPException(status_code=400, detail="before_state and after_state are required")
 
     service = EvidenceVerificationService()
-    result = service.verify_state_integrity(
-        before_state, after_state, expected_hash=expected_hash
-    )
+    result = service.verify_state_integrity(before_state, after_state, expected_hash=expected_hash)
 
     log_security_event(
         "state_transition_verified",
@@ -104,9 +98,7 @@ async def verify_evidence_chain(
     """Verify chain of custody for evidence items. PRP-006."""
     evidence_ids = body.get("evidence_ids", [])
     if not evidence_ids:
-        raise HTTPException(
-            status_code=400, detail="evidence_ids must be a non-empty list"
-        )
+        raise HTTPException(status_code=400, detail="evidence_ids must be a non-empty list")
 
     tenant_id = get_user_tenant_id(current_user)
     evidences: list[Any] = []
@@ -147,12 +139,13 @@ async def independent_verify_recovery(
         report_id=f"report-{plan_id}",
         plan_id=plan_id,
         tenant_id=tenant_id,
+        incident_id=plan_id,
         verification_status=VerificationStatus.EXECUTED_AND_VERIFIED,
         resource_results=body.get("resource_results", {}),
     )
 
     service = EvidenceVerificationService(evidence_repo)
-    result = service.independent_verify_recovery(tenant_id, plan_id, verification_report)
+    result = await service.independent_verify_recovery(tenant_id, plan_id, verification_report)
 
     log_security_event(
         "recovery_independently_verified",

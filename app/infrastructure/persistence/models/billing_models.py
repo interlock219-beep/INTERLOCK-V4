@@ -94,16 +94,12 @@ class CheckoutSessionModel(Base):
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
     user_id: Mapped[UUID] = mapped_column(nullable=False, index=True)
-    tenant_id: Mapped[str | None] = mapped_column(
-        String(64), nullable=True, index=True
-    )
+    tenant_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
     plan_id: Mapped[UUID] = mapped_column(nullable=False)
     provider_session_id: Mapped[str] = mapped_column(
         String(128), nullable=False, unique=True, index=True
     )
-    customer_id: Mapped[str | None] = mapped_column(
-        String(128), nullable=True
-    )
+    customer_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
     status: Mapped[str] = mapped_column(String(32), nullable=False)
     success_url: Mapped[str] = mapped_column(String(512), nullable=False)
     cancel_url: Mapped[str] = mapped_column(String(512), nullable=False)

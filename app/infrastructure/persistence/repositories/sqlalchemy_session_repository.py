@@ -80,9 +80,7 @@ class SQLAlchemySessionService(SessionService):
         )
         now = self._utcnow()
         return not (
-            model is None
-            or model.revoked
-            or self._compare_expires_at(model.expires_at, now)
+            model is None or model.revoked or self._compare_expires_at(model.expires_at, now)
         )
 
     async def revoke_session(self, session_id: str, *, user_id: UUID | None = None) -> bool:
@@ -142,7 +140,7 @@ class SQLAlchemySessionService(SessionService):
             if model.expires_at < now:
                 return
             model.last_used_at = now
-            model.expires_at = now + timedelta(seconds=getattr(self, '_ttl_seconds', 3600))
+            model.expires_at = now + timedelta(seconds=getattr(self, "_ttl_seconds", 3600))
             self._session.flush()
 
     async def cleanup_expired(self) -> int:
