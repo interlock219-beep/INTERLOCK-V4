@@ -96,7 +96,9 @@ class SQLAlchemyRecoveryEvidenceRepository(RecoveryEvidenceRepository):
         )
         model = self._session.scalar(stmt)
         if model is not None:
-            return self._to_entity(model)
+            raise ValueError(
+                f"Evidence with id {evidence.evidence_id} already exists and cannot be overwritten."
+            )
         model = RecoveryEvidenceModel(
             evidence_id=evidence.evidence_id,
             action_id=evidence.action_id,

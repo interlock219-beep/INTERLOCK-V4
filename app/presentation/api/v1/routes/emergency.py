@@ -166,12 +166,7 @@ async def get_emergency_status(
     current_user: CurrentUser,
 ) -> dict[str, Any]:
     """Get emergency control status for a tenant."""
-    user_tenant_id = get_user_tenant_id(current_user)
-    if user_tenant_id != tenant_id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Cannot access emergency status for another tenant.",
-        )
+    _require_emergency_admin(current_user, tenant_id)
     return await emergency_service.get_emergency_status(tenant_id)
 
 

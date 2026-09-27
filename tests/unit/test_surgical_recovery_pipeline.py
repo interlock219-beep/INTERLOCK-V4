@@ -500,8 +500,9 @@ async def test_recovery_evidence_repository_round_trip(db_session: Any) -> None:
     )
 
     repo = SQLAlchemyRecoveryEvidenceRepository(db_session)
+    evidence_id = f"ev-test-1-{uuid4().hex}"
     evidence = RecoveryEvidenceEntity(
-        evidence_id="ev-test-1",
+        evidence_id=evidence_id,
         action_id="act-test-1",
         tenant_id="tenant-test",
         agent_id="agent-1",
@@ -527,9 +528,9 @@ async def test_recovery_evidence_repository_round_trip(db_session: Any) -> None:
     )
 
     saved = await repo.save(evidence)
-    assert saved.evidence_id == "ev-test-1"
+    assert saved.evidence_id == evidence_id
 
-    fetched = await repo.get_by_evidence_id("tenant-test", "ev-test-1")
+    fetched = await repo.get_by_evidence_id("tenant-test", evidence_id)
     assert fetched is not None
     assert fetched.action_id == "act-test-1"
     assert fetched.compensation_type == CompensationType.REVERSE_OPERATION
@@ -537,7 +538,7 @@ async def test_recovery_evidence_repository_round_trip(db_session: Any) -> None:
 
     by_action = await repo.get_by_action_id("tenant-test", "act-test-1")
     assert by_action is not None
-    assert by_action.evidence_id == "ev-test-1"
+    assert by_action.evidence_id == evidence_id
 
     listed, total = await repo.list_by_incident("tenant-test", "inc-1")
     assert total == 1
@@ -554,8 +555,9 @@ async def test_recovery_evidence_tenant_isolation(db_session: Any) -> None:
     )
 
     repo = SQLAlchemyRecoveryEvidenceRepository(db_session)
+    evidence_id = f"ev-tenant-iso-{uuid4().hex}"
     evidence = RecoveryEvidenceEntity(
-        evidence_id="ev-tenant-iso",
+        evidence_id=evidence_id,
         action_id="act-iso",
         tenant_id="tenant-a",
         agent_id="agent-1",
@@ -579,7 +581,7 @@ async def test_recovery_evidence_tenant_isolation(db_session: Any) -> None:
 
     await repo.save(evidence)
 
-    fetched = await repo.get_by_evidence_id("tenant-b", "ev-tenant-iso")
+    fetched = await repo.get_by_evidence_id("tenant-b", evidence_id)
     assert fetched is None
 
 

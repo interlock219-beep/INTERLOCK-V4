@@ -36,11 +36,13 @@ class ProtectedFilesystemTools:
         path_security: WorkspacePathSecurity,
         gateway_url: str = "http://127.0.0.1:8000",
         auth_token: str | None = None,
+        tenant_id: str | None = None,
         http_client: Any = None,
     ) -> None:
         self._path_security = path_security
         self._gateway_url = gateway_url.rstrip("/")
         self._auth_token = auth_token
+        self._tenant_id = tenant_id
         self._http_client = http_client
 
     def _auth_headers(self) -> dict[str, str]:
@@ -244,6 +246,7 @@ class ProtectedFilesystemTools:
             "reasoning_step": f"Execute {tool_name}",
             "proposed_tool": tool_name,
             "tool_arguments": tool_arguments,
+            "tenant_id": self._tenant_id,
         }
         verify_response = self._post_json("/api/v1/intent/verify", verify_payload)
         ephemeral_token = str(verify_response.get("ephemeral_token") or "")

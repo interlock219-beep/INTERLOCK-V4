@@ -200,6 +200,10 @@ class Settings(BaseSettings):
             raise ValueError(
                 "AUTHORIZATION_DEFAULT_DENY must be enabled in production environments."
             )
+        if self.app_env == "production" and not self.key_encryption_secret:
+            raise ValueError(
+                "KEY_ENCRYPTION_SECRET must be configured for production environments."
+            )
         return self
 
 

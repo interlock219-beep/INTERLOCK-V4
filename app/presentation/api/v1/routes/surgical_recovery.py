@@ -515,6 +515,12 @@ async def resume_recovery_plan(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Recovery plan not found",
         )
+    if plan.status != RecoveryStatus.APPROVED:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Recovery plan must be in APPROVED state to resume.",
+        )
+
 
     orchestrator = DistributedRecoveryOrchestrator(evidence_repo, execution_repo, adapters)
     result = await orchestrator.resume_plan(tenant_id, plan_id, plan.stop_conditions)
@@ -548,6 +554,12 @@ async def verify_recovery_plan(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Recovery plan not found",
         )
+    if plan.status != RecoveryStatus.APPROVED:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Recovery plan must be in APPROVED state to verify.",
+        )
+
 
     verification_service = ContinuousVerificationService(
         evidence_repo, execution_repo, report_repo, adapters

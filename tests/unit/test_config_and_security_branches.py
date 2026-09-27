@@ -274,6 +274,7 @@ def test_settings_allows_production_with_redis() -> None:
     settings = Settings(
         app_env="production",
         jwt_secret_key="a-very-long-production-secret-key-2026-abcdefgh",
+        key_encryption_secret="a-very-long-production-encryption-secret-key-2026-abcdefgh",
         redis_url="redis://localhost:6379/0",
         database_url="postgresql+psycopg2://intentlock:secret@db:5432/intentlock",
         authorization_require_tenant=True,
