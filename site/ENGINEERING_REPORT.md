@@ -300,13 +300,29 @@ contain the website at all.
   return a bare 404 (Cloudflare's documented default when no Worker script is present).
 - Committed and pushed `site/` (53 files, including the Wrangler config) to `master`, the branch
   Cloudflare watches.
-- Required dashboard change (cannot be applied from here — no Cloudflare credentials in this
-  environment): **Root directory `/` → `site`**; Build command `npm ci && npm run build`; Deploy
-  command unchanged (`npx wrangler deploy`).
+- Required dashboard change: **Root directory `/` → `site`**; Build command
+  `npm ci && npm run build`; Deploy command unchanged (`npx wrangler deploy`).
 
-**Verification:** `npx wrangler@4.151.3 deploy --dry-run` → exit 0, reads 19 assets from
+**Deployment (2026-10-21, executed):** authorized via `wrangler login` (OAuth; account
+`ffbae4c80b072de94e6aa0416f21b86b`), then `npx wrangler deploy` from `site/` → version
+`93b78bde-bd5e-4507-a694-c3df7e33185d`, 18 files, assets-only Worker, live at
+<https://interlock-v6.interlock219.workers.dev>. No custom domains attached; nothing DNS-related
+touched. Before this, the Worker answered 404 (a stale manual upload from earlier in the day).
+
+**Live verification (real browser, against the production URL):** full document loads of `/`,
+`/pricing`, `/features`, `/download`, `/demo`, `/safety`, `/about`, `/blog`, `/beta`, `/docs` and
+the article `/docs/quickstart`; client-side navigation via header clicks (`/features`, `/download`,
+`/docs`); unknown route returns the client 404 page ("That route does not exist."), proving the
+`single-page-application` fallback works at the Cloudflare edge. Correct per-route `<title>` and a
+single `<h1>` everywhere, no horizontal overflow (985/1000), 0 dead links, **0 console errors**,
+styles applied (body bg `rgb(8, 10, 11)`). One early probe of `/docs` showed an empty main —
+re-tested minutes later it renders fine (initial edge propagation), so not a defect.
+
+**Verification (local):** `npx wrangler@4.151.3 deploy --dry-run` → exit 0, reads every asset from
 `site/dist`. Website checks on the committed tree: typecheck 0, lint 0, vitest 40/40, build 0.
-Production build verified in a real browser afterwards: full document loads of `/`, `/features` and
-an unknown route, plus client-side navigation via header clicks to `/demo` and `/download`, all
-render the correct per-route title and single `<h1>`, no horizontal overflow (985/1000), 0 dead
-links and 0 console errors.
+
+**Remaining (one dashboard pass):** the Git-integration build settings still say Root directory
+`/`. Wrangler's OAuth token carries no Workers Builds scope (account builds API answers 403), so
+changing them needs the dashboard: Workers & Pages → interlock-v6 → Settings → Builds →
+Root directory `site`, build command `npm ci && npm run build`. Until then, pushes still trigger
+the same harmless ENOENT build; the website itself is already published.
