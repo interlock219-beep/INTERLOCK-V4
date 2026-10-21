@@ -1,19 +1,21 @@
 import asyncio
 import json
-from pathlib import Path
 
 from fastapi.testclient import TestClient
 
 from app.domain.entities.user import User
 from app.infrastructure.config.settings import get_settings
+
+# Read the path the app actually writes to. tests/conftest.py points the audit
+# trail at a per-session temp file (TST-10: two runs must not share one trail),
+# so a hardcoded logs/audit_trail.jsonl could never exist during the suite.
+from app.infrastructure.logging.audit_logger import LOG_PATH as AUDIT_LOG_PATH
 from app.infrastructure.persistence.database import SessionLocal
 from app.infrastructure.persistence.repositories.sqlalchemy_user_repository import (
     SQLAlchemyUserRepository,
 )
 from app.infrastructure.security.bcrypt_password_hasher import BcryptPasswordHasher
 from app.infrastructure.security.jwt_token_service import JWTTokenService
-
-AUDIT_LOG_PATH = Path("logs") / "audit_trail.jsonl"
 
 
 async def _create_user(email: str, role: str = "viewer") -> str:

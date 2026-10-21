@@ -321,3 +321,21 @@ class EmergencyControlService:
     def get_emergency_log(self, limit: int = 100) -> list[dict[str, Any]]:
         """Get emergency control audit log."""
         return list(self._emergency_log[-limit:])
+
+
+_SHARED_EMERGENCY_SERVICE: EmergencyControlService | None = None
+
+
+def get_emergency_control_service() -> EmergencyControlService:
+    """Process-wide singleton shared by activation and enforcement.
+
+    The emergency routes that ACTIVATE deny and the execution-boundary
+    guard that ENFORCES deny must observe the same state object; two
+    independent instances would make the UI/policy decision silently
+    inert (PILLAR 6: an alternate execution path must not bypass
+    enforcement).
+    """
+    global _SHARED_EMERGENCY_SERVICE
+    if _SHARED_EMERGENCY_SERVICE is None:
+        _SHARED_EMERGENCY_SERVICE = EmergencyControlService()
+    return _SHARED_EMERGENCY_SERVICE

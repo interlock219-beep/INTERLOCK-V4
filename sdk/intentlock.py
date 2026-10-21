@@ -18,8 +18,29 @@ class SecurityError(Exception):
     """
 
 
+def _is_loopback_host(hostname: str | None) -> bool:
+    """True for a host that never leaves the machine.
+
+    Covers the loopback names/addresses and ``testserver``, the in-process
+    ASGI transport host used by httpx/Starlette's TestClient (the request is
+    dispatched inside the process, so no token can be observed on a network).
+    """
+    if not hostname:
+        return False
+    host = hostname.strip("[]").lower()
+    if host in {"localhost", "::1", "testserver"} or host.endswith(".localhost"):
+        return True
+    return host.startswith("127.")
+
+
 def _validate_gateway_url(url: str) -> str:
-    """Validate that the gateway URL uses HTTP or HTTPS and includes a host.
+    """Validate that the gateway URL uses HTTP(S) and includes a host.
+
+    Plain HTTP is only accepted for a host that never leaves the machine
+    (loopback, or the in-process ASGI test host): the client sends a bearer
+    token, and a cleartext HTTP request to a remote gateway would expose that
+    token to the network. Local development over ``http://localhost:8000``
+    keeps working; a remote gateway must use HTTPS.
 
     Args:
         url: The gateway URL to validate.
@@ -28,11 +49,18 @@ def _validate_gateway_url(url: str) -> str:
         The validated URL.
 
     Raises:
-        ValueError: If the URL does not use HTTP(S) or lacks a host.
+        ValueError: If the URL does not use HTTP(S), lacks a host, or would
+            send credentials over cleartext HTTP.
     """
     parsed = urlparse(url)
     if parsed.scheme not in {"http", "https"} or not parsed.netloc:
         msg = "IntentLock gateway URL must use http or https and include a host."
+        raise ValueError(msg)
+    if parsed.scheme == "http" and not _is_loopback_host(parsed.hostname):
+        msg = (
+            "IntentLock gateway URL must use https: a bearer token would be sent "
+            "in cleartext. Plain http is only allowed for a loopback host."
+        )
         raise ValueError(msg)
     return url
 
@@ -54,6 +82,16 @@ class IntentLockGuard:
     base_url: str = "http://127.0.0.1:8000/api/v1/intent/verify"
     execute_url: str = "http://127.0.0.1:8000/api/v1/intent/execute"
     auth_token: str | None = None
+
+    def __post_init__(self) -> None:
+        """Validate the endpoints at wiring time.
+
+        A misconfigured gateway is caught here rather than at the first
+        request: a bearer token must never be sent over cleartext HTTP to a
+        remote host.
+        """
+        _validate_gateway_url(self.base_url)
+        _validate_gateway_url(self.execute_url)
 
     def _auth_headers(self) -> dict[str, str]:
         """Build HTTP headers for API requests.

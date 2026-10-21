@@ -1,0 +1,23 @@
+{
+  // INTERLOCK V6 website — Cloudflare Workers static assets.
+  //
+  // Cloudflare project: interlock-v6 (Workers Builds, Git integration on
+  // interlock219-beep/INTERLOCK-V4, branch master).
+  // Workers Builds runs its build/deploy commands in the configured Root
+  // directory, which must be `site` for this repository — the repository root
+  // is the Python backend and has no package.json.
+  //
+  // `name` must match the Worker name shown in the Cloudflare dashboard
+  // (Workers > interlock-v6 > Settings), otherwise the build is rejected.
+  "name": "interlock-v6",
+  "compatibility_date": "2026-10-21",
+  // No `main` on purpose: this is an assets-only Worker (static SPA), not a
+  // Worker script. Do not add an entry point that does not exist.
+  "assets": {
+    // `npm run build` (tsc --noEmit && vite build) outputs the site here.
+    "directory": "./dist",
+    // The site uses client-side routing (react-router): /features, /download,
+    // /docs/... must serve index.html instead of a bare 404.
+    "not_found_handling": "single-page-application"
+  }
+}

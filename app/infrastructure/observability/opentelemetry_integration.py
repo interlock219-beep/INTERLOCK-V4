@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import os
 from typing import Any
 
 logger = logging.getLogger("intentlock.observability.otel")
@@ -12,16 +13,29 @@ class OpenTelemetryIntegration:
     Provides a consistent interface for distributed tracing and metrics
     export. Gracefully degrades when OpenTelemetry packages are not
     installed, so the core application does not require them.
+
+    Telemetry is strictly opt-in: the integration only enables itself when
+    ``INTERLOCK_OTEL_ENABLED`` is set to a truthy value (``1``/``true``/``yes``)
+    *and* the OpenTelemetry packages import cleanly.  Importing packages must
+    never have the side effect of silently starting a global tracer provider.
     """
 
     def __init__(self, service_name: str = "intentlock") -> None:
         self._service_name = service_name
-        self._tracer = None
-        self._meter = None
+        self._tracer: Any = None
+        self._meter: Any = None
         self._enabled = False
         self._try_init()
 
+    def _opted_in(self) -> bool:
+        return os.getenv("INTERLOCK_OTEL_ENABLED", "").strip().lower() in ("1", "true", "yes")
+
     def _try_init(self) -> None:
+        if not self._opted_in():
+            logger.debug(
+                "OpenTelemetry disabled (set INTERLOCK_OTEL_ENABLED=1 to enable)"
+            )
+            return
         try:
             from opentelemetry import metrics, trace
             from opentelemetry.sdk.trace import TracerProvider

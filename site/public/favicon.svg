@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Interlock">
+  <rect width="64" height="64" rx="12" fill="#080A0B" />
+  <path
+    d="M32 8 54 18v14c0 13.5-9.1 21.7-22 24C19.1 53.7 10 45.5 10 32V18L32 8Z"
+    fill="none"
+    stroke="#FFD900"
+    stroke-width="4"
+    stroke-linejoin="round"
+  />
+  <path
+    d="M32 20v14"
+    stroke="#FFD900"
+    stroke-width="5"
+    stroke-linecap="round"
+  />
+  <circle cx="32" cy="42" r="3.4" fill="#FFD900" />
+</svg>

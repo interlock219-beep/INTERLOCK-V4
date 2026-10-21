@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Install — Interlock V6</title>
+<meta name="description" content="Two ways to work with Interlock V6: a VS Code extension (coming soon) and a terminal install of the intentlock Python package.">
+<style>
+  :root { --bg:#0d1017; --panel:#151a24; --border:#263041; --text:#e5e9f0; --muted:#93a0b4; --green:#198754; --amber:#b58105; --red:#c0392b; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--text); font:16px/1.6 "Segoe UI", system-ui, sans-serif; }
+  .wrap { max-width:960px; margin:0 auto; padding:48px 24px; }
+  .eyebrow { color:var(--muted); text-transform:uppercase; letter-spacing:.12em; font-size:12px; font-weight:600; }
+  h1 { font-size:34px; margin:.4em 0 .2em; }
+  .lead { color:var(--muted); font-size:18px; max-width:62ch; }
+  .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(300px,1fr)); gap:16px; margin:32px 0; }
+  .card { background:var(--panel); border:1px solid var(--border); border-radius:10px; padding:20px 20px 16px; }
+  .card h3 { margin:.2em 0 .5em; font-size:19px; }
+  .badge { display:inline-block; padding:2px 10px; border-radius:999px; font-size:12px; font-weight:600; border:1px solid; }
+  .b-amber { color:var(--amber); border-color:var(--amber); }
+  .b-green { color:var(--green); border-color:var(--green); }
+  .b-red { color:var(--red); border-color:var(--red); }
+  .card ul { color:var(--muted); font-size:14px; margin:.8em 0; padding-left:1.2em; }
+  pre { background:#0a0d13; border:1px solid var(--border); border-radius:8px; padding:14px; overflow-x:auto; font-size:13.5px; }
+  code { font-family:ui-monospace, Consolas, monospace; }
+  p code, li code { background:#1c2330; border-radius:4px; padding:1px 5px; font-size:.92em; }
+  .note { border-left:3px solid var(--amber); background:rgba(181,129,5,.07); padding:10px 14px; border-radius:0 8px 8px 0; color:var(--muted); font-size:14px; }
+  footer { border-top:1px solid var(--border); margin-top:40px; padding-top:16px; color:var(--muted); font-size:13px; }
+  table { border-collapse:collapse; width:100%; font-size:14px; margin:16px 0; }
+  th, td { border:1px solid var(--border); padding:8px 10px; text-align:left; }
+  th { background:var(--panel); }
+</style>
+</head>
+<body>
+<main class="wrap">
+  <span class="eyebrow">Installation</span>
+  <h1>One engine. Two ways to work.</h1>
+  <p class="lead">Use Interlock inside VS Code or run it directly from your terminal.</p>
+
+  <div class="grid">
+    <section class="card">
+      <span class="badge b-amber">Not published</span>
+      <h3>Install for VS Code</h3>
+      <p class="lead" style="font-size:15px">The Interlock VS Code extension wraps the same recovery engine the terminal
+        uses. Its source is in this repository; nothing is published.</p>
+      <ul>
+        <li>No Visual Studio Marketplace listing exists, so there is no button or link here.</li>
+        <li>No <code>.vsix</code> artifact is published or distributed; a local build is yours to make.</li>
+        <li>The extension installs and verifies the engine it needs (Windows x64 bundles a pinned runtime).</li>
+      </ul>
+    </section>
+
+    <section class="card">
+      <span class="badge b-green">Installable today</span>
+      <h3>Install for the terminal</h3>
+      <p class="lead" style="font-size:15px">The <code>intentlock</code> Python package installs from a repository
+        checkout into a virtual environment.</p>
+      <ul>
+        <li>Not published to PyPI yet — installation is from source (or a locally built wheel).</li>
+        <li>Requires Python 3.11–3.14 (3.11.9 verified); no Docker, root, or network at run time.</li>
+      </ul>
+      <pre><code>git clone &lt;INTERLOCK REPOSITORY URL&gt; interlock
+cd interlock
+python -m venv .venv
+.venv\Scripts\activate        # Windows
+# source .venv/bin/activate   # macOS / Linux
+pip install -r requirements.txt
+pip install -e ".[dev,security]"</code></pre>
+      <p class="note">The full walkthrough — including the evidence trail and post-install checks — is in
+        <code>README.md</code> (Quickstart) and <code>docs/operations/BETA_FIRST_RUN.md</code> of the repository.</p>
+    </section>
+  </div>
+
+  <h2>Operating-system compatibility</h2>
+  <p class="lead" style="font-size:15px">Compatibility status of the engine per platform — not installer availability. No row below offers a download.</p>
+  <p class="note">Standalone macOS and Linux downloads are not currently offered. Check the compatibility documentation for the validation status of the terminal engine.</p>
+  <table>
+    <tr><th>Platform</th><th>Status</th><th>What that means</th></tr>
+    <tr><td>Windows x64</td><td><span class="badge b-green">Tested</span></td>
+        <td>Reference platform. Install, recovery, and independent byte-exact verification exercised end-to-end, including real process-kill and permission-denial drills.</td></tr>
+    <tr><td>macOS (Apple Silicon / arm64)</td><td><span class="badge b-amber">Validation in progress</span></td>
+        <td>Declared support with all locked dependencies resolving to native arm64 wheels; no native build/install/safety run recorded yet. See <code>docs/operations/MACOS_INSTALL.md</code>.</td></tr>
+    <tr><td>macOS (Intel / x86_64)</td><td><span class="badge b-red">Unsupported</span></td>
+        <td><code>cryptography&gt;=46</code> publishes no macOS x86_64 wheels.</td></tr>
+    <tr><td>Linux</td><td><span class="badge b-amber">Unvalidated</span></td>
+        <td>Declared and dependency-resolvable; no full native record on this project.</td></tr>
+  </table>
+
+  <h2>Honesty rules for this page</h2>
+  <ul class="lead" style="font-size:15px">
+    <li>No download button appears until a real, published artifact exists with a verified checksum.</li>
+    <li>The wheel is <strong>not</strong> signed, notarised, or attested (no SLSA provenance) — nothing here is.</li>
+    <li>Historical releases (V1–V5, pre-2026-09-24) are not installable from this repository.</li>
+  </ul>
+
+  <footer>
+    Interlock V6 · recovery and byte-exact independent verification for AI agents, their services, and their databases.
+    The canonical install page is the product site (<code>site/</code>, route <code>/download</code>); this standalone
+    file exists only because the legacy <code>web/</code> tree is retired and cannot be edited.
+  </footer>
+</main>
+</body>
+</html>

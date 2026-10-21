@@ -34,6 +34,7 @@ from app.domain.entities.surgical_recovery_types import (
     SimulationLimitation,
     VerificationResult,
 )
+from app.domain.services.evidence_hash import seal_evidence
 
 
 @runtime_checkable
@@ -192,7 +193,7 @@ class RecoveryAdapter(ABC):
         execution_context: dict[str, Any] | None = None,
         before_snapshot: dict[str, Any] | None = None,
     ) -> RecoveryEvidence:
-        return RecoveryEvidence(
+        return seal_evidence(RecoveryEvidence(
             evidence_id=f"ev-{action.action_id}",
             action_id=action.action_id,
             tenant_id=action.tenant_id,
@@ -214,9 +215,8 @@ class RecoveryAdapter(ABC):
             dependency_edges=[],
             reversibility_classification=Reversibility.normalize(action.reversibility),
             verification_requirements=[],
-            evidence_hash="",
             adapter_capability=self._infer_capability(),
-        )
+        ))
 
     async def classify_reversibility(
         self,

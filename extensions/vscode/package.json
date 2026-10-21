@@ -1,0 +1,223 @@
+{
+  "name": "interlock-vscode",
+  "displayName": "Interlock",
+  "description": "Workspace status, recovery-plan previews, and verified filesystem recovery driven by the local Interlock V6 engine.",
+  "version": "0.1.0",
+  "publisher": "interlock219-beep",
+  "icon": "media/interlock-icon.png",
+  "license": "SEE LICENSE IN LICENSE.md",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "keywords": [
+    "interlock",
+    "recovery",
+    "rollback",
+    "verification",
+    "ai-agent",
+    "filesystem"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/interlock219-beep/INTERLOCK-V4.git"
+  },
+  "main": "./out/src/extension.js",
+  "activationEvents": [],
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "interlock",
+          "title": "Interlock",
+          "icon": "media/interlock-activitybar.svg"
+        }
+      ]
+    },
+    "views": {
+      "interlock": [
+        {
+          "id": "interlock.sidebar",
+          "name": "Status & Recovery",
+          "type": "webview",
+          "icon": "media/interlock-activitybar.svg",
+          "contextualTitle": "Interlock"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "interlock.installEngine",
+        "title": "Interlock: Install or Repair Engine (Zero-Configuration Setup)",
+        "category": "Interlock",
+        "icon": "$(shield)"
+      },
+      {
+        "command": "interlock.checkInstallation",
+        "title": "Interlock: Check Installation",
+        "category": "Interlock"
+      },
+      {
+        "command": "interlock.checkStatus",
+        "title": "Interlock: Check Status",
+        "category": "Interlock"
+      },
+      {
+        "command": "interlock.analyzeWorkspace",
+        "title": "Interlock: Analyze Workspace",
+        "category": "Interlock"
+      },
+      {
+        "command": "interlock.protectWorkspace",
+        "title": "Interlock: Protect Workspace (Capture Recovery Evidence)",
+        "category": "Interlock",
+        "icon": "$(shield)"
+      },
+      {
+        "command": "interlock.captureBaseline",
+        "title": "Interlock: Capture Baseline (Before-State Snapshot)",
+        "category": "Interlock"
+      },
+      {
+        "command": "interlock.previewRecoveryPlan",
+        "title": "Interlock: Preview Recovery (Side-by-Side Diff)",
+        "category": "Interlock",
+        "icon": "$(diff)"
+      },
+      {
+        "command": "interlock.viewRecoveryPlan",
+        "title": "Interlock: View Recovery Plan (Read-Only Report)",
+        "category": "Interlock",
+        "icon": "$(book)"
+      },
+      {
+        "command": "interlock.openRecoveryInbox",
+        "title": "Interlock: Open Recovery Inbox (Review And Recover Changes)",
+        "category": "Interlock",
+        "icon": "$(inbox)"
+      },
+      {
+        "command": "interlock.executeRecovery",
+        "title": "Interlock: Apply Recovery (Requires Approval)",
+        "category": "Interlock"
+      },
+      {
+        "command": "interlock.verifyRecovery",
+        "title": "Interlock: Verify Recovery",
+        "category": "Interlock"
+      },
+      {
+        "command": "interlock.refresh",
+        "title": "Interlock: Refresh Sidebar",
+        "category": "Interlock",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "interlock.openOutput",
+        "title": "Interlock: Show Output Log",
+        "category": "Interlock",
+        "icon": "$(output)"
+      },
+      {
+        "command": "interlock.openDocumentation",
+        "title": "Interlock: Open Documentation",
+        "category": "Interlock",
+        "icon": "$(book)"
+      }
+    ],
+    "configuration": {
+      "title": "Interlock",
+      "properties": {
+        "interlock.pythonPath": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "Path to the Python interpreter used to run the Interlock engine bridge. Leave empty for automatic detection (`.venv` inside the engine root, then `python3`/`python` on `PATH`)."
+        },
+        "interlock.engineRoot": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "Path to the Interlock engine checkout or install root (the directory that contains the `app` package). Leave empty to auto-detect from the workspace."
+        },
+        "interlock.autoDetectEngine": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Automatically discover the engine root and Python interpreter when they are not configured explicitly."
+        },
+        "interlock.timeoutSeconds": {
+          "type": "number",
+          "default": 60,
+          "minimum": 5,
+          "maximum": 900,
+          "markdownDescription": "Timeout for a single engine call. On expiry the engine process is terminated and the command reports a timeout."
+        },
+        "interlock.maxBaselineBytes": {
+          "type": "number",
+          "default": 5242880,
+          "minimum": 1024,
+          "markdownDescription": "Largest file (in bytes) for which a recovery baseline may be captured. Baselines are stored in the extension's private storage and include the file contents."
+        },
+        "interlock.automaticBaselineProtection": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Automatically establish recovery evidence at safe checkpoints (e.g. when an analysis finds a workspace with no baselines at all). Baselines are written only to the extension's private storage, never to workspace files, and existing evidence is never overwritten. Turning this off keeps manual capture and shows a missing-protection warning."
+        },
+        "interlock.baselineExclusions": {
+          "type": "array",
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "markdownDescription": "Extra workspace-relative glob patterns that Interlock must never capture (added on top of the built-in sensitive-file policy, which always applies). Example: `docs/generated/**`. Secrets, keys and credential files are excluded regardless."
+        },
+        "interlock.approverIdentity": {
+          "type": "string",
+          "default": "",
+          "maxLength": 200,
+          "scope": "machine",
+          "markdownDescription": "Approver identity recorded in the engine result for an applied recovery (the engine requires one). When set, recovery uses it instead of asking. When empty, Interlock falls back to the identity confirmed once per session or your git `user.name` (with a one-click confirmation), and only prompts when none of those is available. A change/ticket reference stays optional and is never requested on every recovery."
+        },
+        "interlock.showGitChanges": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Show workspace changes from `git status` in the sidebar. This is a read-only, clearly labelled git signal - it is **not** an Interlock incident record."
+        },
+        "interlock.allowedDocumentationUrls": {
+          "type": "array",
+          "default": [
+            "https://github.com/interlock219-beep/INTERLOCK-V4"
+          ],
+          "items": {
+            "type": "string"
+          },
+          "markdownDescription": "HTTPS URLs the `Interlock: Open Documentation` command may open. Non-HTTPS URLs are rejected."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run typecheck && npm run lint && npm run test:unit && npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "typecheck": "tsc -p ./ --noEmit",
+    "lint": "eslint .",
+    "test:unit": "mocha \"out/test/unit/**/*.test.js\" --timeout 20000",
+    "test:integration": "python test/integration/bridge_integration.py",
+    "test:host": "node test/host/launch.js",
+    "test": "npm run compile && npm run test:unit",
+    "package": "vsce package --no-dependencies"
+  },
+  "devDependencies": {
+    "@types/mocha": "^10.0.10",
+    "@types/node": "^20.17.0",
+    "@types/vscode": "^1.85.0",
+    "@typescript-eslint/eslint-plugin": "^8.20.0",
+    "@typescript-eslint/parser": "^8.20.0",
+    "@vscode/test-electron": "^3.1.0",
+    "@vscode/vsce": "^3.2.0",
+    "eslint": "^9.18.0",
+    "mocha": "^11.1.0",
+    "typescript": "^5.7.3"
+  }
+}

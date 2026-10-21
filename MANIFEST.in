@@ -1,0 +1,7 @@
+# Source-distribution completeness: ship the migration runtime + config template
+# so an unpacked sdist is a self-sufficient source tree for install + migrations.
+# (The wheel carries the same set via [tool.setuptools.data-files] in pyproject.toml.)
+include alembic.ini
+include .env.example
+graft alembic
+global-exclude __pycache__ *.py[cod] *.orig *.rej .DS_Store

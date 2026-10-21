@@ -179,13 +179,19 @@ def _create_workspace(tmp_path: Path) -> Path:
         encoding="utf-8",
     )
     
-    # Initialize git repo
-    os.chdir(ws)
-    os.system("git init -q")
-    os.system("git config user.email 'test@test.com'")
-    os.system("git config user.name 'Test User'")
-    os.system("git add .")
-    os.system("git commit -q -m 'initial'")
+    # Initialize git repo. Restore the original working directory afterwards:
+    # leaking the CWD breaks every later relative-path test in the same
+    # pytest process (see test_cwd_restored_after_workspace_creation).
+    original_cwd = Path.cwd()
+    try:
+        os.chdir(ws)
+        os.system("git init -q")
+        os.system("git config user.email 'test@test.com'")
+        os.system("git config user.name 'Test User'")
+        os.system("git add .")
+        os.system("git commit -q -m 'initial'")
+    finally:
+        os.chdir(original_cwd)
     
     return ws
 
@@ -440,9 +446,13 @@ class TestLiveAgentRecoveryCertification:
         file_count = sum(1 for f in files if f.is_file())
         assert file_count >= 10, f"Expected >= 10 files, got {file_count}"
         
-        # Verify git repo
-        os.chdir(self.workspace)
-        result = os.popen("git log --oneline").read().strip()
+        # Verify git repo (restore CWD — never leak process state)
+        original_cwd = Path.cwd()
+        try:
+            os.chdir(self.workspace)
+            result = os.popen("git log --oneline").read().strip()
+        finally:
+            os.chdir(original_cwd)
         assert "initial" in result, f"Git repo not initialized: {result}"
         
         # Verify baseline hashes
@@ -695,9 +705,13 @@ class TestLiveAgentRecoveryCertification:
         assert verify_me.exists(), "verify_me.py should exist after agent operations"
         assert _sha256(verify_me) != "", "verify_me.py should have content"
         
-        # Verify git state
-        os.chdir(self.workspace)
-        git_status = os.popen("git status --porcelain").read()
+        # Verify git state (restore CWD — never leak process state)
+        original_cwd = Path.cwd()
+        try:
+            os.chdir(self.workspace)
+            git_status = os.popen("git status --porcelain").read()
+        finally:
+            os.chdir(original_cwd)
         # Agent files should be untracked or modified
         
         print(f"Phase 10: Independent verification passed")
@@ -1184,6 +1198,20 @@ class TestLiveAgentContainment:
             )
         
         assert not (workspace / "post_kill.txt").exists(), "KILLED agent mutation was not blocked"
+
+
+def test_cwd_restored_after_workspace_creation(tmp_path):
+    """Regression: workspace setup must not leak the process working directory.
+
+    Full-suite ordering runs the stress suite before the unit suite in one
+    pytest process; a leaked CWD made every later relative-path test (e.g.
+    ``CentralPolicyEngine.from_file("config/policies.yaml")``) resolve against
+    the temp workspace and silently load an empty policy engine.
+    """
+    original = Path.cwd()
+    ws = _create_workspace(tmp_path / "ws")
+    assert ws.is_dir()
+    assert Path.cwd() == original
 
 
 if __name__ == "__main__":

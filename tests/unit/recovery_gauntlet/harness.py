@@ -57,6 +57,7 @@ from app.domain.entities.surgical_recovery_types import (
     StopCondition,
     VerificationResult,
 )
+from app.domain.repositories.causal_state_repositories import enforce_write_fence
 from app.domain.repositories.containment_repository import RecoveryPlanRepository
 from app.domain.repositories.protected_action_repository import ProtectedActionRepository
 from app.domain.repositories.recovery_evidence_repository import (
@@ -428,8 +429,21 @@ class _InMemoryDurableExecutionRepo:
         self._store: dict[str, _DurableExecutionStep] = {}
         self._lock = asyncio.Lock()
 
-    async def save(self, step: _DurableExecutionStep) -> _DurableExecutionStep:
+    async def save(
+        self,
+        step: _DurableExecutionStep,
+        expected_fencing_token: int | None = None,
+    ) -> _DurableExecutionStep:
+        # V6 fencing contract: shared write-fence rule — a writer holding an
+        # older token raises StaleFencingTokenError instead of overwriting.
         async with self._lock:
+            fences: dict[str, int] = getattr(self, "_fences", {})
+            self._fences = fences
+            enforce_write_fence(
+                fences.get(step.step_id, 0), expected_fencing_token, step.step_id
+            )
+            if expected_fencing_token is not None:
+                fences[step.step_id] = expected_fencing_token
             self._store[step.step_id] = step
         return step
 

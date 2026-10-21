@@ -1,13 +1,23 @@
 import hashlib
 import json
 import logging
+import os
+import re
 import sys
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
-LOG_PATH = PROJECT_ROOT / "logs" / "audit_trail.jsonl"
+# The audit trail is a HASH-CHAINED record: every entry links to the previous
+# one. A single shared file therefore cannot be written by two processes at
+# the same time without breaking the chain - which is exactly what happened
+# when a test run and a local app shared the default path. The location is
+# configurable so each process (and each test session) can own its trail.
+LOG_PATH = Path(
+    os.environ.get("INTERLOCK_AUDIT_LOG_PATH")
+    or (PROJECT_ROOT / "logs" / "audit_trail.jsonl")
+)
 LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
 
 logger = logging.getLogger("intentlock.audit")
@@ -17,6 +27,62 @@ if not logger.handlers:
     handler = logging.StreamHandler(sys.stdout)
     handler.setFormatter(logging.Formatter("%(message)s"))
     logger.addHandler(handler)
+
+# --- R12: defense-in-depth redaction behind the "Never logs secrets" claim --
+# A details key is sensitive when its lowercased name CONTAINS one of these
+# markers (deliberately narrow: bare "key"/"session" are NOT markers so benign
+# audit fields like session_id=... or key="a" keep flowing through).
+_SENSITIVE_KEY_MARKERS = (
+    "password",
+    "passwd",
+    "passphrase",
+    "secret",
+    "token",
+    "api_key",
+    "apikey",
+    "api-key",
+    "authorization",
+    "auth_header",
+    "credential",
+    "private_key",
+    "privatekey",
+    "cookie",
+    "bearer",
+)
+_REDACTED = "[REDACTED]"
+# Value-shape guard: an Authorization-style bearer credential embedded in an
+# otherwise ordinary string (e.g. error=str(exc)) is masked too.
+_BEARER_VALUE = re.compile(r"(?i)\bbearer\s+[A-Za-z0-9\-._~+/]+=*")
+
+
+def _is_sensitive_key(key: str) -> bool:
+    lowered = key.lower()
+    return any(marker in lowered for marker in _SENSITIVE_KEY_MARKERS)
+
+
+def _redact(value: Any, *, key: str | None = None) -> Any:
+    """Recursively mask secret-bearing values before they are persisted.
+
+    - values under sensitive keys -> "[REDACTED]" (whole value, any type);
+    - dict/list/tuple members are visited with their own key context;
+    - remaining strings get bearer-credential text masked in place.
+    """
+    if key is not None and _is_sensitive_key(key):
+        return _REDACTED
+    if isinstance(value, dict):
+        return {k: _redact(v, key=str(k)) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_redact(item) for item in value]
+    if isinstance(value, tuple):
+        return tuple(_redact(item) for item in value)
+    if isinstance(value, str):
+        return _BEARER_VALUE.sub(f"Bearer {_REDACTED}", value)
+    return value
+
+
+def _redact_details(details: dict[str, Any]) -> dict[str, Any]:
+    """Redact a ``**details`` mapping key-agnostically at the top level."""
+    return {k: _redact(v, key=str(k)) for k, v in details.items()}
 
 
 def log_verification(
@@ -64,7 +130,7 @@ def log_security_event(
         "event_type": event_type,
         "correlation_id": correlation_id or "",
     }
-    record.update(details)
+    record.update(_redact_details(details))
 
     with LOG_PATH.open("a", encoding="utf-8") as handle:
         handle.write(json.dumps(record) + "\n")
@@ -88,7 +154,7 @@ def log_compliance_event(
         "event_type": event_type,
         "correlation_id": correlation_id or "",
     }
-    record.update(details)
+    record.update(_redact_details(details))
 
     last_hash = _get_last_hash()
     record["previous_hash"] = last_hash

@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import json
-from typing import Any
+from typing import Any, cast
 
-from sqlalchemy import select
+from sqlalchemy import select, update
+from sqlalchemy.engine import CursorResult
 from sqlalchemy.orm import Session
 
 from app.domain.entities.causal_state_types import (
@@ -31,6 +32,7 @@ from app.domain.repositories.causal_state_repositories import (
     DurableExecutionRepository,
     RecoveryReportRepository,
     ResourceVersionRepository,
+    StaleFencingTokenError,
     StateCheckpointRepository,
     StateDeltaRepository,
 )
@@ -586,6 +588,7 @@ class SQLAlchemyDurableExecutionRepository(DurableExecutionRepository):
             retry_count=model.retry_count,
             max_retries=model.max_retries,
             step_metadata=_deserialize_json_dict(model.step_metadata),
+            write_fence=model.write_fence,
         )
 
     async def get_by_step_id(self, tenant_id: str, step_id: str) -> DurableExecutionStep | None:
@@ -612,36 +615,65 @@ class SQLAlchemyDurableExecutionRepository(DurableExecutionRepository):
         results = self._session.execute(stmt).scalars().all()
         return [self._to_entity(r) for r in results], len(results)
 
-    async def save(self, step: DurableExecutionStep) -> DurableExecutionStep:
+    async def save(
+        self,
+        step: DurableExecutionStep,
+        expected_fencing_token: int | None = None,
+    ) -> DurableExecutionStep:
         stmt = select(DurableExecutionStepModel).where(
             DurableExecutionStepModel.step_id == step.step_id,
             DurableExecutionStepModel.tenant_id == step.tenant_id,
         )
         result = self._session.execute(stmt).scalar_one_or_none()
-        if result is not None:
-            result.plan_id = step.plan_id
-            result.action_id = step.action_id
-            result.execution_order = step.execution_order
-            result.execution_state = step.execution_state
-            result.idempotency_key = step.idempotency_key
-            result.target_system = step.target_system
-            result.target_resource = step.target_resource
-            result.compensation_payload = _serialize_json_field(step.compensation_payload)
-            result.started_at = step.started_at
-            result.completed_at = step.completed_at
-            result.error = step.error
-            result.verification_passed = step.verification_passed
-            result.retry_count = step.retry_count
-            result.max_retries = step.max_retries
-            result.step_metadata = _serialize_json_field(step.step_metadata)
-            self._session.add(result)
-        else:
-            model = DurableExecutionStepModel(
-                step_id=step.step_id,
+
+        if expected_fencing_token is None:
+            # Legacy / unfenced path: unconditional overwrite that never reads
+            # or writes the stored write_fence column (documented backward-
+            # compatible behavior for creation and unleased flows).
+            if result is not None:
+                result.plan_id = step.plan_id
+                result.action_id = step.action_id
+                result.execution_order = step.execution_order
+                result.execution_state = step.execution_state
+                result.idempotency_key = step.idempotency_key
+                result.target_system = step.target_system
+                result.target_resource = step.target_resource
+                result.compensation_payload = _serialize_json_field(step.compensation_payload)
+                result.started_at = step.started_at
+                result.completed_at = step.completed_at
+                result.error = step.error
+                result.verification_passed = step.verification_passed
+                result.retry_count = step.retry_count
+                result.max_retries = step.max_retries
+                result.step_metadata = _serialize_json_field(step.step_metadata)
+                self._session.add(result)
+            else:
+                self._session.add(self._new_model(step, write_fence=0))
+            self._session.flush()
+            return step
+
+        if result is None:
+            # First fenced write establishes the fence at the caller's token.
+            self._session.add(
+                self._new_model(step, write_fence=expected_fencing_token)
+            )
+            self._session.flush()
+            return step
+
+        # Fenced path: a single conditional statement — a writer holding an
+        # older token can never overwrite state already written by a newer
+        # one (rowcount 0 => StaleFencingTokenError, nothing persisted).
+        update_stmt = (
+            update(DurableExecutionStepModel)
+            .where(
+                DurableExecutionStepModel.step_id == step.step_id,
+                DurableExecutionStepModel.tenant_id == step.tenant_id,
+                DurableExecutionStepModel.write_fence <= expected_fencing_token,
+            )
+            .values(
                 plan_id=step.plan_id,
                 action_id=step.action_id,
                 execution_order=step.execution_order,
-                tenant_id=step.tenant_id,
                 execution_state=step.execution_state,
                 idempotency_key=step.idempotency_key,
                 target_system=step.target_system,
@@ -654,11 +686,49 @@ class SQLAlchemyDurableExecutionRepository(DurableExecutionRepository):
                 retry_count=step.retry_count,
                 max_retries=step.max_retries,
                 step_metadata=_serialize_json_field(step.step_metadata),
-                created_at=step.created_at,
+                write_fence=expected_fencing_token,
             )
-            self._session.add(model)
+            .execution_options(synchronize_session=False)
+        )
+        outcome = self._session.execute(update_stmt)
+        row_count = cast("CursorResult[Any]", outcome).rowcount
+        if row_count == 0:
+            raise StaleFencingTokenError(
+                f"Step {step.step_id!r}: write rejected — the stored write fence "
+                f"is newer than expected fencing token {expected_fencing_token} "
+                "(stale writer cannot overwrite newer state)"
+            )
+        # The Core UPDATE bypassed the identity map; expire the cached row so
+        # later reads in this session observe the persisted state.
+        self._session.expire(result)
         self._session.flush()
         return step
+
+    @staticmethod
+    def _new_model(
+        step: DurableExecutionStep, write_fence: int
+    ) -> DurableExecutionStepModel:
+        return DurableExecutionStepModel(
+            step_id=step.step_id,
+            plan_id=step.plan_id,
+            action_id=step.action_id,
+            execution_order=step.execution_order,
+            tenant_id=step.tenant_id,
+            execution_state=step.execution_state,
+            idempotency_key=step.idempotency_key,
+            target_system=step.target_system,
+            target_resource=step.target_resource,
+            compensation_payload=_serialize_json_field(step.compensation_payload),
+            started_at=step.started_at,
+            completed_at=step.completed_at,
+            error=step.error,
+            verification_passed=step.verification_passed,
+            retry_count=step.retry_count,
+            max_retries=step.max_retries,
+            step_metadata=_serialize_json_field(step.step_metadata),
+            created_at=step.created_at,
+            write_fence=write_fence,
+        )
 
 
 class SQLAlchemyRecoveryReportRepository(RecoveryReportRepository):

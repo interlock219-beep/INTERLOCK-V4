@@ -212,6 +212,8 @@ class SelfHealingService:
             triggering_checks=triggered_policy_ids,
             actions_taken=actions_taken,
             recovery_confidence=1.0 if healed else 0.0,
+            resolved=healed,
+            resolved_at=datetime.now(UTC) if healed else None,
         )
 
         self._record_event(tenant_id, entity_id, event)

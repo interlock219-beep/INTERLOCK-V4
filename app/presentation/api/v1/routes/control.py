@@ -35,6 +35,9 @@ from app.infrastructure.persistence.repositories.sqlalchemy_causal_state_reposit
 from app.infrastructure.persistence.repositories.sqlalchemy_containment_repository import (
     SQLAlchemyContainmentRepository,
 )
+from app.infrastructure.persistence.repositories.sqlalchemy_coordination_stores import (
+    build_plan_lease_store,
+)
 from app.infrastructure.persistence.repositories.sqlalchemy_recovery_evidence_repository import (
     SQLAlchemyRecoveryEvidenceRepository,
 )
@@ -44,6 +47,7 @@ from app.presentation.api.dependencies.auth import (
     get_user_tenant_id,
     require_recovery_executor,
 )
+from app.presentation.api.dependencies.emergency_guard import assert_execution_permitted
 
 router = APIRouter(tags=["Control"])
 
@@ -284,6 +288,9 @@ async def execute_recovery(
     _authorized: Annotated[UserResponse, Depends(require_recovery_executor)],
     repo: Annotated[RecoveryPlanRepository, Depends(_get_recovery_repo)],
 ) -> dict[str, Any]:
+    # Emergency deny blocks execution here, before any session or work
+    # is opened (PILLAR 6: enforcement at execution time, not just UI).
+    await assert_execution_permitted(get_user_tenant_id(current_user))
     from app.domain.entities.protected_action import ProtectedAction
 
     session = SessionLocal()
@@ -315,6 +322,7 @@ async def execute_recovery(
             evidence_repository=evidence_repo,
             execution_repository=execution_repo,
             adapters=adapters,
+            lease_store=build_plan_lease_store(),
         )
 
         protected_actions: list[ProtectedAction] = []
@@ -534,6 +542,7 @@ async def resume_recovery(
     _authorized: Annotated[UserResponse, Depends(require_recovery_executor)],
     repo: Annotated[RecoveryPlanRepository, Depends(_get_recovery_repo)],
 ) -> dict[str, Any]:
+    await assert_execution_permitted(get_user_tenant_id(_authorized))
     plan = await repo.get_by_plan_id(get_user_tenant_id(_authorized), plan_id)
     if plan is None:
         raise HTTPException(status_code=404, detail="Recovery plan not found")
@@ -548,6 +557,7 @@ async def resume_recovery(
             evidence_repository=evidence_repo,
             execution_repository=execution_repo,
             adapters=adapters,
+            lease_store=build_plan_lease_store(),
         )
         resume_result = await orchestrator.resume_plan(
             tenant_id=get_user_tenant_id(_authorized),

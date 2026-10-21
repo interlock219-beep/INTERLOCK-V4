@@ -1,0 +1,827 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src 'none'; font-src 'none'; style-src 'nonce-ILVISUALNONCE'; script-src 'nonce-ILVISUALNONCE';">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Interlock Recovery Report</title>
+<style nonce="ILVISUALNONCE">
+
+:root {
+  /* palette */
+  --il-bg: #0A0B0B;
+  --il-surface: #111414;
+  --il-surface-2: #0F1211;
+  --il-hover: #1B1E1D;
+  --il-accent: #FFE500;
+  --il-accent-hover: #FFF04A;
+  --il-text: #F5F5F5;
+  --il-text2: #B7BCBC;
+  --il-border: #292D2C;
+  --il-border-soft: #1D2120;
+  --il-ok: #53D769;
+  --il-warn: #FFC857;
+  --il-error: #FF6464;
+
+  /* one corner-radius scale for the whole dashboard */
+  --il-r-xs: 3px;
+  --il-r-sm: 4px;
+  --il-r-md: 6px;
+  --il-r-lg: 8px;
+  --il-r-full: 999px;
+
+  /* one spacing scale */
+  --il-s1: 3px;
+  --il-s2: 5px;
+  --il-s3: 8px;
+  --il-s4: 11px;
+
+  /* deliberate type system: the editor's mono face is the ONE voice of the
+     sidebar - brand, headings, labels and prose all come from it, so the
+     panel reads as a single, confident product instead of mixed faces */
+  --il-font-display: var(--vscode-editor-font-family, "Cascadia Code", "SFMono-Regular",
+    Consolas, "Liberation Mono", monospace);
+  --il-font-body: var(--vscode-font-family, -apple-system, BlinkMacSystemFont,
+    "Segoe UI", sans-serif);
+  /* primary face: the display/mono stack first, the theme face as fallback */
+  --il-font: var(--il-font-display), var(--il-font-body);
+
+  /* one size scale - every rule below reads its size from here (floor 12px) */
+  --il-fs-brand: 17px;    /* the product title */
+  --il-fs-display: 16px;  /* the protection headline */
+  --il-fs-h1: 15px;       /* section headings, the primary action label */
+  --il-fs-h2: 14px;       /* action card titles, advanced section headings */
+  --il-fs-body: 13.5px;   /* descriptions, helper text, list items, values */
+  --il-fs-meta: 12.5px;   /* status pills, chips, approval notices */
+  --il-fs-sm: 12px;       /* small metadata - the hard floor, never smaller */
+
+  /* one weight scale: 500 ordinary, 600 important, 700/800 emphasis */
+  --il-fw-med: 500;
+  --il-fw-semi: 600;
+  --il-fw-bold: 700;
+  --il-fw-black: 800;
+
+  /* one line-height + tracking scale */
+  --il-lh-tight: 1.3;   /* headings and button labels */
+  --il-lh-snug: 1.4;    /* secondary lines inside a control */
+  --il-lh: 1.5;         /* prose */
+  --il-ls: .01em;       /* default label tracking */
+  --il-ls-wide: .08em;  /* uppercase section headings */
+  --il-ls-brand: .14em; /* brand wordmark + subtitle */
+
+  /* the single muted elevation reused by every inset surface */
+  --il-inset: var(--il-surface-2);
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html, body {
+  margin: 0; padding: 0;
+  background: var(--il-bg);
+  color: var(--il-text);
+  font-family: var(--il-font);
+  font-size: var(--il-fs-body);
+  font-weight: var(--il-fw-med);
+  line-height: var(--il-lh);
+}
+body { padding: 0 var(--il-s3) var(--il-s3); }
+.il-root { display: flex; flex-direction: column; gap: var(--il-s3); min-width: 0; }
+.il-flex { flex: 1 1 auto; min-width: 0; }
+.il-mono {
+  font-family: var(--il-font-display);
+  font-variant-numeric: tabular-nums;
+}
+.il-i { width: 16px; height: 16px; flex: 0 0 auto; fill: none;
+  stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+.il-i-sm { width: 13px; height: 13px; }
+/* every icon that labels a control shares one optical column */
+.il-btn-ico { width: 15px; height: 15px; }
+button { font: inherit; color: inherit; background: none; border: none;
+  margin: 0; padding: 0; cursor: pointer; text-align: left; }
+button:disabled { cursor: not-allowed; }
+:focus-visible { outline: 1px solid var(--vscode-focusBorder, var(--il-accent));
+  outline-offset: 1px; border-radius: var(--il-r-sm); }
+.il-truncate { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+
+/* ---- header: brand, status pill, subtitle - compact but complete ---- */
+.il-header {
+  position: sticky; top: 0; z-index: 5;
+  display: flex; flex-direction: column; gap: var(--il-s1);
+  margin: 0 calc(var(--il-s2) * -1);
+  padding: var(--il-s2);
+  background: var(--il-bg);
+  border-bottom: 1px solid var(--il-border-soft);
+}
+.il-idline {
+  display: flex; align-items: center; gap: var(--il-s2);
+  min-width: 0; flex-wrap: wrap;
+}
+.il-subline {
+  display: flex; align-items: center; gap: var(--il-s2);
+  min-width: 0;
+}
+.il-subtitle {
+  font-family: var(--il-font);
+  font-size: var(--il-fs-sm); font-weight: var(--il-fw-bold);
+  letter-spacing: var(--il-ls-brand);
+  text-transform: uppercase; color: var(--il-text2);
+  min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+/* the live protection indicator: one glance, same tone as the card */
+.il-pill {
+  display: inline-flex; align-items: center; gap: var(--il-s2);
+  padding: 2px var(--il-s2); border-radius: var(--il-r-full);
+  border: 1px solid var(--il-border); background: var(--il-surface);
+  font-size: var(--il-fs-meta); font-weight: var(--il-fw-bold);
+  letter-spacing: var(--il-ls);
+  min-width: 0; max-width: 100%;
+}
+.il-pill > span:last-child {
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0;
+}
+/* the brand shield: same artwork as the Activity Bar icon */
+.il-mark { display: inline-flex; flex: 0 0 auto; }
+.il-mark > svg { width: 20px; height: 20px; display: block; fill: var(--il-accent); }
+.il-wordmark {
+  font-family: var(--il-font);
+  font-weight: var(--il-fw-black); letter-spacing: var(--il-ls-brand);
+  font-size: var(--il-fs-brand);
+  text-transform: uppercase; color: var(--il-text);
+}
+.il-badge {
+  font-family: var(--il-font);
+  font-size: var(--il-fs-sm); font-weight: var(--il-fw-black);
+  letter-spacing: var(--il-ls-wide);
+  color: #0A0B0B; background: var(--il-accent);
+  border-radius: var(--il-r-xs); padding: 0 var(--il-s1); line-height: var(--il-lh-tight);
+}
+.il-iconbtn {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 26px; height: 26px; border-radius: var(--il-r-sm); color: var(--il-text2);
+  flex: 0 0 auto;
+}
+.il-iconbtn:hover { background: var(--hover, var(--il-hover)); color: var(--il-text); }
+
+/* ---- status strip (loading / last action / error) ---- */
+.il-strip {
+  display: flex; align-items: center; gap: var(--il-s2);
+  padding: var(--il-s2) var(--il-s3); border-radius: var(--il-r-md);
+  background: var(--il-surface); border: 1px solid var(--il-border-soft);
+  color: var(--il-text2); font-size: var(--il-fs-body);
+  font-weight: var(--il-fw-med);
+}
+.il-strip-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.il-spin {
+  width: 9px; height: 9px; border-radius: 50%; flex: 0 0 auto;
+  border: 1.5px solid currentColor; border-top-color: transparent;
+  animation: il-rot .8s linear infinite; display: none;
+}
+@keyframes il-rot { to { transform: rotate(360deg); } }
+.il-root.is-busy .il-spin { display: inline-block; }
+.il-root.is-busy [data-action] { opacity: .55; pointer-events: none; }
+.il-root.is-busy #il-strip { color: var(--il-accent); border-color: #3a3a1e; }
+.il-strip[data-tone-value="bad"] { color: var(--il-error); border-color: #43262a; }
+.il-strip[data-tone-value="ok"] { color: var(--il-ok); }
+
+/* ---- the protection card: the one thing a beginner must understand ---- */
+.il-card {
+  background: var(--il-surface);
+  border: 1px solid var(--il-border-soft);
+  border-radius: var(--il-r-lg);
+  padding: var(--il-s3);
+  display: flex; flex-direction: column; gap: var(--il-s2);
+  min-width: 0;
+}
+.il-card-title {
+  margin: 0; display: flex; align-items: center; gap: var(--il-s2);
+  font-family: var(--il-font);
+  font-size: var(--il-fs-h2); font-weight: var(--il-fw-bold);
+  letter-spacing: var(--il-ls-wide); line-height: var(--il-lh-tight);
+  color: var(--il-text2); text-transform: uppercase;
+}
+.il-prot-ico-host { display: inline-flex; }
+.il-state { display: flex; align-items: baseline; gap: var(--il-s2); min-width: 0; }
+.il-state-head {
+  font-family: var(--il-font);
+  font-size: var(--il-fs-display); font-weight: var(--il-fw-black);
+  letter-spacing: var(--il-ls); line-height: var(--il-lh-tight);
+  min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.il-state-detail {
+  margin: 0; font-size: var(--il-fs-body); line-height: var(--il-lh);
+  color: var(--il-text2);
+  overflow-wrap: anywhere;
+}
+
+/* ---- workspace facts: one calm line ---- */
+.il-facts {
+  margin: 0; display: flex; align-items: center; gap: var(--il-s2);
+  font-size: var(--il-fs-body); color: var(--il-text2); min-width: 0;
+}
+.il-name { font-size: var(--il-fs-h2); font-weight: var(--il-fw-bold);
+  letter-spacing: var(--il-ls); color: var(--il-text);
+  min-width: 0; }
+.il-sep { color: var(--il-border); }
+.il-hint {
+  margin: 0; font-size: var(--il-fs-body); line-height: var(--il-lh);
+  color: var(--il-text2);
+  overflow-wrap: anywhere;
+}
+.il-hint-bad { color: #FFC9C9; }
+.il-note { margin: 0; font-size: var(--il-fs-body); line-height: var(--il-lh);
+  color: var(--il-text2);
+  overflow-wrap: anywhere; }
+.il-chip {
+  display: inline-flex; align-items: center; gap: var(--il-s1);
+  padding: 1px var(--il-s2); border-radius: var(--il-r-full);
+  border: 1px solid var(--il-border-soft);
+  background: var(--il-inset); font-size: var(--il-fs-meta);
+  font-weight: var(--il-fw-semi);
+  letter-spacing: var(--il-ls); color: var(--il-text2);
+  max-width: 100%; overflow: hidden;
+}
+.il-chip span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* the approval requirement is amber (a caution), never green (a success) */
+.il-chip-guard { border-color: #4a3b12; color: var(--il-warn); background: #15120A; }
+.il-dot {
+  width: 8px; height: 8px; border-radius: var(--il-r-full); flex: 0 0 auto;
+  background: currentColor;
+}
+.il-dot[data-tone-value="ok"] { box-shadow: 0 0 0 2px rgba(83, 215, 105, .14); }
+.il-row { display: flex; align-items: center; gap: var(--il-s2); min-width: 0; }
+
+/* ---- primary action: the one large CTA, always Protect My Workspace ---- */
+.il-group { display: flex; flex-direction: column; gap: var(--il-s2); min-width: 0; }
+.il-explain { margin: 0; padding: 0 var(--il-s1); font-size: var(--il-fs-body);
+  line-height: var(--il-lh); color: var(--il-text2); }
+.il-primary {
+  display: flex; align-items: center; justify-content: center; gap: var(--il-s2);
+  width: 100%; padding: var(--il-s3) var(--il-s4); border-radius: var(--il-r-md);
+  background: var(--il-accent); color: #0A0B0B;
+  font-family: var(--il-font);
+  font-weight: var(--il-fw-bold); font-size: var(--il-fs-h1);
+  letter-spacing: var(--il-ls); line-height: var(--il-lh-tight);
+  border: 1px solid var(--il-accent);
+  min-height: 34px;
+  transition: background .12s ease, transform .05s ease;
+}
+.il-primary:hover:not(:disabled) { background: var(--il-accent-hover); border-color: var(--il-accent-hover); }
+.il-primary:active:not(:disabled) { transform: translateY(1px); }
+.il-primary:disabled {
+  background: var(--il-surface); color: var(--il-text2); border-color: var(--il-border);
+}
+.il-primary .il-i { stroke-width: 2; }
+
+/* ---- prominent duo: Analyze | Recover, side by side, stacking when narrow ---- */
+.il-duo {
+  display: grid; grid-template-columns: 1fr 1fr; gap: var(--il-s2); min-width: 0;
+}
+.il-duobtn {
+  display: flex; flex-direction: column; align-items: flex-start; gap: var(--il-s1);
+  min-width: 0; padding: var(--il-s3); border-radius: var(--il-r-md);
+  background: var(--il-surface); border: 1px solid var(--il-border-soft);
+  color: var(--il-text); min-height: 46px;
+  transition: background .12s ease, border-color .12s ease;
+}
+.il-duobtn:hover:not(:disabled) { background: var(--il-hover); border-color: var(--il-border); }
+.il-duobtn:disabled { opacity: .7; }
+.il-duobtn > .il-i { color: var(--il-accent); }
+.il-duotext { display: flex; flex-direction: column; gap: var(--il-s1); min-width: 0; }
+.il-duolabel { font-weight: var(--il-fw-bold); font-size: var(--il-fs-h2);
+  letter-spacing: var(--il-ls); line-height: var(--il-lh-tight);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.il-duodesc { font-size: var(--il-fs-body); line-height: var(--il-lh-snug);
+  color: var(--il-text2);
+  overflow-wrap: anywhere; }
+.il-duobtn:disabled .il-duodesc { color: var(--il-warn); }
+/* Recover changes files: amber caution palette, never the success colour */
+.il-duobtn-guard { background: #15120A; border-color: #4A3B12; }
+.il-duobtn-guard:hover:not(:disabled) { background: #1D1809; border-color: #5C4915; }
+.il-duobtn-guard:disabled > .il-i { color: var(--il-warn); }
+
+/* ---- secondary rows: preview and verify, visibly quieter ---- */
+.il-section { display: flex; flex-direction: column; gap: var(--il-s2); min-width: 0; }
+.il-rows { display: flex; flex-direction: column; gap: var(--il-s2); min-width: 0; }
+.il-rowbtn {
+  display: flex; align-items: center; gap: var(--il-s3); min-width: 0; width: 100%;
+  padding: var(--il-s2) var(--il-s3); border-radius: var(--il-r-md);
+  background: var(--il-surface); border: 1px solid var(--il-border-soft);
+  color: var(--il-text); font-size: var(--il-fs-body);
+  font-weight: var(--il-fw-med); line-height: var(--il-lh-tight);
+  min-height: 28px;
+  transition: background .12s ease, border-color .12s ease;
+}
+.il-rowbtn:hover:not(:disabled) { background: var(--il-hover); border-color: var(--il-border); }
+.il-rowbtn:disabled { opacity: .7; }
+.il-rowbtn > .il-i { color: var(--il-text2); }
+.il-rowbtn:hover:not(:disabled) > .il-i { color: var(--il-accent); }
+.il-rowtext { display: flex; flex-direction: column; gap: var(--il-s1); min-width: 0; flex: 1 1 auto; }
+.il-rowlabel { font-weight: var(--il-fw-semi); font-size: var(--il-fs-h2);
+  letter-spacing: var(--il-ls); line-height: var(--il-lh-tight);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* the helper line wraps (never shrinks below the 12px floor) */
+.il-rowdesc { font-size: var(--il-fs-body); color: var(--il-text2);
+  line-height: var(--il-lh-snug); overflow-wrap: anywhere; }
+.il-rowbtn:disabled .il-rowdesc { color: var(--il-warn); }
+/* the Recovery Inbox entry: a prominent, full-width action of its own */
+.il-inboxbtn {
+  display: flex; align-items: center; gap: var(--il-s3); min-width: 0; width: 100%;
+  padding: var(--il-s3); border-radius: var(--il-r-md);
+  background: var(--il-inset); border: 1px solid var(--il-border);
+  color: var(--il-text); font-size: var(--il-fs-body);
+  font-weight: var(--il-fw-med); line-height: var(--il-lh-tight);
+  min-height: 28px; text-align: left;
+  transition: background .12s ease, border-color .12s ease;
+}
+.il-inboxbtn:hover:not(:disabled) { background: var(--il-hover); border-color: var(--il-accent); }
+.il-inboxbtn:disabled { opacity: .7; }
+.il-inboxbtn > .il-i { color: var(--il-accent); }
+.il-inboxbtn .il-rowlabel { white-space: normal; }
+/* guarded recovery: amber caution palette only - never the success colour */
+.il-guarded {
+  background: #15120A; border-color: #4A3B12; color: #F7E9B0;
+}
+.il-guarded:hover:not(:disabled) { background: #1D1809; border-color: #5C4915; }
+.il-guarded > .il-i { color: var(--il-warn); }
+.il-guarded .il-chip { flex: 0 0 auto; }
+.il-guardnote {
+  margin: 0; padding: 0 var(--il-s1); font-size: var(--il-fs-body);
+  line-height: var(--il-lh); font-weight: var(--il-fw-med);
+  color: var(--il-warn); overflow-wrap: anywhere;
+}
+.il-guardnote .il-chip { margin-right: var(--il-s1); }
+
+/* ---- collapsibles: every technical answer lives here, collapsed ---- */
+.il-collapsible {
+  background: var(--il-surface); border: 1px solid var(--il-border-soft);
+  border-radius: var(--il-r-md); padding: var(--il-s2) var(--il-s3);
+}
+.il-collapsible > summary {
+  list-style: none; cursor: pointer; color: var(--il-text2);
+  font-size: var(--il-fs-h2); font-weight: var(--il-fw-semi);
+  letter-spacing: var(--il-ls); line-height: var(--il-lh-tight);
+  display: flex; align-items: center; gap: var(--il-s2);
+  border-radius: var(--il-r-sm); padding: 2px 2px;
+}
+.il-collapsible > summary::-webkit-details-marker { display: none; }
+.il-collapsible > summary::before {
+  content: ""; width: 0; height: 0; flex: 0 0 auto;
+  border-left: 4.5px solid currentColor;
+  border-top: 3.5px solid transparent; border-bottom: 3.5px solid transparent;
+  transition: transform .12s ease; margin-right: 1px;
+}
+details[open] > summary::before { transform: rotate(90deg); }
+.il-collapsible > summary:hover { color: var(--il-text); }
+.il-count {
+  margin-left: auto; min-width: 17px; text-align: center;
+  border-radius: var(--il-r-full); padding: 0 var(--il-s2);
+  font-size: var(--il-fs-sm); font-weight: var(--il-fw-bold);
+  background: var(--il-error); color: #0A0B0B;
+}
+.il-count-warn { background: var(--il-warn); }
+.il-help { display: flex; flex-direction: column; gap: var(--il-s2);
+  padding-top: var(--il-s2); min-width: 0; }
+.il-help-h {
+  margin: var(--il-s1) 0 0; font-family: var(--il-font);
+  font-size: var(--il-fs-h2); font-weight: var(--il-fw-bold);
+  letter-spacing: var(--il-ls-wide); line-height: var(--il-lh-tight);
+  text-transform: uppercase; color: var(--il-text2);
+}
+.il-list { margin: 0; padding: 0 0 0 var(--il-s1); list-style: none;
+  display: flex; flex-direction: column; gap: var(--il-s1); }
+.il-list li {
+  font-size: var(--il-fs-body); line-height: var(--il-lh); color: var(--il-text);
+  padding-left: 7px;
+  border-left: 2px solid var(--il-border);
+  overflow-wrap: anywhere;
+}
+.il-list li.il-li-error { border-left-color: var(--il-error); color: #FFC9C9; }
+.il-list li.il-li-warn { border-left-color: var(--il-warn); }
+.il-list li.il-li-muted { border-left-color: transparent; color: var(--il-text2); }
+.il-kv { display: grid; grid-template-columns: auto 1fr; gap: var(--il-s1) var(--il-s3); margin: 0; }
+.il-kv dt { color: var(--il-text2); font-size: var(--il-fs-sm);
+  font-weight: var(--il-fw-semi); letter-spacing: var(--il-ls); }
+.il-kv dd { margin: 0; font-size: var(--il-fs-body); color: var(--il-text);
+  overflow-wrap: anywhere; min-width: 0; }
+.il-links { display: flex; flex-direction: column; gap: var(--il-s1); }
+.il-linkrow {
+  display: flex; align-items: center; gap: var(--il-s2);
+  padding: var(--il-s2); border-radius: var(--il-r-sm);
+  color: var(--il-text); font-size: var(--il-fs-body);
+  font-weight: var(--il-fw-med); line-height: var(--il-lh-tight);
+  min-height: 26px;
+  transition: background .12s ease;
+}
+.il-linkrow:hover { background: var(--il-hover); }
+.il-linkrow > .il-i { color: var(--il-text2); }
+.il-linkrow:hover > .il-i { color: var(--il-accent); }
+
+.il-footer {
+  text-align: center; font-size: var(--il-fs-sm);
+  font-weight: var(--il-fw-med); color: var(--il-text2);
+  padding-top: var(--il-s1);
+}
+
+/* ---- tones: applied last so they win over the base text colour ---- */
+[data-tone-value="ok"] { color: var(--il-ok); }
+[data-tone-value="warn"] { color: var(--il-warn); }
+[data-tone-value="bad"] { color: var(--il-error); }
+[data-tone-value="idle"] { color: var(--il-text2); }
+[data-tone-value="accent"] { color: var(--il-accent); }
+
+@media (max-width: 270px) {
+  /* status rows stack label over value instead of squeezing side by side */
+  .il-kv { grid-template-columns: 1fr; gap: var(--il-s1); }
+  .il-wordmark { letter-spacing: .1em; }
+  /* the two prominent actions stack instead of squeezing */
+  .il-duo { grid-template-columns: 1fr; }
+  /* the guarded action keeps its full label, letting the approval chip wrap */
+  .il-rowbtn { padding: var(--il-s2) var(--il-s2); gap: var(--il-s2); }
+  .il-guarded { flex-wrap: wrap; }
+  .il-state-head { font-size: var(--il-fs-h1); }
+}
+@media (prefers-reduced-motion: reduce) {
+  * { transition: none !important; animation: none !important; }
+  .il-root.is-busy .il-spin { display: none; }
+  .il-root.is-busy #il-strip::after { content: " · working"; }
+}
+
+
+.il-r { max-width: 1080px; margin: 0 auto; width: 100%; }
+.il-r-summary {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(165px, 1fr));
+  gap: var(--il-s2); min-width: 0;
+}
+.il-r-stat {
+  display: flex; flex-direction: column; gap: var(--il-s1); min-width: 0;
+  background: var(--il-surface); border: 1px solid var(--il-border-soft);
+  border-radius: var(--il-r-md); padding: var(--il-s3);
+}
+.il-r-stat-l {
+  font-size: var(--il-fs-sm); font-weight: var(--il-fw-bold);
+  letter-spacing: var(--il-ls-wide); text-transform: uppercase; color: var(--il-text2);
+}
+.il-r-stat-v {
+  font-family: var(--il-font-display); font-size: var(--il-fs-display);
+  font-weight: var(--il-fw-black); font-variant-numeric: tabular-nums;
+  line-height: var(--il-lh-tight); overflow-wrap: anywhere;
+}
+.il-r-unknown { color: var(--il-text2); font-size: var(--il-fs-h2); font-weight: var(--il-fw-semi); }
+.il-r-count { color: var(--il-text2); font-weight: var(--il-fw-semi); margin-left: var(--il-s1); }
+
+.il-r-files { display: flex; flex-direction: column; gap: var(--il-s2); min-width: 0; }
+.il-r-file {
+  display: flex; flex-direction: column; gap: var(--il-s2); min-width: 0;
+  background: var(--il-surface); border: 1px solid var(--il-border-soft);
+  border-radius: var(--il-r-md); padding: var(--il-s3);
+}
+.il-r-filehead { display: flex; align-items: center; gap: var(--il-s2); flex-wrap: wrap; min-width: 0; }
+.il-r-titles { display: flex; flex-direction: column; gap: 1px; min-width: 0; flex: 1 1 auto; }
+.il-r-name { font-size: var(--il-fs-h2); font-weight: var(--il-fw-bold); overflow-wrap: anywhere; }
+.il-r-path { font-size: var(--il-fs-sm); color: var(--il-text2); }
+.il-r-reason {
+  margin: 0; padding-left: 7px; border-left: 2px solid var(--il-border);
+  font-size: var(--il-fs-body); line-height: var(--il-lh); color: var(--il-text2);
+  overflow-wrap: anywhere;
+}
+.il-r-reason[data-tone-value="bad"] { border-left-color: var(--il-error); }
+.il-r-reason[data-tone-value="warn"] { border-left-color: var(--il-warn); }
+.il-r-note { margin: 0; font-size: var(--il-fs-sm); color: var(--il-text2); overflow-wrap: anywhere; }
+
+.il-r-preview {
+  display: inline-flex; align-items: center; gap: var(--il-s2); flex: 0 0 auto;
+  padding: 3px var(--il-s3); min-height: 26px;
+  border: 1px solid var(--il-border); border-radius: var(--il-r-sm);
+  background: var(--il-inset); color: var(--il-text);
+  font-size: var(--il-fs-meta); font-weight: var(--il-fw-semi); letter-spacing: var(--il-ls);
+}
+.il-r-preview:hover:not(:disabled) { border-color: var(--il-accent); color: var(--il-accent); }
+.il-r-preview:disabled { border-style: dashed; background: transparent; color: var(--il-text2); }
+.il-r-preview > .il-i { color: currentColor; }
+
+.il-r-file .il-collapsible { background: transparent; border: none; padding: 0; }
+.il-r-techtext {
+  background: var(--il-inset); border: 1px solid var(--il-border-soft);
+  border-radius: var(--il-r-sm); padding: var(--il-s3); margin-top: var(--il-s2);
+  display: flex; flex-direction: column; gap: var(--il-s3); min-width: 0;
+}
+
+.il-r-checks { display: flex; flex-direction: column; gap: var(--il-s2); min-width: 0; }
+.il-r-check {
+  display: flex; align-items: baseline; gap: var(--il-s3); flex-wrap: wrap; min-width: 0;
+  padding: var(--il-s2) var(--il-s3); background: var(--il-surface);
+  border: 1px solid var(--il-border-soft); border-left-width: 2px;
+  border-radius: var(--il-r-md);
+}
+.il-r-check, .il-r-check[data-tone-value] { color: var(--il-text); }
+.il-r-check[data-tone-value="ok"] { border-left-color: var(--il-ok); }
+.il-r-check[data-tone-value="bad"] { border-left-color: var(--il-error); }
+.il-r-check[data-tone-value="warn"] { border-left-color: var(--il-warn); }
+.il-r-check[data-tone-value="idle"] { border-left-color: var(--il-border); }
+.il-r-check-name { font-size: var(--il-fs-body); font-weight: var(--il-fw-bold); min-width: 150px; flex: 0 0 auto; }
+.il-r-check-detail {
+  font-size: var(--il-fs-body); color: var(--il-text2); line-height: var(--il-lh);
+  flex: 1 1 240px; min-width: 0; overflow-wrap: anywhere;
+}
+
+.il-r-actions { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: var(--il-s2); }
+.il-r-actions .il-duobtn:disabled { border-style: dashed; }
+.il-r-notice {
+  margin: 0; padding: var(--il-s2) var(--il-s3); border: 1px solid #4a3b12;
+  background: #15120A; color: var(--il-warn); border-radius: var(--il-r-md);
+  font-size: var(--il-fs-body); line-height: var(--il-lh); overflow-wrap: anywhere;
+}
+@media (max-width: 520px) {
+  .il-r-check-name { min-width: 0; }
+  .il-r-filehead { align-items: flex-start; }
+}
+
+</style>
+</head>
+<body>
+<div class="il-root il-r" id="il-report">
+
+  <header class="il-header">
+    <div class="il-idline">
+      <span class="il-mark" aria-hidden="true"><svg class="il-shield " viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path fill-rule="evenodd" d="M12 2.2 20 5.1v6.4c0 4.6-3.2 8.6-8 10.4-4.8-1.8-8-5.8-8-10.4V5.1L12 2.2ZM7.4 9.6h9.2v2.8H7.4ZM9.4 14h5.2v2.6H9.4Z"/></svg></span>
+      <span class="il-wordmark">Recovery Report</span>
+      <span class="il-flex"></span>
+      <span class="il-pill" data-tone-value="accent"
+        title="All 4 reviewed file(s) have valid, SHA-256-verified baseline evidence and the engine reports every recovery would succeed. Nothing has been recovered yet - review the diff and approve explicitly.">
+        <span class="il-dot" aria-hidden="true"></span>
+        <span>Ready to review</span>
+      </span>
+    </div>
+    <div class="il-subline">
+      <span class="il-subtitle il-truncate" title="INTERLOCK V4">INTERLOCK V4</span>
+      <span class="il-sep" aria-hidden="true">·</span>
+      <span class="il-subtitle il-truncate" title="Report generated at 2026-10-20 20:02">GENERATED 2026-10-20 20:02</span>
+      <span class="il-flex"></span>
+    </div>
+  </header>
+
+  <p class="il-note" role="status">All 4 reviewed file(s) have valid, SHA-256-verified baseline evidence and the engine reports every recovery would succeed. Nothing has been recovered yet - review the diff and approve explicitly.</p>
+  
+
+  <section class="il-section" aria-label="Summary">
+    <h2 class="il-help-h">Summary</h2>
+    <div class="il-r-summary">
+      <div class="il-r-stat"><span class="il-r-stat-l">Files reviewed</span><span class="il-r-stat-v">4</span></div>
+      <div class="il-r-stat"><span class="il-r-stat-l">Baseline evidence available</span><span class="il-r-stat-v">4</span></div>
+      <div class="il-r-stat"><span class="il-r-stat-l">Differ from baseline</span><span class="il-r-stat-v">3</span></div>
+      <div class="il-r-stat"><span class="il-r-stat-l">Recoverable now</span><span class="il-r-stat-v">4</span></div>
+      <div class="il-r-stat"><span class="il-r-stat-l">Need attention</span><span class="il-r-stat-v">0</span></div>
+    </div>
+  </section>
+  <section class="il-section" aria-label="Files">
+    <h2 class="il-help-h">Files <span class="il-r-count">4</span></h2>
+    <p class="il-hint">Evidence observed 2026-10-20 20:02.</p>
+    <div class="il-r-files"><article class="il-r-file" aria-label="src/app.ts">
+    <div class="il-r-filehead">
+      <div class="il-r-titles">
+        <span class="il-r-name">app.ts</span>
+        <span class="il-r-path il-mono il-truncate" title="src/app.ts">src/app.ts</span>
+      </div>
+      <span class="il-flex"></span>
+      <span class="il-chip"><span>Modified</span></span>
+      <span class="il-chip"><span>Baseline Available</span></span>
+      <span class="il-chip"><span>Available</span></span>
+      <button type="button" class="il-r-preview" data-action="preview"
+        data-resource="src/app.ts"
+        title="Open the side-by-side diff for src/app.ts (read-only)">
+        <svg class="il-i il-i-sm" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M4.5 5.5h6v13h-6Z"/><path d="M13.5 5.5h6v13h-6Z"/><path d="m7 9.6-1.6 1.6 1.6 1.6"/><path d="m10 12.8h4"/></svg><span>Preview Recovery</span>
+      </button>
+    </div>
+    
+    <details class="il-collapsible il-r-tech">
+      <summary>Technical details</summary>
+      <div class="il-r-techtext" id="il-tech-0">
+        <dl class="il-kv"><dt>Baseline SHA-256</dt><dd>b9e01f092f6b4f644ef900a2d8654b1464ce16fc7ca6f8f2f8fc6860fa28e150</dd><dt>Current SHA-256</dt><dd>f48d0f6f51b6d86dae333d09a4a303db8baf19d3ee977050920ec8637bfd124f</dd><dt>Baseline size</dt><dd>26 bytes</dd><dt>Baseline captured</dt><dd>2026-10-20 19:35</dd><dt>Evidence observed</dt><dd>2026-10-20 20:02</dd><dt>Operation</dt><dd>restore_content</dd><dt>Reversibility</dt><dd>reversible</dd><dt>Matches baseline</dt><dd>No - changes detected</dd><dt>File ACL comparison</dt><dd>Captured and compared by the engine.</dd><dt>Evidence file</dt><dd>app.ts.evidence.json</dd><dt>Permissions</dt><dd>Compared - no differences reported.</dd><dt>Ownership</dt><dd>Compared - no differences reported.</dd><dt>Schema / type</dt><dd>Compared - no differences reported.</dd></dl>
+        
+        <div>
+          <button type="button" class="il-r-preview" data-action="copy"
+            data-copy="il-tech-0" title="Copy this file's technical details">
+            <svg class="il-i il-i-sm" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M9 9h8.5v8.5H9Z"/><path d="M15.5 9V6.5A1.5 1.5 0 0 0 14 5H6.5A1.5 1.5 0 0 0 5 6.5V14a1.5 1.5 0 0 0 1.5 1.5H9"/></svg><span>Copy details</span>
+          </button>
+        </div>
+      </div>
+    </details>
+  </article>
+    <article class="il-r-file" aria-label="README.md">
+    <div class="il-r-filehead">
+      <div class="il-r-titles">
+        <span class="il-r-name">README.md</span>
+        <span class="il-r-path il-mono il-truncate" title="README.md">README.md</span>
+      </div>
+      <span class="il-flex"></span>
+      <span class="il-chip"><span>Unchanged</span></span>
+      <span class="il-chip"><span>Baseline Available</span></span>
+      <span class="il-chip"><span>Available</span></span>
+      <button type="button" class="il-r-preview" data-action="preview"
+        data-resource="README.md"
+        title="Open the side-by-side diff for README.md (read-only)">
+        <svg class="il-i il-i-sm" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M4.5 5.5h6v13h-6Z"/><path d="M13.5 5.5h6v13h-6Z"/><path d="m7 9.6-1.6 1.6 1.6 1.6"/><path d="m10 12.8h4"/></svg><span>Preview Recovery</span>
+      </button>
+    </div>
+    
+    <details class="il-collapsible il-r-tech">
+      <summary>Technical details</summary>
+      <div class="il-r-techtext" id="il-tech-1">
+        <dl class="il-kv"><dt>Baseline SHA-256</dt><dd>67546d64905018b6731be520d3b901b542933f651da93b41bb80b44fcc74a945</dd><dt>Current SHA-256</dt><dd>67546d64905018b6731be520d3b901b542933f651da93b41bb80b44fcc74a945</dd><dt>Baseline size</dt><dd>15 bytes</dd><dt>Baseline captured</dt><dd>2026-10-20 19:35</dd><dt>Evidence observed</dt><dd>2026-10-20 20:02</dd><dt>Operation</dt><dd>restore_content</dd><dt>Reversibility</dt><dd>reversible</dd><dt>Matches baseline</dt><dd>No - changes detected</dd><dt>File ACL comparison</dt><dd>Captured and compared by the engine.</dd><dt>Evidence file</dt><dd>README.md.evidence.json</dd><dt>Permissions</dt><dd>Compared - no differences reported.</dd><dt>Ownership</dt><dd>Compared - no differences reported.</dd><dt>Schema / type</dt><dd>Compared - no differences reported.</dd></dl>
+        
+        <div>
+          <button type="button" class="il-r-preview" data-action="copy"
+            data-copy="il-tech-1" title="Copy this file's technical details">
+            <svg class="il-i il-i-sm" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M9 9h8.5v8.5H9Z"/><path d="M15.5 9V6.5A1.5 1.5 0 0 0 14 5H6.5A1.5 1.5 0 0 0 5 6.5V14a1.5 1.5 0 0 0 1.5 1.5H9"/></svg><span>Copy details</span>
+          </button>
+        </div>
+      </div>
+    </details>
+  </article>
+    <article class="il-r-file" aria-label="docs/operations/SAFETY_AND_LIMITATIONS.md">
+    <div class="il-r-filehead">
+      <div class="il-r-titles">
+        <span class="il-r-name">SAFETY_AND_LIMITATIONS.md</span>
+        <span class="il-r-path il-mono il-truncate" title="docs/operations/SAFETY_AND_LIMITATIONS.md">docs/operations/SAFETY_AND_LIMITATIONS.md</span>
+      </div>
+      <span class="il-flex"></span>
+      <span class="il-chip"><span>Deleted</span></span>
+      <span class="il-chip"><span>Baseline Available</span></span>
+      <span class="il-chip"><span>Available</span></span>
+      <button type="button" class="il-r-preview" data-action="preview"
+        data-resource="docs/operations/SAFETY_AND_LIMITATIONS.md"
+        title="Open the side-by-side diff for docs/operations/SAFETY_AND_LIMITATIONS.md (read-only)">
+        <svg class="il-i il-i-sm" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M4.5 5.5h6v13h-6Z"/><path d="M13.5 5.5h6v13h-6Z"/><path d="m7 9.6-1.6 1.6 1.6 1.6"/><path d="m10 12.8h4"/></svg><span>Preview Recovery</span>
+      </button>
+    </div>
+    
+    <details class="il-collapsible il-r-tech">
+      <summary>Technical details</summary>
+      <div class="il-r-techtext" id="il-tech-2">
+        <dl class="il-kv"><dt>Baseline SHA-256</dt><dd>d2739f7efe6af0dbabaf0156cc0af1ba126319450b638dc8cfe2c1691af35efe</dd><dt>Current SHA-256</dt><dd><span class="il-r-unknown" title="This value could not be derived from the validated evidence, so it is reported as Unknown.">Unknown</span></dd><dt>Baseline size</dt><dd>37 bytes</dd><dt>Baseline captured</dt><dd>2026-10-20 19:35</dd><dt>Evidence observed</dt><dd>2026-10-20 20:02</dd><dt>Operation</dt><dd>restore_content</dd><dt>Reversibility</dt><dd>reversible</dd><dt>Matches baseline</dt><dd>No - changes detected</dd><dt>File ACL comparison</dt><dd>Captured and compared by the engine.</dd><dt>Evidence file</dt><dd>SAFETY_AND_LIMITATIONS.md.evidence.json</dd><dt>Permissions</dt><dd>Compared - no differences reported.</dd><dt>Ownership</dt><dd>Compared - no differences reported.</dd><dt>Schema / type</dt><dd>Compared - no differences reported.</dd></dl>
+        
+        <div>
+          <button type="button" class="il-r-preview" data-action="copy"
+            data-copy="il-tech-2" title="Copy this file's technical details">
+            <svg class="il-i il-i-sm" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M9 9h8.5v8.5H9Z"/><path d="M15.5 9V6.5A1.5 1.5 0 0 0 14 5H6.5A1.5 1.5 0 0 0 5 6.5V14a1.5 1.5 0 0 0 1.5 1.5H9"/></svg><span>Copy details</span>
+          </button>
+        </div>
+      </div>
+    </details>
+  </article>
+    <article class="il-r-file" aria-label="assets/interlock-icon.png">
+    <div class="il-r-filehead">
+      <div class="il-r-titles">
+        <span class="il-r-name">interlock-icon.png</span>
+        <span class="il-r-path il-mono il-truncate" title="assets/interlock-icon.png">assets/interlock-icon.png</span>
+      </div>
+      <span class="il-flex"></span>
+      <span class="il-chip"><span>Modified</span></span>
+      <span class="il-chip"><span>Baseline Available</span></span>
+      <span class="il-chip"><span>Available</span></span>
+      <button type="button" class="il-r-preview" data-action="preview"
+        data-resource="assets/interlock-icon.png" disabled
+        title="This is a binary file, so a text diff would be misleading. Compare the hashes and sizes instead - recovery writes these exact bytes.">
+        <svg class="il-i il-i-sm" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M4.5 5.5h6v13h-6Z"/><path d="M13.5 5.5h6v13h-6Z"/><path d="m7 9.6-1.6 1.6 1.6 1.6"/><path d="m10 12.8h4"/></svg><span>Preview Recovery</span>
+      </button>
+    </div>
+    <p class="il-r-note">This is a binary file, so a text diff would be misleading. Compare the hashes and sizes instead - recovery writes these exact bytes.</p>
+    <details class="il-collapsible il-r-tech">
+      <summary>Technical details</summary>
+      <div class="il-r-techtext" id="il-tech-3">
+        <dl class="il-kv"><dt>Baseline SHA-256</dt><dd>7fa0419cc827a26146ff2c2c9b1cce8bdbfe458e55980fde11303aad3aa9cea5</dd><dt>Current SHA-256</dt><dd>ab32488f5d5d063e5c361ffb7c810dd49831e0dc03b915b012e8dfc92f1e7f87</dd><dt>Baseline size</dt><dd>21 bytes</dd><dt>Baseline captured</dt><dd>2026-10-20 19:35</dd><dt>Evidence observed</dt><dd>2026-10-20 20:02</dd><dt>Operation</dt><dd>restore_content</dd><dt>Reversibility</dt><dd>reversible</dd><dt>Matches baseline</dt><dd>No - changes detected</dd><dt>File ACL comparison</dt><dd>Captured and compared by the engine.</dd><dt>Evidence file</dt><dd>interlock-icon.png.evidence.json</dd><dt>Permissions</dt><dd>Compared - no differences reported.</dd><dt>Ownership</dt><dd>Compared - no differences reported.</dd><dt>Schema / type</dt><dd>Compared - no differences reported.</dd></dl>
+        
+        <div>
+          <button type="button" class="il-r-preview" data-action="copy"
+            data-copy="il-tech-3" title="Copy this file's technical details">
+            <svg class="il-i il-i-sm" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M9 9h8.5v8.5H9Z"/><path d="M15.5 9V6.5A1.5 1.5 0 0 0 14 5H6.5A1.5 1.5 0 0 0 5 6.5V14a1.5 1.5 0 0 0 1.5 1.5H9"/></svg><span>Copy details</span>
+          </button>
+        </div>
+      </div>
+    </details>
+  </article></div>
+  </section>
+  <section class="il-section" aria-label="Safety checks">
+    <h2 class="il-help-h">Safety checks</h2>
+    <p class="il-hint">Only checks the engine actually ran are listed. A check that could not
+      run - for example a missing optional dependency - is always shown as
+      "Not checked", never as a pass.</p>
+    <div class="il-r-checks">
+      <div class="il-r-check" data-tone-value="ok">
+    <span class="il-r-check-name">Workspace confinement</span>
+    <span class="il-pill" data-tone-value="ok">
+      <span class="il-dot" aria-hidden="true"></span><span>Passed</span>
+    </span>
+    <span class="il-r-check-detail">All 4 target path(s) were validated inside the authorized workspace before planning (the engine refuses anything else).</span>
+  </div>
+    <div class="il-r-check" data-tone-value="ok">
+    <span class="il-r-check-name">Baseline evidence</span>
+    <span class="il-pill" data-tone-value="ok">
+      <span class="il-dot" aria-hidden="true"></span><span>Passed</span>
+    </span>
+    <span class="il-r-check-detail">Stored baseline contents matched their recorded SHA-256 for all 4 file(s).</span>
+  </div>
+    <div class="il-r-check" data-tone-value="ok">
+    <span class="il-r-check-name">Conflict check</span>
+    <span class="il-pill" data-tone-value="ok">
+      <span class="il-dot" aria-hidden="true"></span><span>Passed</span>
+    </span>
+    <span class="il-r-check-detail">The engine checked conflict for all 4 file(s): no_conflict.</span>
+  </div>
+    <div class="il-r-check" data-tone-value="ok">
+    <span class="il-r-check-name">Drift check</span>
+    <span class="il-pill" data-tone-value="ok">
+      <span class="il-dot" aria-hidden="true"></span><span>Passed</span>
+    </span>
+    <span class="il-r-check-detail">The engine checked drift for all 4 file(s): no_drift.</span>
+  </div>
+    <div class="il-r-check" data-tone-value="ok">
+    <span class="il-r-check-name">Recovery simulation</span>
+    <span class="il-pill" data-tone-value="ok">
+      <span class="il-dot" aria-hidden="true"></span><span>Passed</span>
+    </span>
+    <span class="il-r-check-detail">The engine simulated 4 planned recoveries successfully.</span>
+  </div>
+    <div class="il-r-check" data-tone-value="ok">
+    <span class="il-r-check-name">File ACL comparison</span>
+    <span class="il-pill" data-tone-value="ok">
+      <span class="il-dot" aria-hidden="true"></span><span>Passed</span>
+    </span>
+    <span class="il-r-check-detail">The engine captured and compared Windows ACLs for every file that exposes one.</span>
+  </div>
+    </div>
+  </section>
+  <section class="il-section" aria-label="Report actions">
+    <div class="il-r-actions">
+      <button type="button" class="il-duobtn" data-action="previewAll"
+        
+        title="Preview the eligible recovery as a side-by-side diff">
+        <svg class="il-i il-btn-ico" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M4.5 5.5h6v13h-6Z"/><path d="M13.5 5.5h6v13h-6Z"/><path d="m7 9.6-1.6 1.6 1.6 1.6"/><path d="m10 12.8h4"/></svg>
+        <span class="il-duotext">
+          <span class="il-duolabel">Preview Recovery</span>
+          <span class="il-duodesc">Opens the side-by-side diff for 3 eligible file(s). Read-only - nothing is applied.</span>
+        </span>
+      </button>
+      <button type="button" class="il-duobtn" data-action="refresh"
+        title="Recalculate this report from fresh evidence">
+        <svg class="il-i il-btn-ico" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M19.6 12a7.6 7.6 0 0 1-13 5.3M4.4 12a7.6 7.6 0 0 1 13-5.3"/><path d="M17.8 3.4v3.6h-3.6"/><path d="M6.2 20.6V17h3.6"/></svg>
+        <span class="il-duotext">
+          <span class="il-duolabel">Refresh Report</span>
+          <span class="il-duodesc">Re-observe the files and rebuild every count and check.</span>
+        </span>
+      </button>
+      <button type="button" class="il-duobtn" data-action="close"
+        title="Close this report">
+        <svg class="il-i il-btn-ico" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M6.4 6.4l11.2 11.2M17.6 6.4 6.4 17.6"/></svg>
+        <span class="il-duotext">
+          <span class="il-duolabel">Close</span>
+          <span class="il-duodesc">Close the report. Nothing is applied or recovered.</span>
+        </span>
+      </button>
+    </div>
+  </section>
+
+  <div class="il-footer">Nothing has been recovered. Recovery still requires explicit approval
+    and final safety revalidation.</div>
+</div>
+<script nonce="ILVISUALNONCE">
+(function () {
+  var vscodeApi = typeof acquireVsCodeApi === 'function'
+    ? acquireVsCodeApi()
+    : { postMessage: function () {} };
+  function send(message) { vscodeApi.postMessage(message); }
+  document.addEventListener('click', function (event) {
+    var target = event.target;
+    var el = target && typeof target.closest === 'function'
+      ? target.closest('[data-action]')
+      : null;
+    if (!el || el.disabled) { return; }
+    var action = el.getAttribute('data-action');
+    if (action === 'refresh') { send({ type: 'refresh' }); return; }
+    if (action === 'close') { send({ type: 'close' }); return; }
+    if (action === 'previewAll') { send({ type: 'previewAll' }); return; }
+    if (action === 'preview') {
+      send({ type: 'preview', resource: el.getAttribute('data-resource') || '' });
+      return;
+    }
+    if (action === 'copy') {
+      var node = document.getElementById(el.getAttribute('data-copy') || '');
+      if (!node) { return; }
+      try {
+        var area = document.createElement('textarea');
+        area.value = node.innerText;
+        area.setAttribute('readonly', 'readonly');
+        area.style.position = 'fixed';
+        area.style.opacity = '0';
+        document.body.appendChild(area);
+        area.select();
+        document.execCommand('copy');
+        document.body.removeChild(area);
+      } catch (error) { /* copying is best-effort and never blocks review */ }
+    }
+  });
+  send({ type: 'ready' });
+})();
+</script>
+</body>
+</html>

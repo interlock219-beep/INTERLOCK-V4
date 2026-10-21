@@ -44,7 +44,12 @@ real. This document is a new file created by the final readiness mission.
 
 ## 4. Files changed by this mission and the commit
 
-Commit (local only; no push/tag/publish): `COMMIT_HASH_PLACEHOLDER`
+Commit (local only; no push/tag/publish): **`624171eeebdf5931351234594653352a12fea7f3`**
+(3 files, 230 insertions, 0 deletions; post-commit porcelain 212 = 68 M +
+60 D + 84 ??; stash 1; web deletions 60 — all pre-existing work intact.
+This hash was inserted into the file after the commit, so the working copy
+differs from the committed copy by this line only — a recorded, intentional
+amendment.)
 
 | Path | Pre-existing state | This mission's change | Why | Tests/evidence | Committed? |
 |---|---|---|---|---|---|

@@ -82,7 +82,7 @@ class IndependentVerificationService:
     def build_verification_result(self, result: VerificationCheck) -> bool:
         return result.passed
 
-    def verify_evidence(self, evidence: RecoveryEvidence) -> EvidenceAssessment:
+    async def verify_evidence(self, evidence: RecoveryEvidence) -> EvidenceAssessment:
         integrity = self._evidence_verifier.verify_evidence_integrity(evidence)
         tamper_indicators, missing_fields, conflict_details, inconclusive_reasons = (
             [],
@@ -113,49 +113,169 @@ class IndependentVerificationService:
             inconclusive_reasons=inconclusive_reasons,
         )
 
-    def independent_verify(
+    async def independent_verify(
         self,
         tenant_id: str,
         plan_id: str,
         incident_id: str,
         verifier: IndependentVerifier,
         verification_report: RecoveryReport,
+        observed_states: dict[str, str] | None = None,
+        expected_action_ids: list[str] | None = None,
     ) -> IndependentVerificationResult:
-        rechecked_steps, all_checks_passed, overall_outcome = [], True, VerificationOutcome.VERIFIED
-        for action_id, result in verification_report.resource_results.items():
-            status = result.get("status", VerificationStatus.UNKNOWN_EXTERNAL_OUTCOME.value)
+        """Re-check a recovery report, failing closed on every adversarial gap.
+
+        V6 doc-WP-4: when ``observed_states`` is supplied the observation
+        decides the verdict (divergence from the report's claim is recorded
+        and never verifies); an injected evidence repository is consulted for
+        staleness (evidence belonging to another incident fails the check,
+        lookup failures fail closed instead of crashing the run); resources
+        listed in ``expected_action_ids`` but absent from the report are
+        omissions; malformed entries fail their entry instead of aborting the
+        verification; an empty report verifies nothing (``INCONCLUSIVE``,
+        never ``VERIFIED``).
+        """
+        resource_results = verification_report.resource_results or {}
+        if not resource_results:
+            logger.warning(
+                "independent_verify: empty report (plan=%s incident=%s)",
+                plan_id,
+                incident_id,
+            )
+            return IndependentVerificationResult(
+                verification_id=f"verif-{plan_id}-{secrets.token_hex(8)}",
+                plan_id=plan_id,
+                tenant_id=tenant_id,
+                verifier=verifier,
+                action_id="",
+                outcome=VerificationOutcome.INCONCLUSIVE,
+                checks=[],
+                execution_verified=False,
+                verification_timestamp=datetime.now(UTC),
+            )
+
+        rechecked_steps: list[VerificationCheck] = []
+        all_checks_passed = True
+        overall_outcome = VerificationOutcome.VERIFIED
+
+        def _record(
+            action_id: str,
+            actual: str,
+            passed: bool,
+            outcome: VerificationOutcome,
+            details: dict[str, Any],
+        ) -> None:
+            nonlocal all_checks_passed, overall_outcome
+            rechecked_steps.append(
+                self.create_verification_check(
+                    check_id=f"check-{plan_id}-{action_id}",
+                    check_type=VerificationCheckType.INTEGRITY,
+                    description=f"Independent check for action {action_id}",
+                    expected="executed_and_verified",
+                    actual=actual,
+                    passed=passed,
+                    evidence_references=[f"evidence-{action_id}"],
+                    details=details,
+                )
+            )
+            if not passed or outcome != VerificationOutcome.VERIFIED:
+                all_checks_passed = False
+                if outcome != VerificationOutcome.VERIFIED:
+                    overall_outcome = outcome
+
+        for action_id, result in resource_results.items():
+            claimed: str | None = None
+            verification: Any = None
+            if isinstance(result, dict):
+                raw_status = result.get(
+                    "status", VerificationStatus.UNKNOWN_EXTERNAL_OUTCOME.value
+                )
+                claimed = raw_status if isinstance(raw_status, str) else None
+                verification = result.get("verification")
+            observed = (observed_states or {}).get(action_id)
+            details: dict[str, Any] = {
+                "original_status": claimed,
+                "original_verification": verification,
+                "independent_check": True,
+            }
+            if observed is not None:
+                details["observed_status"] = observed
+
+            if claimed is None and observed is None:
+                # Malformed entry: fail this entry, do not crash the run.
+                details["malformed"] = True
+                _record(
+                    action_id,
+                    "malformed_result",
+                    False,
+                    VerificationOutcome.INCONCLUSIVE,
+                    details,
+                )
+                continue
+
+            status: str = observed if observed is not None else (claimed or "")
             if status == VerificationStatus.EXECUTED_AND_VERIFIED.value:
                 passed = True
                 check_outcome = VerificationOutcome.VERIFIED
             elif status == VerificationStatus.EXECUTED_NOT_VERIFIED.value:
                 passed = False
                 check_outcome = VerificationOutcome.UNVERIFIED
-                all_checks_passed = False
             elif status == VerificationStatus.EXECUTION_FAILED.value:
                 passed = False
                 check_outcome = VerificationOutcome.VERIFICATION_FAILED
-                all_checks_passed = False
             else:
                 passed = False
                 check_outcome = VerificationOutcome.MANUAL_CHECK_REQUIRED
-                all_checks_passed = False
-            if check_outcome != VerificationOutcome.VERIFIED:
-                overall_outcome = check_outcome
-            check = self.create_verification_check(
-                check_id=f"check-{plan_id}-{action_id}",
-                check_type=VerificationCheckType.INTEGRITY,
-                description=f"Independent check for action {action_id}",
-                expected="executed_and_verified",
-                actual=status,
-                passed=passed,
-                evidence_references=[f"evidence-{action_id}"],
-                details={
-                    "original_status": status,
-                    "original_verification": result.get("verification"),
-                    "independent_check": True,
-                },
-            )
-            rechecked_steps.append(check)
+
+            if observed is not None and observed != claimed:
+                # The observation decides, and the divergence itself is a
+                # failed trust check: the report's claim cannot be believed.
+                passed = False
+                check_outcome = VerificationOutcome.VERIFICATION_FAILED
+                details["claim_diverged"] = True
+
+            if self._evidence_repo is not None:
+                try:
+                    evidence = await self._evidence_repo.get_by_action_id(
+                        tenant_id, action_id
+                    )
+                except Exception as exc:
+                    details["evidence_lookup_failed"] = True
+                    passed = False
+                    check_outcome = VerificationOutcome.INCONCLUSIVE
+                    logger.warning(
+                        "independent_verify: evidence lookup failed "
+                        "(action=%s error=%s)",
+                        action_id,
+                        type(exc).__name__,
+                    )
+                else:
+                    if (
+                        evidence is not None
+                        and evidence.incident_id != incident_id
+                    ):
+                        details["stale_evidence_incident"] = evidence.incident_id
+                        passed = False
+                        check_outcome = VerificationOutcome.EVIDENCE_CONFLICTING
+
+            _record(action_id, status, passed, check_outcome, details)
+
+        if expected_action_ids:
+            for action_id in expected_action_ids:
+                if action_id not in resource_results:
+                    _record(
+                        action_id,
+                        "omitted_from_report",
+                        False,
+                        VerificationOutcome.INCONCLUSIVE,
+                        {
+                            "original_status": None,
+                            "original_verification": None,
+                            "independent_check": True,
+                            "omitted": True,
+                        },
+                    )
+
         return IndependentVerificationResult(
             verification_id=f"verif-{plan_id}-{secrets.token_hex(8)}",
             plan_id=plan_id,
@@ -403,8 +523,20 @@ class IndependentVerificationService:
                     "reason": "no evidence and no after_state",
                 },
             )
+        # Fail closed (WP-5, V6): without sealed evidence there is nothing to
+        # verify — hashing the current after_state proves no tamper-evidence.
+        # The hash is still surfaced for forensics, but the layer must never
+        # claim VERIFIED when no evidence existed to check.
         state_hash = self._evidence_verifier.compute_state_hash(after_state)
-        return True, VerificationOutcome.VERIFIED, {"state_hash": state_hash, "integrity_ok": True}
+        return (
+            False,
+            VerificationOutcome.INCONCLUSIVE,
+            {
+                "reason": "no evidence provided: integrity unverifiable",
+                "state_hash": state_hash,
+                "integrity_ok": False,
+            },
+        )
 
     def _check_dependency(
         self,

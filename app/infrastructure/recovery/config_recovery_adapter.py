@@ -13,7 +13,6 @@ NEVER restores stale configuration over newer legitimate configuration.
 from __future__ import annotations
 
 import hashlib
-import json
 from pathlib import Path
 from typing import Any
 
@@ -42,6 +41,7 @@ from app.domain.entities.surgical_recovery_types import (
 from app.domain.entities.surgical_recovery_types import (
     Reversibility as RevEnum,
 )
+from app.domain.services.evidence_hash import seal_evidence
 from app.domain.services.recovery_adapter import RecoveryAdapter
 
 
@@ -109,17 +109,19 @@ class ConfigRecoveryAdapter(RecoveryAdapter):
         before_snapshot: dict[str, Any] | None = None,
     ) -> RecoveryEvidence:
         self._verify_tenant_isolation(action)
-        payload_str = json.dumps(action.tool_arguments, sort_keys=True, default=str)
-        evidence_hash = hashlib.sha256(f"{action.action_id}:{payload_str}".encode()).hexdigest()
 
         config_dir = self._get_config_dir(execution_context)
-        before_snapshot = None
+        # Honour a pre-action before-state supplied by the evidence pipeline
+        # (parameter or action snapshot), matching the filesystem adapter.
+        # Without one, both snapshots reflect the live file at capture time.
+        before_snapshot = before_snapshot or action.before_state_snapshot
         after_snapshot = None
         config_file = self._extract_config_file(action.resource)
 
         if config_dir and config_dir.exists() and config_file:
             config_path = config_dir / config_file
-            before_snapshot = self._capture_config_snapshot(config_path)
+            if before_snapshot is None:
+                before_snapshot = self._capture_config_snapshot(config_path)
             after_snapshot = self._capture_config_snapshot(config_path)
 
         compensation_payload = {
@@ -138,7 +140,7 @@ class ConfigRecoveryAdapter(RecoveryAdapter):
             after_snapshot.get("hash") if after_snapshot else action.after_state_ref
         )
 
-        return RecoveryEvidence(
+        return seal_evidence(RecoveryEvidence(
             evidence_id=f"ev-{action.action_id}",
             action_id=action.action_id,
             tenant_id=action.tenant_id,
@@ -160,13 +162,12 @@ class ConfigRecoveryAdapter(RecoveryAdapter):
             dependency_edges=[],
             reversibility_classification=Reversibility.normalize(action.reversibility),
             state_version=action.policy_version,
-            evidence_hash=evidence_hash,
             adapter_capability=AdapterCapability.PRODUCTION_VALIDATED,
             verification_requirements=[
                 "config_content_matches_expected",
                 "no_unintended_changes",
             ],
-        )
+        ))
 
     async def classify_reversibility(
         self,
@@ -497,7 +498,14 @@ class ConfigRecoveryAdapter(RecoveryAdapter):
                 details={"reason": "No config file in compensation payload"},
             )
 
-        config_path = config_dir / config_file
+        try:
+            config_path = self._safe_config_path(config_dir, config_file)
+        except ValueError as exc:
+            return VerificationResult(
+                action_id=compensation.action_id,
+                verified=False,
+                details={"reason": str(exc)},
+            )
         operation = payload.get("operation", "unknown")
 
         try:
@@ -726,6 +734,31 @@ class ConfigRecoveryAdapter(RecoveryAdapter):
 
         return "restore_config"
 
+    @staticmethod
+    def _safe_config_path(config_dir: Path, config_file: str) -> Path:
+        """Resolve a payload config file inside the config directory (fail closed).
+
+        A tampered compensation payload must not be able to write or delete
+        files outside the recorded config directory: ``..`` segments, absolute
+        and drive-relative paths, NUL bytes, and symlink escapes are refused.
+        """
+        if not config_file or "\x00" in config_file:
+            raise ValueError(
+                f"Invalid config file in compensation payload: {config_file!r}"
+            )
+        candidate = Path(config_file)
+        if candidate.is_absolute() or candidate.drive or ".." in candidate.parts:
+            raise ValueError(
+                f"Path traversal detected in config payload: {config_file!r}"
+            )
+        base = config_dir.resolve()
+        resolved = (config_dir / candidate).resolve()
+        if resolved == base or base not in resolved.parents:
+            raise ValueError(
+                f"Config path escapes the config directory: {config_file!r}"
+            )
+        return config_dir / candidate
+
     def _execute_restore_config(self, payload: dict[str, Any], config_dir: Path) -> dict[str, Any]:
         """Execute config restoration with atomic write."""
         config_file = payload.get("config_file")
@@ -745,7 +778,14 @@ class ConfigRecoveryAdapter(RecoveryAdapter):
                 "error": "No before content available",
             }
 
-        config_path = config_dir / config_file
+        try:
+            config_path = self._safe_config_path(config_dir, config_file)
+        except ValueError as exc:
+            return {
+                "success": False,
+                "execution_state": ExecutionState.FAILED,
+                "error": str(exc),
+            }
 
         if not config_path.exists():
             return {
@@ -795,7 +835,14 @@ class ConfigRecoveryAdapter(RecoveryAdapter):
                 "error": "No config file in payload",
             }
 
-        config_path = config_dir / config_file
+        try:
+            config_path = self._safe_config_path(config_dir, config_file)
+        except ValueError as exc:
+            return {
+                "success": False,
+                "execution_state": ExecutionState.FAILED,
+                "error": str(exc),
+            }
 
         if not config_path.exists():
             return {
@@ -857,7 +904,14 @@ class ConfigRecoveryAdapter(RecoveryAdapter):
                 "error": "No before content available",
             }
 
-        config_path = config_dir / config_file
+        try:
+            config_path = self._safe_config_path(config_dir, config_file)
+        except ValueError as exc:
+            return {
+                "success": False,
+                "execution_state": ExecutionState.FAILED,
+                "error": str(exc),
+            }
 
         if config_path.exists():
             return {

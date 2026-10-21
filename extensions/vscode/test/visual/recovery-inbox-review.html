@@ -1,0 +1,1334 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src 'none'; font-src 'none'; style-src 'nonce-ILVISUALNONCE'; script-src 'nonce-ILVISUALNONCE';">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Interlock Recovery Inbox</title>
+<style nonce="ILVISUALNONCE">
+
+:root {
+  /* palette */
+  --il-bg: #0A0B0B;
+  --il-surface: #111414;
+  --il-surface-2: #0F1211;
+  --il-hover: #1B1E1D;
+  --il-accent: #FFE500;
+  --il-accent-hover: #FFF04A;
+  --il-text: #F5F5F5;
+  --il-text2: #B7BCBC;
+  --il-border: #292D2C;
+  --il-border-soft: #1D2120;
+  --il-ok: #53D769;
+  --il-warn: #FFC857;
+  --il-error: #FF6464;
+
+  /* one corner-radius scale for the whole dashboard */
+  --il-r-xs: 3px;
+  --il-r-sm: 4px;
+  --il-r-md: 6px;
+  --il-r-lg: 8px;
+  --il-r-full: 999px;
+
+  /* one spacing scale */
+  --il-s1: 3px;
+  --il-s2: 5px;
+  --il-s3: 8px;
+  --il-s4: 11px;
+
+  /* deliberate type system: the editor's mono face is the ONE voice of the
+     sidebar - brand, headings, labels and prose all come from it, so the
+     panel reads as a single, confident product instead of mixed faces */
+  --il-font-display: var(--vscode-editor-font-family, "Cascadia Code", "SFMono-Regular",
+    Consolas, "Liberation Mono", monospace);
+  --il-font-body: var(--vscode-font-family, -apple-system, BlinkMacSystemFont,
+    "Segoe UI", sans-serif);
+  /* primary face: the display/mono stack first, the theme face as fallback */
+  --il-font: var(--il-font-display), var(--il-font-body);
+
+  /* one size scale - every rule below reads its size from here (floor 12px) */
+  --il-fs-brand: 17px;    /* the product title */
+  --il-fs-display: 16px;  /* the protection headline */
+  --il-fs-h1: 15px;       /* section headings, the primary action label */
+  --il-fs-h2: 14px;       /* action card titles, advanced section headings */
+  --il-fs-body: 13.5px;   /* descriptions, helper text, list items, values */
+  --il-fs-meta: 12.5px;   /* status pills, chips, approval notices */
+  --il-fs-sm: 12px;       /* small metadata - the hard floor, never smaller */
+
+  /* one weight scale: 500 ordinary, 600 important, 700/800 emphasis */
+  --il-fw-med: 500;
+  --il-fw-semi: 600;
+  --il-fw-bold: 700;
+  --il-fw-black: 800;
+
+  /* one line-height + tracking scale */
+  --il-lh-tight: 1.3;   /* headings and button labels */
+  --il-lh-snug: 1.4;    /* secondary lines inside a control */
+  --il-lh: 1.5;         /* prose */
+  --il-ls: .01em;       /* default label tracking */
+  --il-ls-wide: .08em;  /* uppercase section headings */
+  --il-ls-brand: .14em; /* brand wordmark + subtitle */
+
+  /* the single muted elevation reused by every inset surface */
+  --il-inset: var(--il-surface-2);
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html, body {
+  margin: 0; padding: 0;
+  background: var(--il-bg);
+  color: var(--il-text);
+  font-family: var(--il-font);
+  font-size: var(--il-fs-body);
+  font-weight: var(--il-fw-med);
+  line-height: var(--il-lh);
+}
+body { padding: 0 var(--il-s3) var(--il-s3); }
+.il-root { display: flex; flex-direction: column; gap: var(--il-s3); min-width: 0; }
+.il-flex { flex: 1 1 auto; min-width: 0; }
+.il-mono {
+  font-family: var(--il-font-display);
+  font-variant-numeric: tabular-nums;
+}
+.il-i { width: 16px; height: 16px; flex: 0 0 auto; fill: none;
+  stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+.il-i-sm { width: 13px; height: 13px; }
+/* every icon that labels a control shares one optical column */
+.il-btn-ico { width: 15px; height: 15px; }
+button { font: inherit; color: inherit; background: none; border: none;
+  margin: 0; padding: 0; cursor: pointer; text-align: left; }
+button:disabled { cursor: not-allowed; }
+:focus-visible { outline: 1px solid var(--vscode-focusBorder, var(--il-accent));
+  outline-offset: 1px; border-radius: var(--il-r-sm); }
+.il-truncate { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+
+/* ---- header: brand, status pill, subtitle - compact but complete ---- */
+.il-header {
+  position: sticky; top: 0; z-index: 5;
+  display: flex; flex-direction: column; gap: var(--il-s1);
+  margin: 0 calc(var(--il-s2) * -1);
+  padding: var(--il-s2);
+  background: var(--il-bg);
+  border-bottom: 1px solid var(--il-border-soft);
+}
+.il-idline {
+  display: flex; align-items: center; gap: var(--il-s2);
+  min-width: 0; flex-wrap: wrap;
+}
+.il-subline {
+  display: flex; align-items: center; gap: var(--il-s2);
+  min-width: 0;
+}
+.il-subtitle {
+  font-family: var(--il-font);
+  font-size: var(--il-fs-sm); font-weight: var(--il-fw-bold);
+  letter-spacing: var(--il-ls-brand);
+  text-transform: uppercase; color: var(--il-text2);
+  min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+/* the live protection indicator: one glance, same tone as the card */
+.il-pill {
+  display: inline-flex; align-items: center; gap: var(--il-s2);
+  padding: 2px var(--il-s2); border-radius: var(--il-r-full);
+  border: 1px solid var(--il-border); background: var(--il-surface);
+  font-size: var(--il-fs-meta); font-weight: var(--il-fw-bold);
+  letter-spacing: var(--il-ls);
+  min-width: 0; max-width: 100%;
+}
+.il-pill > span:last-child {
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0;
+}
+/* the brand shield: same artwork as the Activity Bar icon */
+.il-mark { display: inline-flex; flex: 0 0 auto; }
+.il-mark > svg { width: 20px; height: 20px; display: block; fill: var(--il-accent); }
+.il-wordmark {
+  font-family: var(--il-font);
+  font-weight: var(--il-fw-black); letter-spacing: var(--il-ls-brand);
+  font-size: var(--il-fs-brand);
+  text-transform: uppercase; color: var(--il-text);
+}
+.il-badge {
+  font-family: var(--il-font);
+  font-size: var(--il-fs-sm); font-weight: var(--il-fw-black);
+  letter-spacing: var(--il-ls-wide);
+  color: #0A0B0B; background: var(--il-accent);
+  border-radius: var(--il-r-xs); padding: 0 var(--il-s1); line-height: var(--il-lh-tight);
+}
+.il-iconbtn {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 26px; height: 26px; border-radius: var(--il-r-sm); color: var(--il-text2);
+  flex: 0 0 auto;
+}
+.il-iconbtn:hover { background: var(--hover, var(--il-hover)); color: var(--il-text); }
+
+/* ---- status strip (loading / last action / error) ---- */
+.il-strip {
+  display: flex; align-items: center; gap: var(--il-s2);
+  padding: var(--il-s2) var(--il-s3); border-radius: var(--il-r-md);
+  background: var(--il-surface); border: 1px solid var(--il-border-soft);
+  color: var(--il-text2); font-size: var(--il-fs-body);
+  font-weight: var(--il-fw-med);
+}
+.il-strip-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.il-spin {
+  width: 9px; height: 9px; border-radius: 50%; flex: 0 0 auto;
+  border: 1.5px solid currentColor; border-top-color: transparent;
+  animation: il-rot .8s linear infinite; display: none;
+}
+@keyframes il-rot { to { transform: rotate(360deg); } }
+.il-root.is-busy .il-spin { display: inline-block; }
+.il-root.is-busy [data-action] { opacity: .55; pointer-events: none; }
+.il-root.is-busy #il-strip { color: var(--il-accent); border-color: #3a3a1e; }
+.il-strip[data-tone-value="bad"] { color: var(--il-error); border-color: #43262a; }
+.il-strip[data-tone-value="ok"] { color: var(--il-ok); }
+
+/* ---- the protection card: the one thing a beginner must understand ---- */
+.il-card {
+  background: var(--il-surface);
+  border: 1px solid var(--il-border-soft);
+  border-radius: var(--il-r-lg);
+  padding: var(--il-s3);
+  display: flex; flex-direction: column; gap: var(--il-s2);
+  min-width: 0;
+}
+.il-card-title {
+  margin: 0; display: flex; align-items: center; gap: var(--il-s2);
+  font-family: var(--il-font);
+  font-size: var(--il-fs-h2); font-weight: var(--il-fw-bold);
+  letter-spacing: var(--il-ls-wide); line-height: var(--il-lh-tight);
+  color: var(--il-text2); text-transform: uppercase;
+}
+.il-prot-ico-host { display: inline-flex; }
+.il-state { display: flex; align-items: baseline; gap: var(--il-s2); min-width: 0; }
+.il-state-head {
+  font-family: var(--il-font);
+  font-size: var(--il-fs-display); font-weight: var(--il-fw-black);
+  letter-spacing: var(--il-ls); line-height: var(--il-lh-tight);
+  min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.il-state-detail {
+  margin: 0; font-size: var(--il-fs-body); line-height: var(--il-lh);
+  color: var(--il-text2);
+  overflow-wrap: anywhere;
+}
+
+/* ---- workspace facts: one calm line ---- */
+.il-facts {
+  margin: 0; display: flex; align-items: center; gap: var(--il-s2);
+  font-size: var(--il-fs-body); color: var(--il-text2); min-width: 0;
+}
+.il-name { font-size: var(--il-fs-h2); font-weight: var(--il-fw-bold);
+  letter-spacing: var(--il-ls); color: var(--il-text);
+  min-width: 0; }
+.il-sep { color: var(--il-border); }
+.il-hint {
+  margin: 0; font-size: var(--il-fs-body); line-height: var(--il-lh);
+  color: var(--il-text2);
+  overflow-wrap: anywhere;
+}
+.il-hint-bad { color: #FFC9C9; }
+.il-note { margin: 0; font-size: var(--il-fs-body); line-height: var(--il-lh);
+  color: var(--il-text2);
+  overflow-wrap: anywhere; }
+.il-chip {
+  display: inline-flex; align-items: center; gap: var(--il-s1);
+  padding: 1px var(--il-s2); border-radius: var(--il-r-full);
+  border: 1px solid var(--il-border-soft);
+  background: var(--il-inset); font-size: var(--il-fs-meta);
+  font-weight: var(--il-fw-semi);
+  letter-spacing: var(--il-ls); color: var(--il-text2);
+  max-width: 100%; overflow: hidden;
+}
+.il-chip span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* the approval requirement is amber (a caution), never green (a success) */
+.il-chip-guard { border-color: #4a3b12; color: var(--il-warn); background: #15120A; }
+.il-dot {
+  width: 8px; height: 8px; border-radius: var(--il-r-full); flex: 0 0 auto;
+  background: currentColor;
+}
+.il-dot[data-tone-value="ok"] { box-shadow: 0 0 0 2px rgba(83, 215, 105, .14); }
+.il-row { display: flex; align-items: center; gap: var(--il-s2); min-width: 0; }
+
+/* ---- primary action: the one large CTA, always Protect My Workspace ---- */
+.il-group { display: flex; flex-direction: column; gap: var(--il-s2); min-width: 0; }
+.il-explain { margin: 0; padding: 0 var(--il-s1); font-size: var(--il-fs-body);
+  line-height: var(--il-lh); color: var(--il-text2); }
+.il-primary {
+  display: flex; align-items: center; justify-content: center; gap: var(--il-s2);
+  width: 100%; padding: var(--il-s3) var(--il-s4); border-radius: var(--il-r-md);
+  background: var(--il-accent); color: #0A0B0B;
+  font-family: var(--il-font);
+  font-weight: var(--il-fw-bold); font-size: var(--il-fs-h1);
+  letter-spacing: var(--il-ls); line-height: var(--il-lh-tight);
+  border: 1px solid var(--il-accent);
+  min-height: 34px;
+  transition: background .12s ease, transform .05s ease;
+}
+.il-primary:hover:not(:disabled) { background: var(--il-accent-hover); border-color: var(--il-accent-hover); }
+.il-primary:active:not(:disabled) { transform: translateY(1px); }
+.il-primary:disabled {
+  background: var(--il-surface); color: var(--il-text2); border-color: var(--il-border);
+}
+.il-primary .il-i { stroke-width: 2; }
+
+/* ---- prominent duo: Analyze | Recover, side by side, stacking when narrow ---- */
+.il-duo {
+  display: grid; grid-template-columns: 1fr 1fr; gap: var(--il-s2); min-width: 0;
+}
+.il-duobtn {
+  display: flex; flex-direction: column; align-items: flex-start; gap: var(--il-s1);
+  min-width: 0; padding: var(--il-s3); border-radius: var(--il-r-md);
+  background: var(--il-surface); border: 1px solid var(--il-border-soft);
+  color: var(--il-text); min-height: 46px;
+  transition: background .12s ease, border-color .12s ease;
+}
+.il-duobtn:hover:not(:disabled) { background: var(--il-hover); border-color: var(--il-border); }
+.il-duobtn:disabled { opacity: .7; }
+.il-duobtn > .il-i { color: var(--il-accent); }
+.il-duotext { display: flex; flex-direction: column; gap: var(--il-s1); min-width: 0; }
+.il-duolabel { font-weight: var(--il-fw-bold); font-size: var(--il-fs-h2);
+  letter-spacing: var(--il-ls); line-height: var(--il-lh-tight);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.il-duodesc { font-size: var(--il-fs-body); line-height: var(--il-lh-snug);
+  color: var(--il-text2);
+  overflow-wrap: anywhere; }
+.il-duobtn:disabled .il-duodesc { color: var(--il-warn); }
+/* Recover changes files: amber caution palette, never the success colour */
+.il-duobtn-guard { background: #15120A; border-color: #4A3B12; }
+.il-duobtn-guard:hover:not(:disabled) { background: #1D1809; border-color: #5C4915; }
+.il-duobtn-guard:disabled > .il-i { color: var(--il-warn); }
+
+/* ---- secondary rows: preview and verify, visibly quieter ---- */
+.il-section { display: flex; flex-direction: column; gap: var(--il-s2); min-width: 0; }
+.il-rows { display: flex; flex-direction: column; gap: var(--il-s2); min-width: 0; }
+.il-rowbtn {
+  display: flex; align-items: center; gap: var(--il-s3); min-width: 0; width: 100%;
+  padding: var(--il-s2) var(--il-s3); border-radius: var(--il-r-md);
+  background: var(--il-surface); border: 1px solid var(--il-border-soft);
+  color: var(--il-text); font-size: var(--il-fs-body);
+  font-weight: var(--il-fw-med); line-height: var(--il-lh-tight);
+  min-height: 28px;
+  transition: background .12s ease, border-color .12s ease;
+}
+.il-rowbtn:hover:not(:disabled) { background: var(--il-hover); border-color: var(--il-border); }
+.il-rowbtn:disabled { opacity: .7; }
+.il-rowbtn > .il-i { color: var(--il-text2); }
+.il-rowbtn:hover:not(:disabled) > .il-i { color: var(--il-accent); }
+.il-rowtext { display: flex; flex-direction: column; gap: var(--il-s1); min-width: 0; flex: 1 1 auto; }
+.il-rowlabel { font-weight: var(--il-fw-semi); font-size: var(--il-fs-h2);
+  letter-spacing: var(--il-ls); line-height: var(--il-lh-tight);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* the helper line wraps (never shrinks below the 12px floor) */
+.il-rowdesc { font-size: var(--il-fs-body); color: var(--il-text2);
+  line-height: var(--il-lh-snug); overflow-wrap: anywhere; }
+.il-rowbtn:disabled .il-rowdesc { color: var(--il-warn); }
+/* guarded recovery: amber caution palette only - never the success colour */
+.il-guarded {
+  background: #15120A; border-color: #4A3B12; color: #F7E9B0;
+}
+.il-guarded:hover:not(:disabled) { background: #1D1809; border-color: #5C4915; }
+.il-guarded > .il-i { color: var(--il-warn); }
+.il-guarded .il-chip { flex: 0 0 auto; }
+.il-guardnote {
+  margin: 0; padding: 0 var(--il-s1); font-size: var(--il-fs-body);
+  line-height: var(--il-lh); font-weight: var(--il-fw-med);
+  color: var(--il-warn); overflow-wrap: anywhere;
+}
+.il-guardnote .il-chip { margin-right: var(--il-s1); }
+
+/* ---- collapsibles: every technical answer lives here, collapsed ---- */
+.il-collapsible {
+  background: var(--il-surface); border: 1px solid var(--il-border-soft);
+  border-radius: var(--il-r-md); padding: var(--il-s2) var(--il-s3);
+}
+.il-collapsible > summary {
+  list-style: none; cursor: pointer; color: var(--il-text2);
+  font-size: var(--il-fs-h2); font-weight: var(--il-fw-semi);
+  letter-spacing: var(--il-ls); line-height: var(--il-lh-tight);
+  display: flex; align-items: center; gap: var(--il-s2);
+  border-radius: var(--il-r-sm); padding: 2px 2px;
+}
+.il-collapsible > summary::-webkit-details-marker { display: none; }
+.il-collapsible > summary::before {
+  content: ""; width: 0; height: 0; flex: 0 0 auto;
+  border-left: 4.5px solid currentColor;
+  border-top: 3.5px solid transparent; border-bottom: 3.5px solid transparent;
+  transition: transform .12s ease; margin-right: 1px;
+}
+details[open] > summary::before { transform: rotate(90deg); }
+.il-collapsible > summary:hover { color: var(--il-text); }
+.il-count {
+  margin-left: auto; min-width: 17px; text-align: center;
+  border-radius: var(--il-r-full); padding: 0 var(--il-s2);
+  font-size: var(--il-fs-sm); font-weight: var(--il-fw-bold);
+  background: var(--il-error); color: #0A0B0B;
+}
+.il-count-warn { background: var(--il-warn); }
+.il-help { display: flex; flex-direction: column; gap: var(--il-s2);
+  padding-top: var(--il-s2); min-width: 0; }
+.il-help-h {
+  margin: var(--il-s1) 0 0; font-family: var(--il-font);
+  font-size: var(--il-fs-h2); font-weight: var(--il-fw-bold);
+  letter-spacing: var(--il-ls-wide); line-height: var(--il-lh-tight);
+  text-transform: uppercase; color: var(--il-text2);
+}
+.il-list { margin: 0; padding: 0 0 0 var(--il-s1); list-style: none;
+  display: flex; flex-direction: column; gap: var(--il-s1); }
+.il-list li {
+  font-size: var(--il-fs-body); line-height: var(--il-lh); color: var(--il-text);
+  padding-left: 7px;
+  border-left: 2px solid var(--il-border);
+  overflow-wrap: anywhere;
+}
+.il-list li.il-li-error { border-left-color: var(--il-error); color: #FFC9C9; }
+.il-list li.il-li-warn { border-left-color: var(--il-warn); }
+.il-list li.il-li-muted { border-left-color: transparent; color: var(--il-text2); }
+.il-kv { display: grid; grid-template-columns: auto 1fr; gap: var(--il-s1) var(--il-s3); margin: 0; }
+.il-kv dt { color: var(--il-text2); font-size: var(--il-fs-sm);
+  font-weight: var(--il-fw-semi); letter-spacing: var(--il-ls); }
+.il-kv dd { margin: 0; font-size: var(--il-fs-body); color: var(--il-text);
+  overflow-wrap: anywhere; min-width: 0; }
+.il-links { display: flex; flex-direction: column; gap: var(--il-s1); }
+.il-linkrow {
+  display: flex; align-items: center; gap: var(--il-s2);
+  padding: var(--il-s2); border-radius: var(--il-r-sm);
+  color: var(--il-text); font-size: var(--il-fs-body);
+  font-weight: var(--il-fw-med); line-height: var(--il-lh-tight);
+  min-height: 26px;
+  transition: background .12s ease;
+}
+.il-linkrow:hover { background: var(--il-hover); }
+.il-linkrow > .il-i { color: var(--il-text2); }
+.il-linkrow:hover > .il-i { color: var(--il-accent); }
+
+.il-footer {
+  text-align: center; font-size: var(--il-fs-sm);
+  font-weight: var(--il-fw-med); color: var(--il-text2);
+  padding-top: var(--il-s1);
+}
+
+/* ---- tones: applied last so they win over the base text colour ---- */
+[data-tone-value="ok"] { color: var(--il-ok); }
+[data-tone-value="warn"] { color: var(--il-warn); }
+[data-tone-value="bad"] { color: var(--il-error); }
+[data-tone-value="idle"] { color: var(--il-text2); }
+[data-tone-value="accent"] { color: var(--il-accent); }
+
+@media (max-width: 270px) {
+  /* status rows stack label over value instead of squeezing side by side */
+  .il-kv { grid-template-columns: 1fr; gap: var(--il-s1); }
+  .il-wordmark { letter-spacing: .1em; }
+  /* the two prominent actions stack instead of squeezing */
+  .il-duo { grid-template-columns: 1fr; }
+  /* the guarded action keeps its full label, letting the approval chip wrap */
+  .il-rowbtn { padding: var(--il-s2) var(--il-s2); gap: var(--il-s2); }
+  .il-guarded { flex-wrap: wrap; }
+  .il-state-head { font-size: var(--il-fs-h1); }
+}
+@media (prefers-reduced-motion: reduce) {
+  * { transition: none !important; animation: none !important; }
+  .il-root.is-busy .il-spin { display: none; }
+  .il-root.is-busy #il-strip::after { content: " · working"; }
+}
+
+
+.il-ib { max-width: 1120px; margin: 0 auto; width: 100%; }
+/* the header must be able to shrink: a truncated label may never widen the page */
+.il-ib .il-idline, .il-ib .il-subline { min-width: 0; }
+.il-ib .il-subtitle, .il-ib .il-wordmark { min-width: 0; }
+.il-ib .il-wordmark { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/*
+ * The sidebar deliberately pulls its header out of the body padding so it
+ * reaches the panel edge. In the Inbox that made the header wider than the
+ * content column, so the brand line no longer lined up with the summary
+ * cards. The Inbox keeps the header inside the content column instead.
+ */
+.il-ib .il-header { margin: 0; padding: var(--il-s2) 0; }
+.il-ib-summary {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  /* every card is as tall as the tallest one, so no row drifts out of line */
+  grid-auto-rows: 1fr;
+  align-items: stretch;
+  gap: var(--il-s2); min-width: 0;
+}
+.il-ib-stat {
+  /* the label may wrap to one or two lines; the value is pinned to the
+     bottom so every number in a row sits on the same line */
+  display: grid; grid-template-rows: 1fr auto; align-content: start;
+  gap: var(--il-s1); min-width: 0;
+  background: var(--il-surface); border: 1px solid var(--il-border-soft);
+  border-radius: var(--il-r-md); padding: var(--il-s3);
+}.il-ib-stat-l {
+  font-size: var(--il-fs-sm); font-weight: var(--il-fw-bold);
+  letter-spacing: var(--il-ls-wide); text-transform: uppercase; color: var(--il-text2);
+  overflow-wrap: anywhere;
+}
+.il-ib-stat-v {
+  font-family: var(--il-font-display); font-size: var(--il-fs-h2);
+  font-weight: var(--il-fw-black); font-variant-numeric: tabular-nums;
+  line-height: var(--il-lh-tight); overflow-wrap: anywhere;
+}
+.il-ib-unknown { color: var(--il-text2); font-size: var(--il-fs-h2); font-weight: var(--il-fw-semi); }
+.il-ib-coverage { margin: var(--il-s2) 0 0; }
+.il-ib-coverage li { font-size: var(--il-fs-sm); }
+
+.il-ib-toolbar { display: flex; gap: var(--il-s2); flex-wrap: wrap; align-items: center; justify-content: space-between; }
+.il-ib-filters { display: flex; gap: var(--il-s1); flex-wrap: wrap; }
+.il-ib-filter {
+  padding: 3px var(--il-s3); min-height: 26px;
+  border: 1px solid var(--il-border); border-radius: var(--il-r-sm);
+  background: var(--il-inset); color: var(--il-text2);
+  font-size: var(--il-fs-meta); font-weight: var(--il-fw-semi); letter-spacing: var(--il-ls);
+}
+.il-ib-filter:hover { border-color: var(--il-accent); color: var(--il-accent); }
+.il-ib-filter[aria-pressed="true"] { border-color: var(--il-accent); color: var(--il-accent); background: var(--il-surface); }
+.il-ib-search { display: inline-flex; align-items: center; gap: var(--il-s1); }
+.il-ib-search input {
+  min-width: 220px; padding: 3px var(--il-s3); min-height: 26px;
+  border: 1px solid var(--il-border); border-radius: var(--il-r-sm);
+  background: var(--il-inset); color: var(--il-text);
+  font-size: var(--il-fs-meta);
+}
+.il-ib-search input:focus { outline: 1px solid var(--il-accent); outline-offset: 1px; }
+.il-ib-sortrow { display: flex; gap: var(--il-s2); align-items: center; margin-top: var(--il-s2); }
+.il-ib-sortlabel { font-size: var(--il-fs-sm); color: var(--il-text2); }
+.il-ib-sort {
+  padding: 3px var(--il-s2); min-height: 26px;
+  border: 1px solid var(--il-border); border-radius: var(--il-r-sm);
+  background: var(--il-inset); color: var(--il-text);
+  font-size: var(--il-fs-meta);
+}
+.il-ib-mini {
+  padding: 3px var(--il-s3); min-height: 26px;
+  border: 1px solid var(--il-border); border-radius: var(--il-r-sm);
+  background: var(--il-inset); color: var(--il-text2);
+  font-size: var(--il-fs-meta); font-weight: var(--il-fw-semi); letter-spacing: var(--il-ls);
+}
+.il-ib-mini:hover:not(:disabled) { border-color: var(--il-accent); color: var(--il-accent); }
+.il-ib-mini:disabled { border-style: dashed; color: var(--il-text2); opacity: 0.7; }
+
+.il-ib-selbar { display: flex; gap: var(--il-s2); align-items: center; flex-wrap: wrap; margin-top: var(--il-s2); }
+.il-ib-seltext { font-size: var(--il-fs-body); font-weight: var(--il-fw-semi); }
+
+.il-ib-progress { height: 4px; background: var(--il-inset); border-radius: 2px; overflow: hidden; margin-top: var(--il-s2); }
+.il-ib-progress > div { height: 100%; background: var(--il-accent); width: 0; transition: width 0.2s ease; }
+
+.il-ib-list { display: flex; flex-direction: column; gap: var(--il-s2); min-width: 0; margin-top: var(--il-s2); }
+.il-ib-group { background: var(--il-surface); border: 1px solid var(--il-border-soft); border-radius: var(--il-r-md); }
+.il-ib-group-summary {
+  display: flex; gap: var(--il-s2); align-items: center;
+  padding: var(--il-s2) var(--il-s3); cursor: pointer;
+  font-size: var(--il-fs-body); font-weight: var(--il-fw-semi);
+}
+.il-ib-group-summary:hover { color: var(--il-accent); }
+.il-ib-group-dir { overflow-wrap: anywhere; min-width: 0; }
+.il-ib-group-count { color: var(--il-text2); font-size: var(--il-fs-sm); font-weight: var(--il-fw-semi); }
+.il-ib-row {
+  display: flex; align-items: center; gap: var(--il-s2); flex-wrap: wrap;
+  padding: var(--il-s2) var(--il-s3); border-top: 1px solid var(--il-border-soft);
+}
+.il-ib-row:first-child { border-top: none; }
+.il-ib-check { display: inline-flex; align-items: center; gap: var(--il-s1); min-width: 0; }
+.il-ib-box { accent-color: var(--il-accent); }
+.il-ib-name { font-weight: var(--il-fw-semi); overflow-wrap: anywhere; min-width: 0; }
+.il-ib-path { color: var(--il-text2); font-size: var(--il-fs-sm); min-width: 0; overflow-wrap: anywhere; }
+.il-ib-reason {
+  flex: 1 1 100%; min-width: 0; font-size: var(--il-fs-sm); line-height: var(--il-lh);
+  color: var(--il-text2); overflow-wrap: anywhere;
+}
+.il-ib-note { font-size: var(--il-fs-sm); color: var(--il-text2); }
+.il-ib-preview {
+  display: inline-flex; align-items: center; gap: var(--il-s1); flex: 0 0 auto;
+  padding: 3px var(--il-s3); min-height: 26px;
+  border: 1px solid var(--il-border); border-radius: var(--il-r-sm);
+  background: var(--il-inset); color: var(--il-text);
+  font-size: var(--il-fs-meta); font-weight: var(--il-fw-semi); letter-spacing: var(--il-ls);
+}
+.il-ib-preview:hover:not(:disabled) { border-color: var(--il-accent); color: var(--il-accent); }
+.il-ib-preview:disabled { border-style: dashed; color: var(--il-text2); }
+.il-ib-tech { flex: 1 1 100%; }
+.il-ib-tech summary { cursor: pointer; font-size: var(--il-fs-sm); color: var(--il-text2); }
+.il-ib-tech p { font-size: var(--il-fs-sm); color: var(--il-text2); overflow-wrap: anywhere; }
+.il-ib-empty { color: var(--il-text2); font-size: var(--il-fs-body); }
+.il-ib-pager { display: flex; gap: var(--il-s2); align-items: center; justify-content: center; margin-top: var(--il-s2); }
+.il-ib-actions { display: flex; flex-direction: column; gap: var(--il-s2); margin-top: var(--il-s3); }
+.il-ib-actions .il-rowbtn:disabled { border-style: dashed; }
+.il-ib-sub { margin-top: var(--il-s3); font-size: var(--il-fs-h2); }
+.il-ib-scope {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  grid-auto-rows: 1fr; align-items: stretch;
+  gap: var(--il-s2); min-width: 0; margin-top: var(--il-s2);
+}
+.il-ib-warns { margin: var(--il-s2) 0 0; }
+.il-ib-warns li { font-size: var(--il-fs-sm); }
+.il-ib-notice {
+  margin: var(--il-s2) 0 0; padding: var(--il-s2) var(--il-s3);
+  border: 1px solid #4a3b12; background: #15120A; color: var(--il-warn);
+  border-radius: var(--il-r-md); font-size: var(--il-fs-body); line-height: var(--il-lh);
+  overflow-wrap: anywhere;
+}
+.il-ib-stale {
+  margin: 0; padding: var(--il-s2) var(--il-s3);
+  border: 1px solid #4a3b12; background: #15120A; color: var(--il-warn);
+  border-radius: var(--il-r-md); font-size: var(--il-fs-body); line-height: var(--il-lh);
+  overflow-wrap: anywhere;
+}
+.il-root.is-busy [data-act] { opacity: 0.55; pointer-events: none; }
+@media (max-width: 520px) {
+  .il-ib-toolbar { align-items: flex-start; }
+  .il-ib-search input { min-width: 0; width: 100%; }
+}
+
+</style>
+</head>
+<body>
+<div class="il-root il-ib" id="il-inbox">
+
+  <header class="il-header">
+    <div class="il-idline">
+      <span class="il-mark" aria-hidden="true"><svg class="il-shield " viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path fill-rule="evenodd" d="M12 2.2 20 5.1v6.4c0 4.6-3.2 8.6-8 10.4-4.8-1.8-8-5.8-8-10.4V5.1L12 2.2ZM7.4 9.6h9.2v2.8H7.4ZM9.4 14h5.2v2.6H9.4Z"/></svg></span>
+      <span class="il-wordmark">Recovery Inbox</span>
+      <span class="il-flex"></span>
+      <span class="il-pill" data-tone-value="ok" title="Discovery and eligibility assessment finished.">
+        <span class="il-dot" aria-hidden="true"></span>
+        <span data-live="scanStatus">Scan complete</span>
+      </span>
+    </div>
+    <div class="il-subline">
+      <span class="il-subtitle il-truncate" title="INTERLOCK V4">INTERLOCK V4</span>
+      <span class="il-sep" aria-hidden="true">·</span>
+      <span class="il-subtitle il-truncate" title="Last scan finished at 2026-10-20 20:02"><span data-live="lastScan">LAST SCAN 2026-10-20 20:02</span></span>
+      <span class="il-flex"></span>
+      <button type="button" class="il-iconbtn" data-act="cancelScan" title="Cancel the running scan" hidden><svg class="il-i il-i-sm" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M6.4 6.4l11.2 11.2M17.6 6.4 6.4 17.6"/></svg></button>
+      <button type="button" class="il-iconbtn" data-act="refresh" title="Refresh the inbox (re-scan the workspace)"><svg class="il-i il-i-sm" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M19.6 12a7.6 7.6 0 0 1-13 5.3M4.4 12a7.6 7.6 0 0 1 13-5.3"/><path d="M17.8 3.4v3.6h-3.6"/><path d="M6.2 20.6V17h3.6"/></svg></button>
+    </div>
+  </header>
+
+  <p class="il-note" role="status" data-live="scanNote">Discovery and eligibility assessment finished.</p>
+  <p class="il-ib-notice" role="status" data-live="notice">Scan complete. 37 files changed since the last baseline capture.</p>
+  <p class="il-ib-stale" role="status" data-live="stale" hidden></p>
+  <section class="il-section" aria-label="Summary">
+    <h2 class="il-help-h">Summary</h2>
+    <div class="il-ib-summary">
+      <div class="il-ib-stat"><span class="il-ib-stat-l">Files examined</span><span class="il-ib-stat-v" data-live="count-examined">380</span></div>
+      <div class="il-ib-stat"><span class="il-ib-stat-l">Changed vs baseline</span><span class="il-ib-stat-v" data-live="count-changed">6</span></div>
+      <div class="il-ib-stat"><span class="il-ib-stat-l">Verified evidence</span><span class="il-ib-stat-v" data-live="count-verifiedEvidence">6</span></div>
+      <div class="il-ib-stat"><span class="il-ib-stat-l">Recoverable modified</span><span class="il-ib-stat-v" data-live="count-recoverableModified">3</span></div>
+      <div class="il-ib-stat"><span class="il-ib-stat-l">Recoverable deleted</span><span class="il-ib-stat-v" data-live="count-recoverableDeleted">1</span></div>
+      <div class="il-ib-stat"><span class="il-ib-stat-l">Need attention</span><span class="il-ib-stat-v" data-live="count-attention" data-tone-value="warn">2</span></div>
+      <div class="il-ib-stat"><span class="il-ib-stat-l">Without usable baseline</span><span class="il-ib-stat-v" data-live="count-noBaseline" data-tone-value="warn">2</span></div>
+    </div>
+    <ul class="il-list il-ib-coverage" data-live="coverage"><li>248 baseline files checked against its stored evidence.</li><li>132 files without a baseline examined (14 directories skipped by the ignore rules: .git, node_modules, .venv, site, out, dist).</li><li>6 files excluded by the sensitive-file / exclusion policy (never recoverable).</li><li>1 file could not be read during this scan; their rows say so instead of guessing.</li></ul>
+  </section>
+  <section class="il-section" aria-label="Recovery review">
+    <h2 class="il-help-h">Review recovery</h2>
+    <p class="il-hint">
+      Recover All Eligible Changed Files: every changed file with verified evidence that passed the engine checks.
+      Nothing is written until you confirm below.
+    </p>
+    <div class="il-ib-scope">
+        <div class="il-ib-stat"><span class="il-ib-stat-l">Changed files</span><span class="il-ib-stat-v" data-live="count-scopeChanged">37</span></div>
+        <div class="il-ib-stat"><span class="il-ib-stat-l">Eligible now</span><span class="il-ib-stat-v" data-live="count-scopeEligible">29</span></div>
+        <div class="il-ib-stat"><span class="il-ib-stat-l">Need attention</span><span class="il-ib-stat-v" data-live="count-scopeAttention" data-tone-value="warn">5</span></div>
+        <div class="il-ib-stat"><span class="il-ib-stat-l">Without usable baseline</span><span class="il-ib-stat-v" data-live="count-scopeNoBaseline">3</span></div>
+      </div>
+      <p class="il-hint">Scope of "Recover All Eligible Changed Files": every changed file with
+        verified evidence that passes the engine checks. Everything else is listed below with
+        its reason and is NOT recovered by this run.</p>
+    <div class="il-ib-scope">
+      <div class="il-ib-stat"><span class="il-ib-stat-l">In scope</span><span class="il-ib-stat-v" data-live="count-reviewScope">37</span></div>
+      <div class="il-ib-stat"><span class="il-ib-stat-l">Will be recovered</span><span class="il-ib-stat-v" data-live="count-reviewIncluded">3</span></div>
+      <div class="il-ib-stat"><span class="il-ib-stat-l">Excluded (with reasons)</span><span class="il-ib-stat-v" data-live="count-reviewExcluded" data-tone-value="warn">2</span></div>
+    </div>
+    
+    <ul class="il-list il-ib-warns"><li class="il-li-warn">1 file(s) cannot be shown as a text diff (binary or truncated baseline). Their bytes and hashes are still verified exactly.</li></ul>
+    <h3 class="il-help-h il-ib-sub">Files to recover (3)</h3>
+    <div class="il-ib-list" id="il-ib-review-included"></div>
+    <h3 class="il-help-h il-ib-sub">Excluded from this run (2)</h3>
+    <div class="il-ib-list" id="il-ib-review-excluded"></div>
+    <div class="il-ib-actions">
+      <button type="button" class="il-rowbtn" data-act="back" title="Back to the file list - nothing is recovered">
+        <svg class="il-i il-btn-ico" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 15.4a3.4 3.4 0 1 0 0-6.8 3.4 3.4 0 0 0 0 6.8Z"/></svg>
+        <span class="il-rowtext">
+          <span class="il-rowlabel">Back to list</span>
+          <span class="il-rowdesc">Return to the inbox without changing any file.</span>
+        </span>
+      </button>
+      <button type="button" class="il-rowbtn il-guarded" data-act="confirm" title="Review the exact scope above, then confirm recovery">
+        <svg class="il-i il-btn-ico" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M6.4 10.6h11.2v9.2H6.4Z"/><path d="M8.8 10.6V8.2a3.2 3.2 0 0 1 6.4 0v2.4"/></svg>
+        <span class="il-rowtext">
+          <span class="il-rowlabel">Confirm Recovery (3)</span>
+          <span class="il-rowdesc">Asks for explicit approval, then revalidates every file immediately before writing.</span>
+        </span>
+      </button>
+    </div>
+  </section>
+
+  <div class="il-footer">Nothing has been recovered. Recovery requires explicit approval and final safety revalidation.</div>
+</div>
+<script type="application/json" id="il-ib-payload">
+{"rows":[],"review":{"scope":"all","at":"2026-10-20T14:32:00.000Z","requested":37,"included":[{"resource":"src/recovery/controller.ts","name":"controller.ts","dir":"src/recovery","operation":"restore_content","diffable":true,"previewNote":null},{"resource":"src/recovery/engine.ts","name":"engine.ts","dir":"src/recovery","operation":"restore_content","diffable":true,"previewNote":null},{"resource":"assets/interlock-icon.png","name":"interlock-icon.png","dir":"assets","operation":"restore_content","diffable":false,"previewNote":"this is a binary file, so a text diff would be misleading. Compare the hashes and sizes instead - recovery writes these exact bytes."}],"excluded":[{"resource":"config/settings.json","name":"settings.json","dir":"config","reason":"The engine's fresh plan is not applicable for this file (would_succeed=true, conflict=concurrent_modification, drift=no_drift)."},{"resource":"src/recovery/adapter.py","name":"adapter.py","dir":"src/recovery","reason":"The stored baseline evidence failed validation. Recapture the baseline before recovering."}],"warnings":["1 file(s) cannot be shown as a text diff (binary or truncated baseline). Their bytes and hashes are still verified exactly."],"notice":null,"scopeCounts":{"changed":37,"eligible":29,"attention":5,"noBaseline":3}},"results":null,"selectionResources":[]}
+</script>
+<script nonce="ILVISUALNONCE">
+(function () {
+  'use strict';
+
+  function filterRows(rows, filterId, query) {
+    var q = (query || '').trim().toLowerCase();
+    return rows.filter(function (row) {
+      var match;
+      switch (filterId) {
+        case 'all-changed':
+          match = row.flags.changed || row.flags.unprotected || row.status === 'unknown';
+          break;
+        case 'recoverable':
+          match = row.flags.recoverable;
+          break;
+        case 'modified':
+          match = row.flags.modified;
+          break;
+        case 'deleted':
+          match = row.flags.deleted;
+          break;
+        case 'attention':
+          match = row.flags.attention;
+          break;
+        case 'not-recoverable':
+          match = !row.flags.recoverable && !row.flags.unchanged;
+          break;
+        case 'unchanged':
+          match = row.flags.unchanged;
+          break;
+        default:
+          match = true;
+      }
+      if (!match) { return false; }
+      if (q === '') { return true; }
+      return row.resource.toLowerCase().indexOf(q) !== -1;
+    });
+  }
+
+  function sortRows(rows, sortId) {
+    var copy = rows.slice();
+    copy.sort(function (a, b) {
+      var d;
+      if (sortId === 'status') {
+        d = a.rankStatus - b.rankStatus || a.resource.localeCompare(b.resource);
+      } else if (sortId === 'eligibility') {
+        d = a.rankEligibility - b.rankEligibility || a.resource.localeCompare(b.resource);
+      } else {
+        d = a.resource.localeCompare(b.resource);
+      }
+      return d;
+    });
+    return copy;
+  }
+
+  function pageSlice(rows, page, pageSize) {
+    var pages = Math.max(1, Math.ceil(rows.length / pageSize));
+    var p = Math.min(Math.max(1, page), pages);
+    return { rows: rows.slice((p - 1) * pageSize, p * pageSize), page: p, pages: pages };
+  }
+
+  function groupRows(rows) {
+    var groups = [];
+    var index = {};
+    for (var i = 0; i < rows.length; i++) {
+      var row = rows[i];
+      var key = row.dir;
+      var group = index[key];
+      if (!group) {
+        group = { dir: key, rows: [] };
+        index[key] = group;
+        groups.push(group);
+      }
+      group.rows.push(row);
+    }
+    return groups;
+  }
+
+  function visibleRows(state) {
+    var filtered = filterRows(state.rows, state.filter, state.query);
+    var sorted = sortRows(filtered, state.sort);
+    return pageSlice(sorted, state.page, state.pageSize);
+  }
+
+  function selectionText(rows, selection) {
+    var count = 0, eligible = 0, attention = 0, pending = 0;
+    for (var i = 0; i < rows.length; i++) {
+      var row = rows[i];
+      if (!selection[row.resource]) { continue; }
+      count++;
+      if (row.eligibility === 'eligible') { eligible++; }
+      else if (row.eligibility === 'pending') { pending++; }
+      if (row.flags.attention) { attention++; }
+    }
+    var parts = [count + ' file' + (count === 1 ? '' : 's') + ' selected', eligible + ' eligible'];
+    if (pending > 0) { parts.push(pending + ' assessing'); }
+    parts.push(attention + ' require attention');
+    return parts.join(' · ');
+  }
+
+  var api = {
+    filterRows: filterRows,
+    sortRows: sortRows,
+    pageSlice: pageSlice,
+    groupRows: groupRows,
+    visibleRows: visibleRows,
+    selectionText: selectionText,
+  };
+
+  if (typeof document === 'undefined') {
+    return api;
+  }
+
+  var vscodeApi = typeof acquireVsCodeApi === 'function'
+    ? acquireVsCodeApi()
+    : { postMessage: function () {} };
+
+  var payloadNode = document.getElementById('il-ib-payload');
+  var payload = {};
+  try {
+    payload = JSON.parse(payloadNode ? payloadNode.textContent || '' : '{}');
+  } catch (error) {
+    payload = {};
+  }
+
+  var rows = payload.rows || [];
+  var state = {
+    rows: rows,
+    filter: 'all-changed',
+    query: '',
+    sort: 'path',
+    page: 1,
+    pageSize: 200,
+    reviewPage: 1,
+    resultsPage: 1,
+    selection: {},
+    collapsed: {},
+  };
+  var selectionResources = payload.selectionResources || [];
+  for (var i = 0; i < selectionResources.length; i++) {
+    state.selection[selectionResources[i]] = true;
+  }
+
+  function el(tag, className, text) {
+    var node = document.createElement(tag);
+    if (className) { node.className = className; }
+    if (text !== undefined && text !== null) { node.textContent = text; }
+    return node;
+  }
+
+  function send(message) {
+    vscodeApi.postMessage(message);
+  }
+
+  function chip(label, tone) {
+    var node = el('span', 'il-chip');
+    node.setAttribute('data-tone-value', tone);
+    node.appendChild(el('span', null, label));
+    return node;
+  }
+
+  function rowNode(row) {
+    var wrap = el('div', 'il-ib-row');
+    wrap.setAttribute('data-resource', row.resource);
+    var label = el('label', 'il-ib-check');
+    var box = document.createElement('input');
+    box.type = 'checkbox';
+    box.className = 'il-ib-box';
+    box.setAttribute('data-act', 'rowcheck');
+    box.setAttribute('data-resource', row.resource);
+    box.checked = !!state.selection[row.resource];
+    label.appendChild(box);
+    label.appendChild(el('span', 'il-ib-name', row.name));
+    wrap.appendChild(label);
+    var pathNode = el('span', 'il-ib-path il-mono', row.resource);
+    pathNode.setAttribute('title', row.resource);
+    wrap.appendChild(pathNode);
+    wrap.appendChild(chip(row.statusLabel, row.statusTone));
+    wrap.appendChild(chip(row.evidenceLabel, row.evidenceTone));
+    wrap.appendChild(chip(row.eligibilityLabel, row.eligibilityTone));
+    wrap.appendChild(el('span', 'il-ib-reason', row.reason));
+    if (row.previewable) {
+      var btn = el('button', 'il-ib-preview', 'Preview');
+      btn.type = 'button';
+      btn.setAttribute('data-act', 'preview');
+      btn.setAttribute('data-resource', row.resource);
+      wrap.appendChild(btn);
+    } else if (row.previewNote) {
+      wrap.appendChild(el('span', 'il-ib-note', row.previewNote));
+    }
+    if (row.details) {
+      var tech = el('details', 'il-ib-tech');
+      tech.appendChild(el('summary', null, 'Details'));
+      tech.appendChild(el('p', null, row.details));
+      wrap.appendChild(tech);
+    }
+    return wrap;
+  }
+
+  function renderList() {
+    var list = document.getElementById('il-ib-list');
+    if (!list) { return; }
+    list.textContent = '';
+    var view = visibleRows(state);
+    var groups = groupRows(view.rows);
+    if (groups.length === 0) {
+      list.appendChild(
+        el('p', 'il-ib-empty', rows.length === 0
+          ? 'No files discovered yet. Refresh to scan the workspace.'
+          : 'No files match the current filter and search.'),
+      );
+    }
+    for (var g = 0; g < groups.length; g++) {
+      var group = groups[g];
+      var details = el('details', 'il-ib-group');
+      if (!state.collapsed[group.dir]) { details.setAttribute('open', 'open'); }
+      var summary = el('summary', 'il-ib-group-summary');
+      summary.appendChild(el('span', 'il-ib-group-dir', group.dir === '.' ? '(workspace root)' : group.dir));
+      summary.appendChild(el('span', 'il-ib-group-count', String(group.rows.length)));
+      details.appendChild(summary);
+      for (var r = 0; r < group.rows.length; r++) {
+        details.appendChild(rowNode(group.rows[r]));
+      }
+      list.appendChild(details);
+    }
+    var pager = document.getElementById('il-ib-pager');
+    if (pager) {
+      pager.hidden = view.pages <= 1;
+      var label = document.querySelector('[data-live="page"]');
+      if (label) {
+        label.textContent = 'Page ' + view.page + ' of ' + view.pages +
+          ' (' + view.rows.length + ' of ' + rows.length + ' files)';
+      }
+      var prev = document.getElementById('il-ib-prev');
+      var next = document.getElementById('il-ib-next');
+      if (prev) { prev.disabled = view.page <= 1; }
+      if (next) { next.disabled = view.page >= view.pages; }
+    }
+    updateSelectionUI();
+  }
+
+  function updateSelectionUI() {
+    var node = document.querySelector('[data-live="selection"]');
+    if (node) { node.textContent = selectionText(rows, state.selection); }
+    var boxes = document.querySelectorAll('#il-ib-list input[data-act="rowcheck"]');
+    for (var i = 0; i < boxes.length; i++) {
+      var box = boxes[i];
+      box.checked = !!state.selection[box.getAttribute('data-resource')];
+    }
+  }
+
+  function syncFilterButtons() {
+    var buttons = document.querySelectorAll('[data-act="filter"]');
+    for (var i = 0; i < buttons.length; i++) {
+      var button = buttons[i];
+      if (button.setAttribute) {
+        button.setAttribute('aria-pressed', button.getAttribute('data-filter') === state.filter ? 'true' : 'false');
+      }
+    }
+  }
+
+  function applyActions(actions) {
+    var selected = document.getElementById('il-ib-recover-selected');
+    if (selected) {
+      selected.disabled = !actions.recoverSelected.enabled;
+      selected.textContent = actions.recoverSelected.label;
+    }
+    var all = document.getElementById('il-ib-recover-all');
+    if (all) {
+      all.disabled = !actions.recoverAll.enabled;
+      all.textContent = actions.recoverAll.label;
+    }
+    var note = document.querySelector('[data-live="actionNote"]');
+    if (note) {
+      note.textContent = !actions.recoverSelected.enabled
+        ? actions.recoverSelected.note
+        : actions.recoverAll.note;
+    }
+  }
+
+  var UNKNOWN_TITLE =
+    'This value could not be derived from the validated evidence, so it is reported as Unknown.';
+  var WARN_COUNTS = { attention: true, noBaseline: true };
+
+  function setText(selector, text) {
+    var node = document.querySelector(selector);
+    if (node) { node.textContent = text; }
+  }
+
+  function formatNumber(value) {
+    return String(value).replace(/B(?=(d{3})+(?!d))/g, ',');
+  }
+
+  function formatStamp(iso) {
+    if (!iso) { return 'never'; }
+    var ms = Date.parse(iso);
+    if (!isFinite(ms)) { return 'never'; }
+    var date = new Date(ms);
+    function pad(n) { return (n < 10 ? '0' : '') + n; }
+    return date.getFullYear() + '-' + pad(date.getMonth() + 1) + '-' + pad(date.getDate()) +
+      ' ' + pad(date.getHours()) + ':' + pad(date.getMinutes());
+  }
+
+  function setCount(key, value) {
+    var node = document.querySelector('[data-live="count-' + key + '"]');
+    if (!node) { return; }
+    if (value === null || value === undefined) {
+      node.textContent = 'Unknown';
+      node.className = 'il-ib-unknown';
+      node.setAttribute('title', UNKNOWN_TITLE);
+      node.removeAttribute('data-tone-value');
+      return;
+    }
+    node.textContent = formatNumber(value);
+    node.className = 'il-ib-stat-v';
+    node.removeAttribute('title');
+    if (WARN_COUNTS[key] && value > 0) {
+      node.setAttribute('data-tone-value', 'warn');
+    } else {
+      node.removeAttribute('data-tone-value');
+    }
+  }
+
+  function setList(selector, items) {
+    var list = document.querySelector(selector);
+    if (!list) { return; }
+    list.textContent = '';
+    for (var i = 0; i < items.length; i++) {
+      list.appendChild(el('li', null, items[i]));
+    }
+  }
+
+  function setBanner(selector, text) {
+    var node = document.querySelector(selector);
+    if (!node) { return; }
+    node.textContent = text || '';
+    node.hidden = !text;
+  }
+
+  /*
+   * Apply a new inbox state IN PLACE. The document is never replaced while
+   * the inbox is open, so the focus, the scroll position, the search text and
+   * the selection survive every update - and a click is never swallowed by a
+   * reload that happens while the user is reaching for a control.
+   */
+  function applyState(view) {
+    if (!view) { return; }
+    if (view.rows) {
+      rows = view.rows;
+      state.rows = rows;
+    }
+    if (view.selectionResources) {
+      selectionResources = view.selectionResources;
+      state.selection = {};
+      for (var s = 0; s < selectionResources.length; s++) {
+        state.selection[selectionResources[s]] = true;
+      }
+    }
+    var scan = view.scan || {};
+    setText('[data-live="scanStatus"]', scan.statusLabel || '');
+    setText('[data-live="scanNote"]', scan.statusNote || '');
+    setText('[data-live="lastScan"]', 'LAST SCAN ' + formatStamp(scan.finishedAt));
+    var pill = document.querySelector('.il-pill');
+    if (pill) {
+      pill.setAttribute(
+        'data-tone-value',
+        scan.status === 'done' && !scan.stale
+          ? 'ok'
+          : scan.stale || scan.status === 'error'
+            ? 'warn'
+            : 'idle',
+      );
+      pill.setAttribute('title', scan.statusNote || '');
+    }
+    var cancel = document.querySelector('[data-act="cancelScan"]');
+    if (cancel) {
+      cancel.hidden = !(scan.status === 'scanning' || scan.status === 'assessing');
+    }
+    var counts = view.counts || {};
+    setCount('examined', counts.examined);
+    setCount('changed', counts.changed);
+    setCount('verifiedEvidence', counts.verifiedEvidence);
+    setCount('recoverableModified', counts.recoverableModified);
+    setCount('recoverableDeleted', counts.recoverableDeleted);
+    setCount('attention', counts.attention);
+    setCount('noBaseline', counts.noBaseline);
+    setList('[data-live="coverage"]', view.coverageLines || []);
+    setBanner('[data-live="notice"]', view.notice || '');
+    setBanner('[data-live="stale"]', scan.stale ? (scan.staleReason || '') : '');
+    document.body.classList.toggle('is-busy', !!view.busy);
+    var progress = scan.progress;
+    setText(
+      '[data-live="progress"]',
+      progress ? progress.phase + ' ' + progress.done + '/' + progress.total : '',
+    );
+    var bar = document.getElementById('il-ib-progress-bar');
+    if (bar) {
+      var pct = progress && progress.total > 0
+        ? Math.round((progress.done / progress.total) * 100)
+        : 0;
+      bar.style.width = pct + '%';
+    }
+    if (view.selection) { setText('[data-live="selection"]', view.selection.text); }
+    if (view.recoverSelected && view.recoverAll) {
+      applyActions({ recoverSelected: view.recoverSelected, recoverAll: view.recoverAll });
+    }
+    if (document.getElementById('il-ib-list')) { renderList(); }
+    if (view.review && document.getElementById('il-ib-review-included')) {
+      renderReview(view.review);
+    }
+    if (view.results && document.getElementById('il-ib-results')) {
+      renderResults(view.results);
+    }
+  }
+
+  function reviewEntryNode(entry) {
+    var wrap = el('div', 'il-ib-row');
+    wrap.setAttribute('data-resource', entry.resource);
+    wrap.appendChild(el('span', 'il-ib-name', entry.name));
+    var pathNode = el('span', 'il-ib-path il-mono', entry.resource);
+    pathNode.setAttribute('title', entry.resource);
+    wrap.appendChild(pathNode);
+    wrap.appendChild(el('span', 'il-ib-reason', entry.operation ? 'Operation: ' + entry.operation : 'restore'));
+    if (entry.diffable) {
+      var btn = el('button', 'il-ib-preview', 'View diff');
+      btn.type = 'button';
+      btn.setAttribute('data-act', 'viewDiff');
+      btn.setAttribute('data-resource', entry.resource);
+      wrap.appendChild(btn);
+    } else if (entry.previewNote) {
+      wrap.appendChild(el('span', 'il-ib-note', entry.previewNote));
+    }
+    return wrap;
+  }
+
+  function excludedNode(entry) {
+    var wrap = el('div', 'il-ib-row');
+    wrap.setAttribute('data-resource', entry.resource);
+    wrap.appendChild(el('span', 'il-ib-name', entry.name));
+    var pathNode = el('span', 'il-ib-path il-mono', entry.resource);
+    pathNode.setAttribute('title', entry.resource);
+    wrap.appendChild(pathNode);
+    wrap.appendChild(el('span', 'il-ib-reason', entry.reason));
+    return wrap;
+  }
+
+  function renderReview(review) {
+    var included = document.getElementById('il-ib-review-included');
+    if (included) {
+      included.textContent = '';
+      if (review.included.length === 0) {
+        included.appendChild(el('p', 'il-ib-empty', 'No file is currently eligible for recovery.'));
+      }
+      var view = pageSlice(review.included, state.reviewPage, 200);
+      var groups = groupRows(view.rows);
+      for (var g = 0; g < groups.length; g++) {
+        var group = groups[g];
+        var details = el('details', 'il-ib-group');
+        details.setAttribute('open', 'open');
+        var summary = el('summary', 'il-ib-group-summary');
+        summary.appendChild(el('span', 'il-ib-group-dir', group.dir === '.' ? '(workspace root)' : group.dir));
+        summary.appendChild(el('span', 'il-ib-group-count', String(group.rows.length)));
+        details.appendChild(summary);
+        for (var r = 0; r < group.rows.length; r++) {
+          details.appendChild(reviewEntryNode(group.rows[r]));
+        }
+        included.appendChild(details);
+      }
+      if (view.pages > 1) {
+        included.appendChild(el('p', 'il-ib-empty',
+          'Page ' + view.page + ' of ' + view.pages + ' - use the pager below.'));
+      }
+    }
+    var excluded = document.getElementById('il-ib-review-excluded');
+    if (excluded) {
+      excluded.textContent = '';
+      if (review.excluded.length === 0) {
+        excluded.appendChild(el('p', 'il-ib-empty', 'Nothing was excluded from this scope.'));
+      }
+      var shown = review.excluded.slice(0, 100);
+      for (var e = 0; e < shown.length; e++) {
+        excluded.appendChild(excludedNode(shown[e]));
+      }
+      if (review.excluded.length > shown.length) {
+        excluded.appendChild(el('p', 'il-ib-empty',
+          '… and ' + (review.excluded.length - shown.length) + ' more excluded file(s).'));
+      }
+    }
+  }
+
+  function resultNode(entry) {
+    var wrap = el('div', 'il-ib-row');
+    wrap.setAttribute('data-resource', entry.resource);
+    wrap.appendChild(chip(entry.label, entry.tone));
+    wrap.appendChild(el('span', 'il-ib-name', entry.name));
+    var pathNode = el('span', 'il-ib-path il-mono', entry.resource);
+    pathNode.setAttribute('title', entry.resource);
+    wrap.appendChild(pathNode);
+    wrap.appendChild(el('span', 'il-ib-reason', entry.message));
+    if (entry.outcome === 'recovered') {
+      var open = el('button', 'il-ib-preview', 'Open file');
+      open.type = 'button';
+      open.setAttribute('data-act', 'openFile');
+      open.setAttribute('data-resource', entry.resource);
+      wrap.appendChild(open);
+    }
+    if (entry.diffable) {
+      var diff = el('button', 'il-ib-preview', 'View diff');
+      diff.type = 'button';
+      diff.setAttribute('data-act', 'viewDiff');
+      diff.setAttribute('data-resource', entry.resource);
+      wrap.appendChild(diff);
+    }
+    if (entry.details) {
+      var tech = el('details', 'il-ib-tech');
+      tech.appendChild(el('summary', null, 'Details'));
+      tech.appendChild(el('p', null, entry.details));
+      wrap.appendChild(tech);
+    }
+    return wrap;
+  }
+
+  function renderResults(results) {
+    var container = document.getElementById('il-ib-results');
+    if (!container) { return; }
+    container.textContent = '';
+    if (results.entries.length === 0) {
+      container.appendChild(el('p', 'il-ib-empty', 'No files were processed in this run.'));
+    }
+    var view = pageSlice(results.entries, state.resultsPage, 200);
+    for (var i = 0; i < view.rows.length; i++) {
+      container.appendChild(resultNode(view.rows[i]));
+    }
+    if (view.pages > 1) {
+      container.appendChild(el('p', 'il-ib-empty',
+        'Page ' + view.page + ' of ' + view.pages + ' - use the pager below.'));
+    }
+  }
+
+  var searchTimer = null;
+  function scheduleSearch(value) {
+    if (searchTimer) { clearTimeout(searchTimer); }
+    searchTimer = setTimeout(function () {
+      state.query = value;
+      state.page = 1;
+      renderList();
+    }, 150);
+  }
+
+  document.addEventListener('click', function (event) {
+    var target = event.target;
+    var node = target && typeof target.closest === 'function'
+      ? target.closest('[data-act]')
+      : null;
+    if (!node || node.disabled) { return; }
+    var act = node.getAttribute('data-act');
+    var resource = node.getAttribute('data-resource') || '';
+    if (act === 'filter') {
+      state.filter = node.getAttribute('data-filter') || 'all-changed';
+      state.page = 1;
+      syncFilterButtons();
+      renderList();
+      return;
+    }
+    if (act === 'clearSearch') {
+      var input = document.getElementById('il-ib-search');
+      if (input) { input.value = ''; }
+      state.query = '';
+      state.page = 1;
+      renderList();
+      return;
+    }
+    if (act === 'selectVisible') {
+      // EVERY file matching the current filter and search - not just the
+      // page the user happens to be looking at.
+      var matching = sortRows(filterRows(rows, state.filter, state.query), state.sort);
+      var resources = [];
+      for (var i = 0; i < matching.length; i++) { resources.push(matching[i].resource); }
+      send({ type: 'select', add: resources });
+      return;
+    }
+    if (act === 'selectEligible') {
+      var eligible = [];
+      for (var e = 0; e < rows.length; e++) {
+        if (rows[e].flags.recoverable) { eligible.push(rows[e].resource); }
+      }
+      send({ type: 'select', add: eligible });
+      return;
+    }
+    if (act === 'clearSelection') { send({ type: 'clearSelection' }); return; }
+    if (act === 'pagePrev') { state.page = Math.max(1, state.page - 1); renderList(); return; }
+    if (act === 'pageNext') {
+      var current = visibleRows(state);
+      state.page = Math.min(current.pages, state.page + 1);
+      renderList();
+      return;
+    }
+    if (act === 'collapseAll') {
+      var collapsed = groupRows(visibleRows(state).rows);
+      for (var c = 0; c < collapsed.length; c++) { state.collapsed[collapsed[c].dir] = true; }
+      renderList();
+      return;
+    }
+    if (act === 'expandAll') { state.collapsed = {}; renderList(); return; }
+    if (act === 'preview') { send({ type: 'preview', resource: resource }); return; }
+    if (act === 'refresh') { send({ type: 'refresh' }); return; }
+    if (act === 'cancelScan') { send({ type: 'cancelScan' }); return; }
+    if (act === 'recoverSelected') { send({ type: 'recoverSelected' }); return; }
+    if (act === 'recoverAll') { send({ type: 'recoverAll' }); return; }
+    if (act === 'back') { send({ type: 'back' }); return; }
+    if (act === 'confirm') { send({ type: 'confirm' }); return; }
+    if (act === 'viewDiff') { send({ type: 'viewDiff', resource: resource }); return; }
+    if (act === 'openFile') { send({ type: 'openFile', resource: resource }); return; }
+    if (act === 'retry') { send({ type: 'retry' }); return; }
+    if (act === 'verifyRecovery') { send({ type: 'verifyRecovery' }); return; }
+    if (act === 'close') { send({ type: 'close' }); return; }
+  });
+
+  document.addEventListener('change', function (event) {
+    var target = event.target;
+    if (!target || !target.getAttribute) { return; }
+    var act = target.getAttribute('data-act');
+    if (act === 'rowcheck') {
+      var resource = target.getAttribute('data-resource') || '';
+      if (target.checked) {
+        state.selection[resource] = true;
+        send({ type: 'select', add: [resource] });
+      } else {
+        delete state.selection[resource];
+        send({ type: 'select', remove: [resource] });
+      }
+      updateSelectionUI();
+      return;
+    }
+    if (act === 'sort') {
+      state.sort = target.value;
+      state.page = 1;
+      renderList();
+    }
+  });
+
+  document.addEventListener('input', function (event) {
+    var target = event.target;
+    if (target && target.id === 'il-ib-search') { scheduleSearch(target.value); }
+  });
+
+  window.addEventListener('message', function (event) {
+    var message = event.data;
+    if (!message || message.type !== 'update' || !message.view) { return; }
+    applyState(message.view);
+  });
+
+  renderList();
+  if (payload.review) { renderReview(payload.review); }
+  if (payload.results) { renderResults(payload.results); }
+  send({ type: 'ready' });
+
+  return api;
+})();
+</script>
+</body>
+</html>

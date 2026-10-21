@@ -25,6 +25,7 @@ from app.domain.entities.surgical_recovery_types import (
     ExecutionState,
     StopCondition,
 )
+from app.domain.repositories.causal_state_repositories import enforce_write_fence
 from app.domain.services.distributed_recovery_orchestrator import (
     DistributedRecoveryOrchestrator,
 )
@@ -96,7 +97,17 @@ class InMemoryDurableExecutionRepo:
         items.sort(key=lambda s: s.execution_order)
         return items[offset:offset + limit], len(items)
 
-    async def save(self, step: DurableExecutionStep) -> DurableExecutionStep:
+    async def save(
+        self, step: DurableExecutionStep, expected_fencing_token: int | None = None
+    ) -> DurableExecutionStep:
+        # V6 fencing contract: reject writes older than the stored fence.
+        fences: dict[str, int] = getattr(self, "_fences", {})
+        self._fences = fences
+        enforce_write_fence(
+            fences.get(step.step_id, 0), expected_fencing_token, step.step_id
+        )
+        if expected_fencing_token is not None:
+            fences[step.step_id] = expected_fencing_token
         self._steps[step.step_id] = step
         return step
 

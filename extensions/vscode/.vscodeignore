@@ -1,0 +1,30 @@
+.vscode/**
+.vscode-test/**
+src/**
+test/**
+out/test/**
+node_modules/**
+tools/**
+**/*.map
+**/*.js.map
+tsconfig.json
+eslint.config.mjs
+package-lock.json
+**/*.vsix
+**/__pycache__/**
+**/*.pyc
+.pytest_cache/**
+.gitignore
+.git/**
+# Build-time-only cruft that must never ship inside the bundled runtime.
+# (These are already stripped by tools/provision-runtime.js; the patterns are
+# a second lock so an unstripped re-provision cannot silently re-add them.)
+runtime/**/tcl/**
+runtime/**/Lib/test/**
+runtime/**/Lib/idlelib/**
+runtime/**/Lib/site-packages/**
+runtime/**/Lib/venv/**
+runtime/**/Lib/ensurepip/**
+runtime/**/include/**
+runtime/**/*.lib
+runtime/**/*.a

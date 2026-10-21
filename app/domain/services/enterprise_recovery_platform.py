@@ -202,6 +202,12 @@ class EnterpriseRecoveryPlatform:
 
         if error is not None:
             status = RecoveryPlatformStatus.FAILURE
+        elif not components_executed:
+            # A platform with no configured components cannot actually handle
+            # an incident.  Reporting SUCCESS here would be false confidence,
+            # so the operation fails closed and demands manual intervention.
+            error = "No recovery components are configured; incident was not handled"
+            status = RecoveryPlatformStatus.FAILURE
         elif components_failed:
             status = RecoveryPlatformStatus.PARTIAL_SUCCESS
         else:

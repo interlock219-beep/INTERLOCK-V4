@@ -184,6 +184,11 @@ class DurableExecutionStepModel(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=datetime.utcnow
     )
+    # Monotonic fencing token of the newest accepted write (WP-2, V6).
+    # server_default backfills existing rows to 0 on migration.
+    write_fence: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0"
+    )
 
 
 class RecoveryReportModel(Base):

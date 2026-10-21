@@ -27,6 +27,13 @@ dependencies = [
     "pyotp>=2.9,<3.0",
 ]
 
+# The Terminal Runner (CLI): one of Interlock's two product interfaces. It is a
+# thin terminal layer over the same shared recovery engine + orchestration the
+# VS Code extension drives (see interlock_cli.py). Installing `intentlock`
+# therefore also provides the `interlock` command.
+[project.scripts]
+interlock = "interlock_cli:console_entry"
+
 [project.optional-dependencies]
 dev = [
     "pytest>=9.0.3,<10.0",
@@ -40,8 +47,7 @@ dev = [
 ]
 security = [
     "pip-audit>=2.7,<3.0",
-    "cyclonedx-bom>=3.2,<4.0",
-    "semgrep>=1.100,<2.0",
+    "cyclonedx-bom>=7.0,<8.0",
 ]
 test = [
     "pytest>=9.0.3,<10.0",
@@ -51,8 +57,28 @@ test = [
     "httpx>=0.27,<1.0",
 ]
 
+[tool.setuptools]
+# The Terminal Runner ships as a single top-level module (alongside the app/sdk
+# packages) so the `interlock` console script resolves after install.
+py-modules = ["interlock_cli"]
+
 [tool.setuptools.packages.find]
 include = ["app*", "sdk*"]
+
+# Ship the migration runtime + config template as data files (installed to
+# sys.prefix/share/intentlock) so a built wheel can run migrations without
+# colliding with the `alembic` tool's own top-level package. alembic.ini uses
+# `script_location = %(here)s/alembic` so this resolves for both a source
+# checkout and an installed prefix. The sdist additionally carries these via
+# MANIFEST.in so an unpacked sdist is a complete source tree.
+[tool.setuptools.data-files]
+"share/intentlock" = ["alembic.ini", ".env.example"]
+"share/intentlock/alembic" = ["alembic/env.py", "alembic/script.py.mako"]
+"share/intentlock/alembic/versions" = ["alembic/versions/*.py"]
+# Shared engine command layer for BOTH interfaces (VS Code extension + Terminal
+# Runner). Installed so the `interlock` command finds it outside a source
+# checkout (interlock_cli.py searches sys.prefix/share/intentlock/python/).
+"share/intentlock/python" = ["extensions/vscode/python/interlock_bridge.py"]
 
 [tool.ruff]
 target-version = "py311"
@@ -69,6 +95,12 @@ ignore = ["S101", "UP017"]
 "demo_e2e_control_plane.py" = ["T201"]
 "demo_e2e_causal_recovery.py" = ["T201"]
 "app/infrastructure/recovery/database_recovery_adapter.py" = ["S608"]
+# Terminal Runner + its independent lifecycle drivers. For the CLI, printing IS
+# the interface (T201). For both, single-line verbose assertions and readable
+# usage strings stay unwrapped (E501 - the codebase itself does not gate line
+# length), and the drivers use safe list-form subprocess calls (S603).
+"interlock_cli.py" = ["T201", "E501"]
+"tests/integration/cli_*.py" = ["T201", "E501", "S603"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["app", "tests", "sdk"]

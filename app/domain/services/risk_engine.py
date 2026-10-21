@@ -41,6 +41,7 @@ class RiskEngine:
         signals.extend(self._check_repeated_failures(recent_actions or []))
         signals.extend(self._check_abnormal_rate(recent_actions or []))
         signals.extend(self._check_unusual_tool_combination(context, recent_actions or []))
+        signals.extend(self._check_retry_after_failure(context, recent_actions or []))
         signals.extend(self._check_sensitive_sequences(recent_actions or []))
         signals.extend(self._check_cross_boundary(context))
         signals.extend(self._check_suspicious_child_creation(context, agent_history or []))
@@ -170,6 +171,31 @@ class RiskEngine:
                     ),
                 )
             )
+        return signals
+
+    def _check_retry_after_failure(
+        self, context: AuthorizationContext, actions: list[dict[str, Any]]
+    ) -> list[RiskSignal]:
+        """Detect immediate retries of a tool that just failed or was denied."""
+        signals: list[RiskSignal] = []
+        if not context.proposed_tool:
+            return signals
+        for action in actions:
+            if (
+                action.get("tool") == context.proposed_tool
+                and action.get("status") in ("failed", "denied")
+            ):
+                signals.append(
+                    RiskSignal(
+                        name="retry_after_failure",
+                        score=0.3,
+                        explanation=(
+                            f"Tool '{context.proposed_tool}' failed or was denied in the "
+                            f"recent window; retrying it warrants human review"
+                        ),
+                    )
+                )
+                break
         return signals
 
     def _check_sensitive_sequences(self, actions: list[dict[str, Any]]) -> list[RiskSignal]:

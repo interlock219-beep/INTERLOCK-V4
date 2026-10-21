@@ -107,6 +107,38 @@ class ConfidenceRepository(ABC):
     async def save(self, confidence: RecoveryConfidence) -> RecoveryConfidence: ...
 
 
+class StaleFencingTokenError(RuntimeError):
+    """Durable write rejected: a newer fencing token already advanced the fence.
+
+    Raised by :class:`DurableExecutionRepository.save` when
+    ``expected_fencing_token`` is older than the stored ``write_fence`` of the
+    step. Callers must treat this as a distinct concurrency outcome — the
+    write did NOT persist — and never report it as success.
+    """
+
+
+def enforce_write_fence(
+    stored_write_fence: int,
+    expected_fencing_token: int | None,
+    step_id: str,
+) -> None:
+    """Shared fencing check for DurableExecutionRepository implementations.
+
+    ``expected_fencing_token=None`` selects the documented legacy path: an
+    unconditional write that never consults or mutates the stored fence.
+    Otherwise the write is accepted iff ``stored_write_fence <=
+    expected_fencing_token``.
+    """
+    if expected_fencing_token is None:
+        return
+    if stored_write_fence > expected_fencing_token:
+        raise StaleFencingTokenError(
+            f"Stale fencing token for step {step_id!r}: stored write fence "
+            f"{stored_write_fence} is newer than expected token "
+            f"{expected_fencing_token} (stale writer rejected)"
+        )
+
+
 class DurableExecutionRepository(ABC):
     """Persistence port for DurableExecutionStep."""
 
@@ -123,7 +155,18 @@ class DurableExecutionRepository(ABC):
     ) -> tuple[list[DurableExecutionStep], int]: ...
 
     @abstractmethod
-    async def save(self, step: DurableExecutionStep) -> DurableExecutionStep: ...
+    async def save(
+        self,
+        step: DurableExecutionStep,
+        expected_fencing_token: int | None = None,
+    ) -> DurableExecutionStep:
+        """Persist a step, fenced by ``expected_fencing_token``.
+
+        When a token is supplied, the write is accepted only if it is not
+        older than the stored write fence; otherwise
+        :class:`StaleFencingTokenError` is raised and nothing persists.
+        ``None`` keeps the legacy unconditional behavior.
+        """
 
 
 class RecoveryReportRepository(ABC):

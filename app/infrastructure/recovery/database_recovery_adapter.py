@@ -52,6 +52,7 @@ from app.domain.entities.surgical_recovery_types import (
 from app.domain.entities.surgical_recovery_types import (
     Reversibility as RevEnum,
 )
+from app.domain.services.evidence_hash import seal_evidence
 from app.domain.services.recovery_adapter import RecoveryAdapter
 
 
@@ -222,8 +223,6 @@ class DatabaseRecoveryAdapter(RecoveryAdapter):
         before_snapshot: dict[str, Any] | None = None,
     ) -> RecoveryEvidence:
         self._verify_tenant_isolation(action)
-        payload_str = json.dumps(action.tool_arguments, sort_keys=True, default=str)
-        evidence_hash = hashlib.sha256(f"{action.action_id}:{payload_str}".encode()).hexdigest()
 
         db_path = self._get_db_path(execution_context)
         before_state = None
@@ -271,7 +270,7 @@ class DatabaseRecoveryAdapter(RecoveryAdapter):
         )
         after_state_reference = after_state.get("hash") if after_state else action.after_state_ref
 
-        return RecoveryEvidence(
+        return seal_evidence(RecoveryEvidence(
             evidence_id=f"ev-{action.action_id}",
             action_id=action.action_id,
             tenant_id=action.tenant_id,
@@ -293,14 +292,13 @@ class DatabaseRecoveryAdapter(RecoveryAdapter):
             dependency_edges=[],
             reversibility_classification=Reversibility.normalize(action.reversibility),
             state_version=action.policy_version,
-            evidence_hash=evidence_hash,
             adapter_capability=AdapterCapability.PRODUCTION_VALIDATED,
             verification_requirements=[
                 "row_state_matches_expected",
                 "no_orphaned_records",
                 "referential_integrity_maintained",
             ],
-        )
+        ))
 
     async def classify_reversibility(
         self,

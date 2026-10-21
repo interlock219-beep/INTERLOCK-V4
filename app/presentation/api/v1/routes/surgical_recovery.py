@@ -12,6 +12,7 @@ from app.application.dto.control import (
     RecoveryPlanResponse,
     SurgicalRecoveryPlanResponse,
 )
+from app.domain.entities.causal_state_types import VerificationStatus
 from app.domain.entities.recovery_plan import (
     RecoveryOutcome,
     RecoveryPlan,
@@ -38,6 +39,10 @@ from app.domain.services.distributed_recovery_orchestrator import (
 )
 from app.domain.services.recovery_confidence_model import RecoveryConfidenceModel
 from app.domain.services.recovery_planning_service import RecoveryPlanningService
+from app.domain.services.tenant_quota_service import (
+    QuotaExceededError,
+    TenantQuotaService,
+)
 from app.infrastructure.logging.audit_logger import log_security_event
 from app.infrastructure.persistence.repositories.sqlalchemy_causal_state_repositories import (
     SQLAlchemyConfidenceRepository,
@@ -46,6 +51,10 @@ from app.infrastructure.persistence.repositories.sqlalchemy_causal_state_reposit
 )
 from app.infrastructure.persistence.repositories.sqlalchemy_containment_repository import (
     SQLAlchemyRecoveryPlanRepository,
+)
+from app.infrastructure.persistence.repositories.sqlalchemy_coordination_stores import (
+    build_plan_lease_store,
+    build_quota_counter_store,
 )
 from app.infrastructure.persistence.repositories.sqlalchemy_protected_action_repository import (
     SQLAlchemyProtectedActionRepository,
@@ -69,10 +78,17 @@ from app.presentation.api.dependencies.auth import (
     get_user_tenant_id,
     require_recovery_executor,
 )
+from app.presentation.api.dependencies.emergency_guard import assert_execution_permitted
 
 router = APIRouter(tags=["Surgical Recovery"])
 DEFAULT_LIMIT = 100
 MAX_LIMIT = 500
+
+# Process-wide recovery quota store (opt-in per tenant: no registered policy
+# means unlimited, so default behaviour is unchanged).  The backend follows
+# the runbook §7 selector (INTERLOCK_QUOTA_BACKEND): default in-process,
+# "sql" shares quota_counters across processes.
+quota_service = TenantQuotaService(counter_store=build_quota_counter_store())
 
 
 def _get_evidence_repo(
@@ -146,7 +162,9 @@ def _get_recovery_service(
     adapters: Annotated[list[Any], Depends(_get_adapters)],
     evidence_repo: Annotated[RecoveryEvidenceRepository, Depends(_get_evidence_repo)],
 ) -> RecoveryPlanningService:
-    return RecoveryPlanningService(action_repo, plan_repo, adapters, evidence_repo)
+    return RecoveryPlanningService(
+        action_repo, plan_repo, adapters, evidence_repo, quota_service=quota_service
+    )
 
 
 def _plan_to_response(plan: RecoveryPlan) -> SurgicalRecoveryPlanResponse:
@@ -233,6 +251,13 @@ async def get_recovery_evidence(
 ) -> RecoveryEvidenceResponse:
     evidence = await evidence_repo.get_by_evidence_id(get_user_tenant_id(current_user), evidence_id)
     if evidence is None:
+        # Cross-tenant and unknown-id denials must leave an audit trace
+        # exactly like the success path does (V6 doc-WP-6 scenario F).
+        log_security_event(
+            "recovery_evidence_access_denied",
+            tenant_id=get_user_tenant_id(current_user),
+            evidence_id=evidence_id,
+        )
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Recovery evidence not found",
@@ -342,7 +367,15 @@ async def create_recovery_plan(
     recovery_service: Annotated[RecoveryPlanningService, Depends(_get_recovery_service)],
     incident_action_id: str = Query(..., min_length=1, max_length=64),
 ) -> RecoveryPlanResponse:
-    plan = await recovery_service.create_plan(get_user_tenant_id(current_user), incident_action_id)
+    try:
+        plan = await recovery_service.create_plan(
+            get_user_tenant_id(current_user), incident_action_id
+        )
+    except QuotaExceededError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=str(exc),
+        ) from exc
     log_security_event(
         "recovery_plan_created",
         tenant_id=get_user_tenant_id(current_user),
@@ -410,6 +443,9 @@ async def execute_recovery_plan(
     adapters: Annotated[list[Any], Depends(_get_adapters)],
 ) -> RecoveryPlanResponse:
     tenant_id = get_user_tenant_id(current_user)
+    # Emergency deny must be observed at execution time (PILLAR 6): a deny
+    # activated through the emergency routes blocks this entry point.
+    await assert_execution_permitted(tenant_id)
     plan = await plan_repo.get_by_plan_id(tenant_id, plan_id)
     if plan is None:
         raise HTTPException(
@@ -435,16 +471,40 @@ async def execute_recovery_plan(
     )
     affected = [action] + descendants
 
-    orchestrator = DistributedRecoveryOrchestrator(evidence_repo, execution_repo, adapters)
-    await orchestrator.create_durable_plan(tenant_id, plan_id, affected, plan.topological_order)
-    execution_result = await orchestrator.execute_durable_plan(
-        tenant_id, plan_id, plan.stop_conditions
+    orchestrator = DistributedRecoveryOrchestrator(
+        evidence_repo,
+        execution_repo,
+        adapters,
+        lease_store=build_plan_lease_store(),
     )
+    await orchestrator.create_durable_plan(tenant_id, plan_id, affected, plan.topological_order)
+
+    # Tenant quota: hold one concurrent-compensation slot for this execution.
+    slot = quota_service.begin_compensation(tenant_id)
+    if not slot.admitted:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=slot.reason,
+        )
+    try:
+        execution_result = await orchestrator.execute_durable_plan(
+            tenant_id, plan_id, plan.stop_conditions
+        )
+    finally:
+        quota_service.end_compensation(tenant_id)
 
     orchestrator_status = execution_result.get("status", "error")
     if orchestrator_status == "completed":
         new_status = RecoveryStatus.COMPLETED
-        new_outcome = RecoveryOutcome.SAFE_AUTOMATIC
+        # SAFE_AUTOMATIC is a safety promise: it requires the plan to have
+        # completed AND passed independent verification of every step.
+        # Completed-but-unverified runs (V6 WP-7) are honestly UNKNOWN.
+        new_outcome = (
+            RecoveryOutcome.SAFE_AUTOMATIC
+            if execution_result.get("verification_status")
+            == VerificationStatus.EXECUTED_AND_VERIFIED.value
+            else RecoveryOutcome.UNKNOWN
+        )
         new_execution_status = "completed"
     elif orchestrator_status == "already_running":
         new_status = RecoveryStatus.EXECUTING
@@ -509,6 +569,7 @@ async def resume_recovery_plan(
     adapters: Annotated[list[Any], Depends(_get_adapters)],
 ) -> dict[str, Any]:
     tenant_id = get_user_tenant_id(current_user)
+    await assert_execution_permitted(tenant_id)
     plan = await plan_repo.get_by_plan_id(tenant_id, plan_id)
     if plan is None:
         raise HTTPException(
@@ -522,7 +583,12 @@ async def resume_recovery_plan(
         )
 
 
-    orchestrator = DistributedRecoveryOrchestrator(evidence_repo, execution_repo, adapters)
+    orchestrator = DistributedRecoveryOrchestrator(
+        evidence_repo,
+        execution_repo,
+        adapters,
+        lease_store=build_plan_lease_store(),
+    )
     result = await orchestrator.resume_plan(tenant_id, plan_id, plan.stop_conditions)
 
     log_security_event(

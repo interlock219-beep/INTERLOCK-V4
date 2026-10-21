@@ -52,7 +52,9 @@ async def create_grant(
         SQLAlchemyAgentRepository,
     )
 
-    agent_repo = SQLAlchemyAgentRepository(repo._session)
+    # Concrete SQLAlchemy repository exposes _session; the domain interface
+    # does not — known typing gap (constructor needs the session directly).
+    agent_repo = SQLAlchemyAgentRepository(repo._session)  # type: ignore[attr-defined]
     lineage = AuthorityLineageService(agent_repo, repo)
     scope = AuthorityScope(body.scope)
     delegation_depth = body.delegation_depth
@@ -247,7 +249,7 @@ async def revoke_grant(
         SQLAlchemyAgentRepository,
     )
 
-    agent_repo = SQLAlchemyAgentRepository(repo._session)
+    agent_repo = SQLAlchemyAgentRepository(repo._session)  # type: ignore[attr-defined]
     lineage = AuthorityLineageService(agent_repo, repo)
     grant = await lineage.revoke_authority(
         get_user_tenant_id(current_user), grant_id, str(current_user.id)
@@ -291,6 +293,7 @@ async def get_grant_lineage(
         SQLAlchemyAgentRepository,
     )
 
-    agent_repo = SQLAlchemyAgentRepository(repo._session)
+    agent_repo = SQLAlchemyAgentRepository(repo._session)  # type: ignore[attr-defined]
     lineage = AuthorityLineageService(agent_repo, repo)
     result = await lineage.get_lineage(get_user_tenant_id(current_user), grant_id)
+    return result

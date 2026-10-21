@@ -4,17 +4,16 @@ Python SDK and LangChain wrapper for the Interlock V4 control plane for AI-agent
 
 ## Installation
 
-```bash
-pip install interlock
-```
-
-For development:
+Interlock is not published to any package index. Install from a checkout:
 
 ```bash
 git clone <repository-url>
 cd interlock-v4
 pip install -e ".[dev,security]"
 ```
+
+For a plain runtime install from the same checkout, `pip install -e .` is sufficient;
+`.[dev,security]` adds the test, lint, type-check, and audit tooling.
 
 ## Quickstart
 

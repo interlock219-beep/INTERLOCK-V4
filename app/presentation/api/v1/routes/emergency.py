@@ -6,7 +6,7 @@ from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
-from app.domain.services.emergency_control_service import EmergencyControlService
+from app.domain.services.emergency_control_service import get_emergency_control_service
 from app.domain.services.token_revocation_service import TokenRevocationService
 from app.presentation.api.dependencies.auth import (
     CurrentUser,
@@ -20,7 +20,7 @@ logger = logging.getLogger("intentlock.api.emergency")
 emergency_router = APIRouter(prefix="/emergency", tags=["emergency-control"])
 token_revocation_router = APIRouter(prefix="/token-revocation", tags=["token-revocation"])
 
-emergency_service = EmergencyControlService()
+emergency_service = get_emergency_control_service()
 token_revocation_service: TokenRevocationService | None = None
 
 

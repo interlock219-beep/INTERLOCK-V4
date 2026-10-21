@@ -83,6 +83,11 @@ web/node_modules/
 web/package-lock.json
 web/tsconfig.tsbuildinfo
 
+# Interlock V6 website (site/) — local install & build output
+site/node_modules/
+site/coverage/
+site/.vite/
+
 # Coverage debug artifacts
 coverage_debug.json
 coverage_direct.json

@@ -15,6 +15,10 @@ from app.infrastructure.persistence.models.billing_models import (
     WebhookEventModel,
 )
 from app.infrastructure.persistence.models.containment_event_model import ContainmentEventModel
+from app.infrastructure.persistence.models.coordination_models import (
+    PlanLeaseModel,
+    QuotaCounterModel,
+)
 from app.infrastructure.persistence.models.discovery_event_model import DiscoveryEventModel
 from app.infrastructure.persistence.models.emergency_state_model import EmergencyStateModel
 from app.infrastructure.persistence.models.execution_token_model import ExecutionTokenModel
@@ -65,4 +69,6 @@ __all__ = [
     "UserSessionModel",
     "WebhookEventModel",
     "IncidentModel",
+    "PlanLeaseModel",
+    "QuotaCounterModel",
 ]

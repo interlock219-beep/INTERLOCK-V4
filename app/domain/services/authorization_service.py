@@ -167,9 +167,19 @@ class AuthorizationService:
         if allowed_resources is not None:
             if not context.resource:
                 return AuthorizationDecision.DENY
+            if any(self._is_resource_pattern(allowed) for allowed in allowed_resources):
+                # Pattern-configured allow-list: exact matching is delegated to
+                # the resource-hierarchy check so that pattern mismatches are
+                # reported with the hierarchy reason.  The hierarchy check is
+                # default-deny, so no permission is granted here.
+                return AuthorizationDecision.ALLOW
             if context.resource not in allowed_resources:
                 return AuthorizationDecision.DENY
         return AuthorizationDecision.ALLOW
+
+    @staticmethod
+    def _is_resource_pattern(allowed: str) -> bool:
+        return any(ch in allowed for ch in "*?[")
 
     def _check_task(self, context: AuthorizationContext) -> AuthorizationDecision:
         if not context.require_task_scoping:
@@ -281,25 +291,38 @@ class AuthorizationService:
             if getattr(context, "agent_history_required", False):
                 return AuthorizationDecision.DENY
             return AuthorizationDecision.ALLOW
-        historical_combinations = set()
+        historical_combinations: set[tuple[str, str]] = set()
         for h in history:
             tool = h.get("tool", "")
             resource = h.get("resource", "")
             if tool:
                 historical_combinations.add((tool, resource))
         if not historical_combinations:
-            if getattr(context, "agent_history_required", False):
-                return AuthorizationDecision.DENY
-            return AuthorizationDecision.ALLOW
-        current_combo = (context.proposed_tool, context.resource)
-        if current_combo not in historical_combinations:
-            return AuthorizationDecision.REQUIRE_HITL
-        return AuthorizationDecision.ALLOW
+            # History records exist but none of them describe a tool/resource
+            # combination we can reason about.  Treat the history as unknown
+            # and fail closed instead of assuming the action is normal.
+            return AuthorizationDecision.DENY
+        current_tool = context.proposed_tool
+        current_resource = context.resource
+        for tool, resource in historical_combinations:
+            if tool != current_tool:
+                continue
+            # When either side of the comparison does not scope a resource,
+            # the behavioral pattern is judged on the tool alone; otherwise
+            # the exact tool/resource combination must be observed before.
+            if not current_resource or not resource or resource == current_resource:
+                return AuthorizationDecision.ALLOW
+        return AuthorizationDecision.REQUIRE_HITL
 
     def _check_authority_ttl(self, context: AuthorizationContext) -> AuthorizationDecision:
         authority_grants = context.authority_grants or []
         now = datetime.now(UTC)
         for grant in authority_grants:
+            grant_tenant = grant.get("tenant_id")
+            if grant_tenant and context.tenant_id and grant_tenant != context.tenant_id:
+                # A grant issued to another tenant is not a valid authority in
+                # this context; fail closed.
+                return AuthorizationDecision.DENY
             expires_at = grant.get("expires_at")
             if expires_at is None:
                 return AuthorizationDecision.DENY
@@ -419,7 +442,7 @@ class AuthorizationService:
 
     @staticmethod
     def _authority_ttl_reason(context: AuthorizationContext) -> str:
-        return "Authority grant has expired or expiration is unknown"
+        return "Authority grant has expired, is unknown, or does not belong to this tenant"
 
     def _tool_reason(self, context: AuthorizationContext) -> str:
         denied_tools = getattr(self._settings, "authorization_denied_tools", [])

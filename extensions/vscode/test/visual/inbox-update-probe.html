@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Inbox live-update probe</title>
+<style>
+  body { margin: 0; background: #101010; color: #eee; font-family: monospace; font-size: 12px; }
+  iframe { width: 900px; height: 700px; border: 1px solid #444; }
+  pre { white-space: pre-wrap; padding: 8px; }
+</style>
+</head>
+<body>
+<iframe id="frame" src="recovery-inbox.html"></iframe>
+<pre id="report">running…</pre>
+<script>
+  const frame = document.getElementById('frame');
+  const report = document.getElementById('report');
+  const lines = [];
+  const log = (label, value) => lines.push(label + ': ' + JSON.stringify(value));
+
+  frame.addEventListener('load', function () {
+    const win = frame.contentWindow;
+    const doc = frame.contentDocument;
+    setTimeout(function () {
+      // 1) The user types in the search box (the symptom: typing is what made
+      //    the interface react).
+      const input = doc.getElementById('il-ib-search');
+      input.focus();
+      input.value = 'controller';
+      input.dispatchEvent(new win.Event('input', { bubbles: true }));
+      const marker = 'boot-' + Date.now();
+      win.__marker = marker;
+      const before = {
+        headerX: Math.round(doc.querySelector('.il-header').getBoundingClientRect().x),
+        contentX: Math.round(doc.querySelector('.il-ib-summary').getBoundingClientRect().x),
+        cardHeights: [...doc.querySelectorAll('.il-ib-stat')].map(function (n) {
+          return Math.round(n.getBoundingClientRect().height);
+        }),
+        rows: doc.querySelectorAll('#il-ib-list .il-ib-row').length,
+        examined: doc.querySelector('[data-live="count-examined"]').textContent,
+        search: input.value,
+      };
+      log('before', before);
+
+      // 2) The host pushes a new state (what the extension does while it
+      //    scans) - the document must NOT be replaced.
+      const payload = JSON.parse(doc.getElementById('il-ib-payload').textContent);
+      const view = {
+        mode: 'list',
+        workspaceName: 'workspace',
+        scan: {
+          status: 'done',
+          statusLabel: 'Scan complete',
+          statusNote: 'Discovery and eligibility assessment finished.',
+          startedAt: '2026-10-20T12:00:00.000Z',
+          finishedAt: '2026-10-20T12:00:05.000Z',
+          progress: null,
+          error: null,
+          stale: false,
+          staleReason: null,
+        },
+        counts: {
+          examined: 99,
+          changed: 7,
+          verifiedEvidence: 90,
+          recoverableModified: 5,
+          recoverableDeleted: 1,
+          attention: 2,
+          noBaseline: 3,
+        },
+        coverageLines: ['pushed coverage line'],
+        notice: 'pushed notice',
+        busy: null,
+        rows: payload.rows,
+        selection: { count: 1, eligible: 1, attention: 0, pending: 0, text: '1 file selected · 1 eligible · 0 require attention' },
+        selectionResources: [],
+        recoverSelected: { enabled: true, label: 'Recover Selected (1)', note: 'pushed note' },
+        recoverAll: { enabled: true, label: 'Recover All (6)', note: 'pushed note' },
+        review: null,
+        results: null,
+      };
+      win.postMessage({ type: 'update', view: view }, '*');
+
+      setTimeout(function () {
+        const after = {
+          sameDocument: win.__marker === marker,
+          examined: doc.querySelector('[data-live="count-examined"]').textContent,
+          coverage: doc.querySelector('[data-live="coverage"]').textContent.trim(),
+          notice: doc.querySelector('[data-live="notice"]').textContent,
+          noticeHidden: doc.querySelector('[data-live="notice"]').hidden,
+          search: input.value,
+          focused: doc.activeElement === input,
+          recoverLabel: doc.getElementById('il-ib-recover-selected').textContent,
+          recoverDisabled: doc.getElementById('il-ib-recover-selected').disabled,
+        };
+        log('after', after);
+
+        // 3) A click must still work right after the update (no swallowed click).
+        const filter = doc.querySelector('[data-filter="recoverable"]');
+        const before2 = doc.querySelectorAll('#il-ib-list .il-ib-row').length;
+        filter.click();
+        const after2 = {
+          pressed: filter.getAttribute('aria-pressed'),
+          rowsBefore: before2,
+          rowsAfter: doc.querySelectorAll('#il-ib-list .il-ib-row').length,
+        };
+        log('click', after2);
+
+        report.textContent = lines.join('\n');
+      }, 400);
+    }, 400);
+  });
+</script>
+</body>
+</html>

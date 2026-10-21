@@ -48,6 +48,14 @@ class TestBillingUncoveredBranches:
             app_env="production",
             redis_url="redis://localhost:6379/0",
             database_url="postgresql://localhost/intentlock",
+            # Production Settings validation requires these explicitly (test
+            # environment defaults differ); the test only exercises the
+            # payment-provider credential path.
+            jwt_secret_key="test-jwt-secret-key-with-at-least-32-characters-000",
+            key_encryption_secret="test-key-encryption-secret-000",
+            authorization_require_tenant=True,
+            authorization_default_deny=True,
+            redis_enabled=True,
         )
         with pytest.raises(ValueError, match="Stripe credentials"):
             _get_payment_provider(settings)

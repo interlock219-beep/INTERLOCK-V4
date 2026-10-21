@@ -151,10 +151,10 @@ Recovery executes in reverse-topological order, so dependent actions are compens
 
 | Adapter | Type | Capability |
 |---------|------|------------|
-| `ConfigRecoveryAdapter` | Configuration | Production-validated — atomic replacement, hash-based drift detection |
-| `DatabaseRecoveryAdapter` | Database (SQL) | Production-validated — INSERT/DELETE/UPDATE, SQLite/PostgreSQL, transaction-safe |
-| `FilesystemRecoveryAdapter` | Filesystem | Production-validated — create/modify/delete/rename, atomic operations |
-| `GitRepositoryAdapter` | Git repository | Production-validated — commit-aware and working-tree recovery |
+| `ConfigRecoveryAdapter` | Configuration | Atomic replacement, hash-based drift detection — validated by the automated suite |
+| `DatabaseRecoveryAdapter` | Database (SQL) | INSERT/DELETE/UPDATE, SQLite (suite-validated) and PostgreSQL (supported backend) |
+| `FilesystemRecoveryAdapter` | Filesystem | create/modify/delete/rename, atomic operations — validated by the automated suite |
+| `GitRepositoryAdapter` | Git repository | Commit-aware and working-tree recovery — validated by the automated suite |
 | `MockRecoveryAdapter` | Simulation | Scenario-based simulation for testing |
 
 Additional reference/simulation adapters (`DatabaseRecordAdapter`, `FileVersionAdapter`, `ConfigRollbackAdapter`) model the protocol and exercise the planning pipeline. They return `REQUIRES_MANUAL_ACTION` on execution and are not production-validated.
@@ -246,8 +246,8 @@ Interlock uses a hexagonal (ports-and-adapters) architecture:
 | Distributed Recovery Orchestrator | Executes compensations in dependency-aware order |
 | Continuous Verification Service | Independently confirms recovered state matches expected state |
 | HITL Approval Queue | Database-backed, durable, RBAC-gated approvals |
-| Audit Log | JSONL events with hash-chain tamper evidence |
-| Recovery Adapters | Production-validated adapters for filesystem, database, git, configuration |
+| Audit Log | JSONL events with hash-chain tamper evidence on the audit sink |
+| Recovery Adapters | Suite-validated adapters for filesystem, database, git, configuration |
 
 ---
 
@@ -321,6 +321,14 @@ Interlock ships a Python SDK and a LangChain wrapper in `sdk/`. See the [SDK Ref
 
 ## Development and setup
 
+Interlock is installed in one of two ways: a **VS Code extension** whose source lives in this
+repository (`extensions/vscode/`, packaged locally with `vsce`; it is **not published** — no
+Marketplace listing, no published download, no published checksum) and a **terminal install of
+the `intentlock` Python package** from this repository (not published to PyPI; install from
+source as below). No standalone operating-system installers (`.msi`, `.dmg`, `.deb`, …) are
+published for V6 — the recovery engine is the product, installed into the environment you
+already work in.
+
 Verified commands for this repository. The test results in the "Testing and quality" section below come from running these commands in the current environment.
 
 ```bash
@@ -357,23 +365,37 @@ curl http://localhost:8000/api/v1/health
 
 ## Testing and quality
 
-The numbers below are from the current test run in this environment (Windows 11, Python 3.14, SQLite in-memory, no Redis or PostgreSQL required for the unit/integration suite). They are reproduced by the commands in the [Verification](#verification) section.
+The numbers below are from the full test suite run on 2026-10-18 in a **freshly created
+environment installed from tracked files** (`pip install -e ".[dev,security]"`, Windows 11,
+Python 3.11.9, SQLite; no Redis or PostgreSQL required for the unit/integration suite).
+Reproduce them with the commands in the [Verification](#verification) section.
 
 | Check | Verified result |
 |-------|-----------------|
-| Automated tests | 1609 passed, 2 failed, 6 skipped |
-| Statement coverage | 82.51% |
+| Automated tests | 2922 passed, 9 skipped, 4 xfailed, 0 failed (3719.82 s, full suite) |
+| Statement coverage | 83.81% |
 | Required coverage threshold | 80% (passed) |
-| Static analysis (Ruff) | 0 errors |
-| Type checking (MyPy) | 0 issues in 235 source files |
+| Static analysis (Ruff) | 0 errors (`ruff check app sdk`) |
+| Type checking (MyPy) | 0 issues in 318 source files (`mypy app sdk`) |
+| Dependency audit (pip-audit) | 0 known vulnerabilities in the **shipped** dependency set; 2 advisories in **dev-only** tooling (`mcp` via semgrep, `nltk` via safety) that never ship — reported, not gating |
+| `pip check` | No broken requirements |
+| Bandit (CI parity, `-ll`) | 0 issues; full run reports 7 Low-severity findings (documented) |
+| Semgrep (CI rule packs) | 6 advisory-level findings, 0 errors, 0 in release-touched files |
+| SBOM (CycloneDX) | Generated and validated, 110 components |
 | Compile check (`compileall`) | Clean |
-| Alembic head | `0003_add_tenant_id` |
-| Adversarial security tests | Included in the 1609 |
-| Recovery lab tests | 106 included in the 1609 |
+| Alembic head | `v6driftbf01` (single head); `alembic check` reports 33-op model drift pending the reviewed migration — see [Migration Review](INTERLOCK_V6_MPKG_MIGRATION_REVIEW.md) and the repair proposal in [docs/operations/MIGRATION_R10_PROPOSAL.md](docs/operations/MIGRATION_R10_PROPOSAL.md) |
+| Adversarial security tests | Included in the 2922 |
+| Recovery lab tests | Included in the 2922 |
 
-### About the 2 failing tests
+### About the 9 skipped tests
 
-The 2 failing tests are in `tests/unit/recovery_lab/test_phase01_environment.py`. They are **test-isolation artifacts** that pass when run individually or as part of the full suite in the documented order. They are tracked as a known limitation in the release baseline; the recovery-lab tests share filesystem state across the suite and are sensitive to partial invocations.
+The 9 skipped tests are: 5 platform-specific performance-threshold tests, 2 recovery
+symlink-escape drills and 1 path-security test that require symlink privileges not
+available to an unprivileged Windows shell, and 1 test requiring an external key manager
+that is not present in this environment. All skips are intentional and reported by the
+runner; no test is marked failed. The 4 xfailed tests are the documented, visible
+migration defects (D-MIG-1 / D-MIG-1b / D3) — expected failures with full reasons, not
+silent passes.
 
 ### What is not claimed
 
@@ -408,6 +430,9 @@ The 2 failing tests are in `tests/unit/recovery_lab/test_phase01_environment.py`
 - [Recovery Validation Report](docs/operations/RECOVERY_VALIDATION_REPORT.md) — chaos engineering and recovery tests
 - [Production Readiness Plan](docs/operations/PRODUCTION_READINESS_PLAN.md) — verification matrix
 - [Incident Response](docs/operations/INCIDENT_RESPONSE.md) — containment, key compromise, tenant incident handling
+- [Controlled Beta First Run](docs/operations/BETA_FIRST_RUN.md) — install → demo → trigger failure → recover → verify on a disposable project
+- [Safety and Limitations](docs/operations/SAFETY_AND_LIMITATIONS.md) — what Interlock can and cannot recover, with evidence links
+- [Troubleshooting](docs/operations/TROUBLESHOOTING.md) — common setup failures, diagnostics, safe next steps
 - [Developer Quickstart](docs/developer/QUICKSTART.md)
 - [Developer Examples](docs/developer/EXAMPLES.md)
 - [Developer Onboarding](docs/developer/ONBOARDING.md)
@@ -444,8 +469,8 @@ Other documented limitations:
 
 - **SSO adapters** (OIDC/SAML) are architectural placeholders that return mock data. They are not production-ready and require real provider integration.
 - **KMS/HSM** integration is an interface placeholder; production deployments must integrate external key management.
-- **Web dashboard** (Next.js) is present but not exercised by the Python test suite and cannot be built in this environment (no `next` binary in `node_modules`).
-- **Database adapter** recovery is production-validated on PostgreSQL; SQLite is used for development and testing.
+- **Web dashboard** (Next.js) exists in commit history, but the current working tree carries an uncommitted removal of `web/` (preserved developer state, inventoried in [INTERLOCK_V6_COMMIT_MANIFEST.md](INTERLOCK_V6_COMMIT_MANIFEST.md)); it is not exercised by the Python test suite and cannot be built in this environment (no `next` binary in `node_modules`).
+- **Database adapter** recovery is exercised by the automated suite on SQLite. PostgreSQL is a supported backend (drivers and CI service configured) but was not exercised on this host.
 - **No independent security certification** has been obtained.
 - **No regulatory compliance assessment** has been performed.
 
@@ -469,6 +494,6 @@ See [SECURITY.md](SECURITY.md) for how to report vulnerabilities responsibly.
 
 ## Project status
 
-Interlock V4 is an active development release. The current release baseline is documented in [docs/operations/RELEASE_BASELINE.md](docs/operations/RELEASE_BASELINE.md). The most recent internal release commit is `b2f816f`.
+Interlock V4 is an active development release. The current release baseline is documented in [docs/operations/RELEASE_BASELINE.md](docs/operations/RELEASE_BASELINE.md). The repository HEAD at the time of this documentation update is `145a3d9` (2026-10-16); the pending release-candidate change set is inventoried in [INTERLOCK_V6_COMMIT_MANIFEST.md](INTERLOCK_V6_COMMIT_MANIFEST.md) and has not been committed, pushed, or published.
 
 The product is presented as it exists in this repository today. It is not presented as a finished commercial product, and the documentation explicitly identifies SSO, KMS/HSM, MFA, and the web dashboard as integration or implementation work rather than finished features.

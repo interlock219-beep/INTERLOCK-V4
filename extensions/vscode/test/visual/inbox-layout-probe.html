@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Inbox layout probe</title>
+<style>
+  body { margin: 0; background: #101010; color: #eee; font-family: monospace; font-size: 12px; }
+  .probe { margin: 0 0 8px; }
+  .probe h2 { margin: 4px 8px; font-size: 12px; color: #ffe500; }
+  iframe { display: block; border: 1px solid #444; height: 700px; }
+  pre { margin: 4px 8px; white-space: pre-wrap; }
+</style>
+</head>
+<body>
+<div id="host"></div>
+<script>
+  const WIDTHS = [1000, 820, 640, 460];
+  const host = document.getElementById('host');
+  let pending = WIDTHS.length;
+  const results = [];
+
+  function measure(width, doc) {
+    const root = doc.documentElement;
+    const box = (selector) => {
+      const node = doc.querySelector(selector);
+      if (!node) { return null; }
+      const r = node.getBoundingClientRect();
+      return { x: Math.round(r.x), w: Math.round(r.width), right: Math.round(r.right) };
+    };
+    const cards = [...doc.querySelectorAll('.il-ib-stat')].map((n) => {
+      const r = n.getBoundingClientRect();
+      return { x: Math.round(r.x), w: Math.round(r.width), h: Math.round(r.height) };
+    });
+    const overflowing = [];
+    for (const node of doc.querySelectorAll('.il-root *')) {
+      const r = node.getBoundingClientRect();
+      if (r.width > 0 && r.right > root.clientWidth + 1) {
+        overflowing.push((node.className || node.tagName) + ' right=' + Math.round(r.right));
+        if (overflowing.length > 4) { break; }
+      }
+    }
+    const header = doc.querySelector('.il-header');
+    const grid = doc.querySelector('.il-ib-summary');
+    return {
+      width,
+      clientWidth: root.clientWidth,
+      scrollWidth: root.scrollWidth,
+      horizontalOverflow: root.scrollWidth > root.clientWidth,
+      header: box('.il-header'),
+      root: box('.il-root'),
+      summary: box('.il-ib-summary'),
+      idline: box('.il-idline'),
+      subline: box('.il-subline'),
+      headerSticky: header ? getComputedStyle(header).position : null,
+      gridTemplate: grid ? getComputedStyle(grid).gridTemplateColumns : null,
+      cards,
+      values: [...doc.querySelectorAll('[data-live^="count-"]')].map(function (n) { return Math.round(n.getBoundingClientRect().bottom); }),
+      cardRows: new Set(cards.map((c) => c.y === undefined ? 0 : c.x)).size,
+      overflowing,
+      searchVisible: !!doc.querySelector('#il-ib-search'),
+      recoverButton: box('#il-ib-recover-selected'),
+    };
+  }
+
+  for (const width of WIDTHS) {
+    const wrap = document.createElement('div');
+    wrap.className = 'probe';
+    const h = document.createElement('h2');
+    h.textContent = 'width ' + width;
+    const frame = document.createElement('iframe');
+    frame.width = String(width);
+    frame.src = 'recovery-inbox.html';
+    const pre = document.createElement('pre');
+    pre.textContent = 'measuring…';
+    wrap.appendChild(h);
+    wrap.appendChild(frame);
+    wrap.appendChild(pre);
+    host.appendChild(wrap);
+    frame.addEventListener('load', () => {
+      const doc = frame.contentDocument;
+      // Give the client script a tick to render the list.
+      setTimeout(() => {
+        results.push(measure(width, doc));
+        pre.textContent = JSON.stringify(results[results.length - 1], null, 1);
+        pending -= 1;
+        if (pending === 0) {
+          const out = document.createElement('pre');
+          out.id = 'summary';
+          out.textContent = JSON.stringify(results, null, 1);
+          host.appendChild(out);
+        }
+      }, 400);
+    });
+  }
+</script>
+</body>
+</html>

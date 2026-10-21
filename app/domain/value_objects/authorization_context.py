@@ -49,3 +49,6 @@ class AuthorizationContext:
     intent_id: str | None = None
     expected_parameter_hash: str | None = None
     agent_history_required: bool = False
+    client_ip: str | None = None
+    session_created_at: datetime | None = field(default=None, kw_only=True)
+    active_sessions: int | None = None

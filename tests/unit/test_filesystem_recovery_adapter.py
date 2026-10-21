@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import os
+import stat
 from pathlib import Path
 
 import pytest
@@ -488,4 +490,128 @@ class TestFilesystemRecoveryAdapterContainment:
         }
         with pytest.raises(ValueError, match="Path traversal detected in resource identifier"):
             adapter._execute_restore_content(payload, base_path)
+
+
+class TestR17PosixPermissions:
+    """R17 staging/restore permission hardening (owner-approved 2026-10-18).
+
+    The POSIX-only tests assert ACTUAL filesystem modes and SKIP on Windows
+    (reported as skipped, never as passing): Windows does not enforce POSIX
+    mode bits, so a Windows run is not permission evidence.
+    """
+
+    @pytest.mark.skipif(os.name != "posix", reason="POSIX mode semantics")
+    @pytest.mark.asyncio
+    async def test_staging_file_created_owner_only(self, tmp_path: Path, monkeypatch) -> None:
+        base_path = tmp_path / "fs"
+        base_path.mkdir()
+        test_file = base_path / "config.txt"
+        test_file.write_bytes(b"original")
+
+        observed: list[tuple[str, int]] = []
+        real_open = os.open
+
+        def spy_open(path, flags, mode=0o777, *, dir_fd=None):
+            result = (
+                real_open(path, flags, mode, dir_fd=dir_fd)
+                if dir_fd is not None
+                else real_open(path, flags, mode)
+            )
+            if "recovery_tmp" in os.fspath(path):
+                observed.append((os.fspath(path), mode))
+            return result
+
+        monkeypatch.setattr(os, "open", spy_open)
+
+        adapter = FilesystemRecoveryAdapter(base_path=base_path)
+        action = _make_fs_action(action_type="modify", resource="file:config.txt")
+        pre = await adapter.capture_recovery_evidence(action)
+        before = dict(pre.compensation_payload.get("before_snapshot") or {})
+        test_file.write_bytes(b"faulted")
+        evidence = await adapter.capture_recovery_evidence(action, before_snapshot=before)
+        compensation = await adapter.generate_compensation(action, evidence)
+        result = await adapter.execute_compensation(compensation, evidence.idempotency_key)
+
+        assert result.success is True
+        assert observed, "no staging os.open was observed"
+        assert all(mode == 0o600 for _, mode in observed), observed
+
+    @pytest.mark.skipif(os.name != "posix", reason="POSIX mode semantics")
+    @pytest.mark.asyncio
+    async def test_restore_applies_recorded_mode(self, tmp_path: Path) -> None:
+        base_path = tmp_path / "fs"
+        base_path.mkdir()
+        test_file = base_path / "config.txt"
+        test_file.write_bytes(b"original")
+
+        adapter = FilesystemRecoveryAdapter(base_path=base_path)
+        action = _make_fs_action(action_type="modify", resource="file:config.txt")
+        pre = await adapter.capture_recovery_evidence(action)
+        before = dict(pre.compensation_payload.get("before_snapshot") or {})
+        before["metadata"] = dict(before.get("metadata") or {})
+        before["metadata"]["mode"] = 0o640
+        test_file.write_bytes(b"faulted")
+        evidence = await adapter.capture_recovery_evidence(action, before_snapshot=before)
+        compensation = await adapter.generate_compensation(action, evidence)
+        result = await adapter.execute_compensation(compensation, evidence.idempotency_key)
+
+        assert result.success is True
+        assert stat.S_IMODE(test_file.stat().st_mode) == 0o640
+
+    @pytest.mark.skipif(os.name != "posix", reason="POSIX mode semantics")
+    @pytest.mark.asyncio
+    async def test_restore_without_recorded_mode_keeps_restrictive_mode(
+        self, tmp_path: Path
+    ) -> None:
+        """R17: with no recorded mode, never LIFT the file to 0o644 - the
+        swapped staging file's owner-only mode survives (pre-R17 code forced
+        0o644, making a private file world-readable)."""
+        base_path = tmp_path / "fs"
+        base_path.mkdir()
+        test_file = base_path / "secret.txt"
+        test_file.write_bytes(b"original")
+
+        adapter = FilesystemRecoveryAdapter(base_path=base_path)
+        action = _make_fs_action(action_type="modify", resource="file:secret.txt")
+        pre = await adapter.capture_recovery_evidence(action)
+        before = dict(pre.compensation_payload.get("before_snapshot") or {})
+        before["metadata"] = dict(before.get("metadata") or {})
+        before["metadata"].pop("mode", None)
+        test_file.write_bytes(b"faulted")
+        evidence = await adapter.capture_recovery_evidence(action, before_snapshot=before)
+        compensation = await adapter.generate_compensation(action, evidence)
+        result = await adapter.execute_compensation(compensation, evidence.idempotency_key)
+
+        assert result.success is True
+        assert test_file.read_bytes() == b"original"
+        assert stat.S_IMODE(test_file.stat().st_mode) == 0o600
+
+    @pytest.mark.asyncio
+    async def test_chmod_failure_is_best_effort_not_fatal(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        """Documented contract: metadata restoration is BEST-EFFORT - a
+        failing chmod must never fail or tear an already hash-verified
+        restore (content exactness is the enforced invariant)."""
+        base_path = tmp_path / "fs"
+        base_path.mkdir()
+        test_file = base_path / "config.txt"
+        test_file.write_bytes(b"original")
+
+        def failing_chmod(path, mode, **kwargs):
+            raise OSError("simulated chmod failure")
+
+        monkeypatch.setattr(os, "chmod", failing_chmod)
+
+        adapter = FilesystemRecoveryAdapter(base_path=base_path)
+        action = _make_fs_action(action_type="modify", resource="file:config.txt")
+        pre = await adapter.capture_recovery_evidence(action)
+        before = dict(pre.compensation_payload.get("before_snapshot") or {})
+        test_file.write_bytes(b"faulted")
+        evidence = await adapter.capture_recovery_evidence(action, before_snapshot=before)
+        compensation = await adapter.generate_compensation(action, evidence)
+        result = await adapter.execute_compensation(compensation, evidence.idempotency_key)
+
+        assert result.success is True
+        assert test_file.read_bytes() == b"original"
 

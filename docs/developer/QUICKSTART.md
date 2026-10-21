@@ -9,16 +9,9 @@ Get Interlock V4 running locally in 5 minutes.
 - (Optional) Docker and Docker Compose for containerized deployment
 - (Optional) Redis for production-like replay protection
 
-## Option A: pip install (fastest)
+## Install from a clone (the only supported path)
 
-```bash
-python -m venv .venv
-.venv\Scripts\activate
-
-pip install interlock
-```
-
-## Option B: Clone and install editable
+Interlock is not published to any package index. Install from a checkout:
 
 ```bash
 git clone <repository-url>
@@ -29,6 +22,12 @@ python -m venv .venv
 
 pip install -e ".[dev,security]"
 ```
+
+The `dev` extra provides the test and quality tooling (pytest, ruff, mypy,
+bandit); `security` provides `pip-audit` and the SBOM generator. For a
+recovery-focused first run on a disposable project, follow
+[Controlled Beta First Run](../operations/BETA_FIRST_RUN.md) — every command in
+it was executed on a reference host before being documented.
 
 ## Configure environment
 

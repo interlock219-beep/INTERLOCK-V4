@@ -25,6 +25,7 @@ from app.domain.entities.surgical_recovery_types import (
 from app.domain.entities.surgical_recovery_types import (
     Reversibility as RevEnum,
 )
+from app.domain.services.evidence_hash import seal_evidence
 from app.domain.services.recovery_adapter import RecoveryAdapter
 
 
@@ -75,14 +76,9 @@ class DatabaseRecordAdapter(RecoveryAdapter):
         execution_context: dict[str, Any] | None = None,
         before_snapshot: dict[str, Any] | None = None,
     ) -> RecoveryEvidence:
-        import hashlib
-        import json
-
-        payload_str = json.dumps(action.tool_arguments, sort_keys=True, default=str)
-        evidence_hash = hashlib.sha256(f"{action.action_id}:{payload_str}".encode()).hexdigest()
         before_ref = action.before_state_ref or f"state:{action.action_id}:before"
         after_ref = action.after_state_ref or f"state:{action.action_id}:after"
-        return RecoveryEvidence(
+        return seal_evidence(RecoveryEvidence(
             evidence_id=f"ev-{action.action_id}",
             action_id=action.action_id,
             tenant_id=action.tenant_id,
@@ -106,10 +102,9 @@ class DatabaseRecordAdapter(RecoveryAdapter):
             dependency_edges=[],
             reversibility_classification=Reversibility.normalize(action.reversibility),
             state_version=action.policy_version,
-            evidence_hash=evidence_hash,
             adapter_capability=AdapterCapability.REFERENCE_IMPLEMENTATION,
             verification_requirements=["record_exists_in_target_table"],
-        )
+        ))
 
     async def classify_reversibility(
         self,

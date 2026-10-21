@@ -13,6 +13,19 @@ class PathSecurityError(Exception):
     """Raised when a path fails security validation."""
 
 
+def is_unc_path(raw: str | Path) -> bool:
+    """True for a UNC / network path in EITHER slash form.
+
+    ``Path("//server/share")`` keeps its forward slashes, so a check for a
+    leading ``\\\\`` alone misses the forward-slash form. The drive of a
+    resolved UNC path is the reliable signal, so both forms are refused.
+    """
+    text = str(raw)
+    if text.startswith("\\\\") or text.startswith("//"):
+        return True
+    return Path(raw).drive.startswith("\\\\")
+
+
 class WorkspacePathSecurity:
     """Validates that all paths are within the allowed workspace.
 
@@ -56,8 +69,16 @@ class WorkspacePathSecurity:
             raise PathSecurityError("Empty path is not allowed")
 
         target_str = str(target_path)
-        if target_str.startswith("\\\\"):
+        if is_unc_path(target_str):
             raise PathSecurityError(f"UNC paths are not allowed: {target_str}")
+
+        if not target.is_absolute():
+            # Relative inputs are workspace-relative. Anchoring them at the
+            # workspace root (instead of the process CWD, which is arbitrary
+            # for a library) can only convert false-rejects into correct
+            # accepts: the post-resolve containment check below still enforces
+            # the boundary for every path, relative or absolute.
+            target = self._workspace_path / target
 
         try:
             resolved = target.resolve()

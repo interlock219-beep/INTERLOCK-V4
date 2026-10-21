@@ -47,7 +47,7 @@ class TestFeature69_IndependentVerificationService:
         chk = svc.create_verification_check('c1', VerificationCheckType.INTEGRITY, 'd', 'e', 'a', False)
         assert svc.build_verification_result(chk) is False
 
-    def test_verify_evidence_ok(self, svc):
+    async def test_verify_evidence_ok(self, svc):
         ev = MagicMock()
         ev.evidence_id = 'e1'
         ev.action_id = 'a1'
@@ -57,12 +57,16 @@ class TestFeature69_IndependentVerificationService:
         ev.before_state_reference = 'b1'
         ev.after_state_reference = 'a2'
         ev.state_hash = 'sha256:abc'
-        result = svc.verify_evidence(ev)
+        # Real evidence always carries a metadata dict (dataclass default {},
+        # repository round-trip guaranteed); without it the v2 verifier
+        # correctly fails closed, which this test-double would otherwise trip.
+        ev.recovery_metadata = {}
+        result = await svc.verify_evidence(ev)
         assert result.is_tampered is False
         assert result.is_missing is False
         assert result.outcome in (VerificationOutcome.VERIFIED, VerificationOutcome.UNKNOWN)
 
-    def test_verify_evidence_missing_fields(self, svc):
+    async def test_verify_evidence_missing_fields(self, svc):
         ev = MagicMock()
         ev.evidence_id = ''
         ev.action_id = ''
@@ -72,23 +76,23 @@ class TestFeature69_IndependentVerificationService:
         ev.before_state_reference = None
         ev.after_state_reference = None
         ev.state_hash = None
-        result = svc.verify_evidence(ev)
+        result = await svc.verify_evidence(ev)
         assert result.is_missing is True
 
-    def test_independent_verify_all_verified(self, svc, verifier):
+    async def test_independent_verify_all_verified(self, svc, verifier):
         report = MagicMock()
         report.resource_results = {'act1': {'status': VerificationStatus.EXECUTED_AND_VERIFIED.value, 'verification': {}}}
-        result = svc.independent_verify('t1', 'p1', 'i1', verifier, report)
+        result = await svc.independent_verify('t1', 'p1', 'i1', verifier, report)
         assert result.outcome == VerificationOutcome.VERIFIED
         assert result.execution_verified is True
         assert result.plan_id == 'p1'
         assert result.tenant_id == 't1'
         assert result.checks
 
-    def test_independent_verify_unverified(self, svc, verifier):
+    async def test_independent_verify_unverified(self, svc, verifier):
         report = MagicMock()
         report.resource_results = {'act1': {'status': VerificationStatus.EXECUTED_NOT_VERIFIED.value, 'verification': {}}}
-        result = svc.independent_verify('t1', 'p1', 'i1', verifier, report)
+        result = await svc.independent_verify('t1', 'p1', 'i1', verifier, report)
         assert result.outcome == VerificationOutcome.UNVERIFIED
         assert result.execution_verified is False
 
@@ -276,6 +280,33 @@ class TestFeature70_MultiLayerVerification:
         results = svc.run_multi_layer_verification('t1', 'p1', 'a1')
         assert len(results) == 14
         assert all(isinstance(r, VerificationLayerResult) for r in results)
+
+class TestIntegrityLayerFailClosed:
+    """WP-5 (V6): no evidence must never be reported as VERIFIED integrity.
+
+    Before the fix, the integrity layer hashed the *current* after_state and
+    returned (True, VERIFIED) whenever evidence was absent — a fail-open
+    claim that nothing had actually been verified.
+    """
+
+    def test_integrity_no_evidence_is_inconclusive_not_verified(self, svc):
+        results = svc.run_multi_layer_verification(
+            't1', 'p1', 'a1', before_state={'x': 1}, after_state={'x': 2}
+        )
+        integrity = [r for r in results if r.layer == VerificationLayer.INTEGRITY][0]
+        assert integrity.status != VerificationOutcome.VERIFIED, (
+            'fail-open regression: integrity claimed VERIFIED with no evidence'
+        )
+        assert integrity.passed is False
+        assert integrity.status == VerificationOutcome.INCONCLUSIVE
+        # The state hash is still surfaced for forensic reference.
+        assert integrity.details.get('state_hash'), 'state_hash must be kept'
+
+    def test_integrity_no_evidence_and_no_state_is_inconclusive(self, svc):
+        results = svc.run_multi_layer_verification('t1', 'p1', 'a1')
+        integrity = [r for r in results if r.layer == VerificationLayer.INTEGRITY][0]
+        assert integrity.passed is False
+        assert integrity.status == VerificationOutcome.INCONCLUSIVE
 
 class TestFeature71_VerificationCoverage:
     def test_coverage_all_passing(self, svc):

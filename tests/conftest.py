@@ -1,6 +1,8 @@
 import os
+import tempfile
 from collections.abc import Generator
 from datetime import UTC, datetime
+from pathlib import Path
 from uuid import uuid4
 
 import pytest
@@ -20,6 +22,13 @@ os.environ.setdefault("STRIPE_WEBHOOK_SECRET", "whsec_test")
 os.environ.setdefault("WEBHOOK_HMAC_SECRET", "test-secret")
 os.environ.setdefault("AUTHORIZATION_REQUIRE_TENANT", "false")
 os.environ.setdefault("AUTHORIZATION_DEFAULT_DENY", "false")
+# The audit trail is a hash chain: two processes appending to the same file
+# break it. Give THIS test session its own trail, outside the source tree, so
+# the suite never mutates the repository and two runs cannot interfere.
+_TEST_AUDIT_LOG = Path(tempfile.gettempdir()) / (
+    f"interlock-audit-trail-{os.getpid()}-{uuid4().hex}.jsonl"
+)
+os.environ["INTERLOCK_AUDIT_LOG_PATH"] = str(_TEST_AUDIT_LOG)
 
 from app.infrastructure.config.settings import get_settings  # noqa: E402
 from app.infrastructure.logging.audit_logger import LOG_PATH  # noqa: E402
@@ -50,6 +59,8 @@ def _clear_audit_log() -> Generator[None, None, None]:
     if LOG_PATH.exists():
         LOG_PATH.unlink()
     yield
+    if LOG_PATH.exists():
+        LOG_PATH.unlink()
 
 
 @pytest.fixture(autouse=True)

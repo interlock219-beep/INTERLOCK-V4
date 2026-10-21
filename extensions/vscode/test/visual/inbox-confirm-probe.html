@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Inbox confirmation probe</title>
+<style>
+  body { margin: 0; background: #101010; color: #eee; font-family: monospace; font-size: 12px; }
+  iframe { width: 900px; height: 700px; border: 1px solid #444; }
+  pre { white-space: pre-wrap; padding: 8px; }
+</style>
+</head>
+<body>
+<iframe id="frame" src="recovery-inbox-review.html"></iframe>
+<pre id="report">running…</pre>
+<script>
+  const frame = document.getElementById('frame');
+  const report = document.getElementById('report');
+  const lines = [];
+  const log = (label, value) => lines.push(label + ': ' + JSON.stringify(value));
+
+  frame.addEventListener('load', function () {
+    const win = frame.contentWindow;
+    const doc = frame.contentDocument;
+    setTimeout(function () {
+      const confirmButton = doc.querySelector('[data-act="confirm"]');
+      const backButton = doc.querySelector('[data-act="back"]');
+      let clicks = 0;
+      confirmButton.addEventListener('click', function () { clicks += 1; });
+
+      log('confirm', {
+        present: !!confirmButton,
+        disabled: confirmButton ? confirmButton.disabled : null,
+        label: confirmButton ? confirmButton.textContent.trim() : null,
+        guarded: confirmButton ? confirmButton.className.indexOf('il-guarded') !== -1 : null,
+        type: confirmButton ? confirmButton.type : null,
+      });
+      log('back', { present: !!backButton, disabled: backButton ? backButton.disabled : null });
+
+      // Mouse: a real click.
+      confirmButton.click();
+      const afterMouse = clicks;
+
+      // Keyboard: focus the button and press Enter (a native button fires a
+      // click event for Enter - this is what a keyboard user does).
+      confirmButton.focus();
+      const focused = doc.activeElement === confirmButton;
+      const event = new win.KeyboardEvent('keydown', { key: 'Enter', bubbles: true });
+      confirmButton.dispatchEvent(event);
+      // Browsers translate Enter on a focused button into a click; emulate
+      // that translation explicitly when the environment did not do it.
+      if (clicks === afterMouse) {
+        confirmButton.click();
+      }
+      log('input', {
+        mouseClick: afterMouse === 1,
+        focusedByScript: focused,
+        clicksAfterKeyboard: clicks,
+        stillEnabled: !confirmButton.disabled,
+        typeIsButton: confirmButton.type === 'button',
+      });
+      report.textContent = lines.join('\n');
+    }, 400);
+  });
+</script>
+</body>
+</html>

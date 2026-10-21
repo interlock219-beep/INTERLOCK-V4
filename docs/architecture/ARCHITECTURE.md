@@ -30,7 +30,7 @@ FastAPI presentation -> application use cases/ports -> domain services -> infras
 
 | Boundary | Description | Enforcement |
 |----------|-------------|-------------|
-| Agent → Gateway | `/intent/verify` and `/intent/execute` are unauthenticated | Network controls (firewall, service mesh, API gateway) |
+| Agent → Gateway | `/intent/verify` and `/intent/execute` require a user bearer token (`CurrentUser` dependency; adversarial unauthenticated/bypass attempts are rejected with 401/403 in the test suite) | HS256 JWT validation |
 | User → Gateway | `/auth/*` and `/approval/*` require bearer tokens | HS256 JWT validation |
 | Gateway → Redis | Atomic nonce consumption for replay protection | Redis AUTH + fail-closed in production |
 | Gateway → Database | User data, approvals, audit events, token records | SQLAlchemy ORM, connection pooling |

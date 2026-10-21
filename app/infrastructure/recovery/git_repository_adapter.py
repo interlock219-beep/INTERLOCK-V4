@@ -1,21 +1,29 @@
-"""Production-grade Git repository recovery adapter.
+"""Working-tree file recovery adapter for a git repository.
 
-Performs real git operations for recovery:
-- File creation recovery (delete the created file)
-- File modification recovery (restore previous content)
-- File deletion recovery (restore deleted content)
-- File rename recovery (rename back to original)
-- Commit-aware recovery using git history
-- Working-tree recovery using git stash/restore
+WHAT THIS ADAPTER DOES
+- Captures the before-state of a file in a git working tree (raw bytes, so a
+  restore is byte-exact) and restores it atomically.
+- Detects conflicts when a human changed the file after the agent action and
+  refuses to overwrite a newer legitimate change.
 
-Detects conflicts when human changes have been made after the agent action.
-NEVER blindly overwrites newer legitimate changes.
+WHAT THIS ADAPTER DOES NOT DO
+- It does NOT run git. It never shells out, never reads the object database
+  and never touches the index, the stash or a commit. There is no
+  commit-aware recovery here: a file that was only ever committed (and is
+  absent from the working tree) is outside this adapter's evidence model.
+- Rename reversal is not implemented and is reported as requiring manual
+  action rather than as a no-op success.
+
+The adapter therefore recovers a WORKING TREE file, byte for byte. Anything
+that depends on git history must be handled by a different mechanism.
 """
 
 from __future__ import annotations
 
+import base64
+import contextlib
 import hashlib
-import json
+import os
 from pathlib import Path
 from typing import Any
 
@@ -44,6 +52,7 @@ from app.domain.entities.surgical_recovery_types import (
 from app.domain.entities.surgical_recovery_types import (
     Reversibility as RevEnum,
 )
+from app.domain.services.evidence_hash import seal_evidence
 from app.domain.services.recovery_adapter import RecoveryAdapter
 
 
@@ -99,8 +108,10 @@ class GitRepositoryAdapter(RecoveryAdapter):
                 "file_modification_recovery",
                 "file_deletion_recovery",
                 "file_rename_recovery",
-                "commit_aware_recovery",
-                "working_tree_recovery",
+                # The adapter recovers the working tree byte for byte. It does
+                # NOT read git history: no commit, stash or index operation is
+                # performed, so no such capability may be declared.
+                "working_tree_byte_exact_recovery",
                 "conflict_detection",
                 "drift_detection",
                 "independent_verification",
@@ -114,10 +125,6 @@ class GitRepositoryAdapter(RecoveryAdapter):
         before_snapshot: dict[str, Any] | None = None,
     ) -> RecoveryEvidence:
         self._verify_tenant_isolation(action)
-        import hashlib
-
-        payload_str = json.dumps(action.tool_arguments, sort_keys=True, default=str)
-        evidence_hash = hashlib.sha256(f"{action.action_id}:{payload_str}".encode()).hexdigest()
 
         repo_path = self._get_repo_path(execution_context)
         before_ref = action.before_state_ref
@@ -127,8 +134,17 @@ class GitRepositoryAdapter(RecoveryAdapter):
 
         if repo_path and repo_path.exists():
             resource_path = self._resolve_resource_path(action.resource, repo_path)
-            before_content = self._capture_file_content(resource_path)
+            # The live file is the post-action ("after") state.  The
+            # pre-action state comes from the caller-provided snapshot when
+            # present (same contract as the config/filesystem adapters,
+            # V5-8); without a snapshot, capture is assumed to run after the
+            # action and falls back to the live file for both sides.
             after_content = self._capture_file_content(resource_path)
+            snapshot = before_snapshot or action.before_state_snapshot
+            if snapshot is not None:
+                before_content = dict(snapshot)
+            else:
+                before_content = self._capture_file_content(resource_path)
 
         compensation_payload = {
             "operation": self._determine_compensation_operation(action),
@@ -146,7 +162,7 @@ class GitRepositoryAdapter(RecoveryAdapter):
         if after_content and after_content.get("hash"):
             after_ref = f"git:{after_content['hash']}"
 
-        return RecoveryEvidence(
+        return seal_evidence(RecoveryEvidence(
             evidence_id=f"ev-{action.action_id}",
             action_id=action.action_id,
             tenant_id=action.tenant_id,
@@ -168,14 +184,13 @@ class GitRepositoryAdapter(RecoveryAdapter):
             dependency_edges=[],
             reversibility_classification=Reversibility.normalize(action.reversibility),
             state_version=action.policy_version,
-            evidence_hash=evidence_hash,
             adapter_capability=AdapterCapability.PRODUCTION_VALIDATED,
             verification_requirements=[
                 "file_content_matches_expected",
                 "git_status_clean_or_expected",
                 "no_unintended_changes",
             ],
-        )
+        ))
 
     async def classify_reversibility(
         self,
@@ -306,7 +321,7 @@ class GitRepositoryAdapter(RecoveryAdapter):
                 details={"reason": "Cannot extract file path from resource"},
             )
 
-        full_path = repo_path / file_path
+        full_path = self._resolve_resource_path(action.resource, repo_path)
         compensation_payload = evidence.compensation_payload
         before_content = compensation_payload.get("before_content")
         after_content = compensation_payload.get("after_content")
@@ -378,9 +393,15 @@ class GitRepositoryAdapter(RecoveryAdapter):
             )
 
         if action_type in ("rename", "move"):
+            # Rename drift detection is not implemented; asserting NO_DRIFT
+            # here would be over-optimistic (the contract distinguishes a
+            # verified no-drift from an unverifiable state).
             return DriftResult(
-                status=DriftStatus.NO_DRIFT,
-                details={"reason": "Rename drift detection not fully implemented"},
+                status=DriftStatus.INSUFFICIENT_EVIDENCE,
+                details={
+                    "reason": "Rename drift detection not implemented; "
+                    "refusing to assert NO_DRIFT"
+                },
             )
 
         return DriftResult(
@@ -405,7 +426,7 @@ class GitRepositoryAdapter(RecoveryAdapter):
         if not file_path:
             return ConflictResult(status=ConflictStatus.NO_CONFLICT)
 
-        full_path = repo_path / file_path
+        full_path = self._resolve_resource_path(action.resource, repo_path)
 
         if not self._is_valid_git_repo(repo_path):
             return ConflictResult(
@@ -562,7 +583,13 @@ class GitRepositoryAdapter(RecoveryAdapter):
                 details={"reason": "No file path in compensation payload"},
             )
 
-        full_path = repo_path / file_path
+        full_path, path_error = self._resolve_payload_path(file_path, repo_path)
+        if full_path is None or path_error:
+            return VerificationResult(
+                action_id=compensation.action_id,
+                verified=False,
+                details={"reason": path_error},
+            )
         operation = payload.get("operation", "unknown")
 
         try:
@@ -659,16 +686,17 @@ class GitRepositoryAdapter(RecoveryAdapter):
                 )
 
             elif operation == "rename_back":
-                if full_path.exists():
-                    return VerificationResult(
-                        action_id=compensation.action_id,
-                        verified=True,
-                        details={"reason": "File exists at expected path"},
-                    )
+                # Rename reversal is not implemented; never self-certify a
+                # no-op as verified.
                 return VerificationResult(
                     action_id=compensation.action_id,
                     verified=False,
-                    details={"reason": f"File does not exist at expected path: {file_path}"},
+                    details={
+                        "reason": (
+                            "Rename reversal is not implemented; outcome "
+                            "requires manual verification"
+                        )
+                    },
                 )
 
             return VerificationResult(
@@ -747,6 +775,33 @@ class GitRepositoryAdapter(RecoveryAdapter):
         if base != target and base not in target.parents:
             raise ValueError(f"Resolved path {candidate} is outside base path {base_path}")
 
+    def _resolve_payload_path(
+        self, file_path: Any, repo_path: Path
+    ) -> tuple[Path | None, str | None]:
+        """Resolve a payload-supplied path, refusing escapes from the repo root.
+
+        Compensation payloads come from the evidence store and are treated as
+        untrusted: absolute paths, drive/root-qualified paths, NUL bytes,
+        ``..`` segments, and any path that resolves outside the repository
+        (including through symlinks) are refused so a tampered payload cannot
+        write, delete, or read outside the repository.
+        """
+        if not file_path or not isinstance(file_path, str):
+            return None, "No file path in payload"
+        if "\x00" in file_path:
+            return None, "Invalid file path in compensation payload"
+        if ".." in Path(file_path).parts:
+            return None, f"Path traversal refused in compensation payload: {file_path!r}"
+        candidate = Path(file_path)
+        if candidate.is_absolute() or candidate.drive or candidate.root:
+            return None, f"Absolute path refused in compensation payload: {file_path!r}"
+        full_path = repo_path / candidate
+        try:
+            self._assert_contained(full_path, repo_path)
+        except ValueError:
+            return None, f"Path escapes the repository: {file_path!r}"
+        return full_path, None
+
     def _extract_file_path(self, resource: str) -> str | None:
         """Extract file path from resource identifier, rejecting traversal."""
         if not resource:
@@ -769,12 +824,20 @@ class GitRepositoryAdapter(RecoveryAdapter):
         return resource
 
     def _capture_file_content(self, file_path: Path) -> dict[str, Any] | None:
-        """Capture file content and hash for recovery evidence."""
+        """Capture file content and hash for recovery evidence.
+
+        The RAW BYTES are captured as base64 in addition to the decoded text:
+        the hash is computed over the bytes, so a restore that used only the
+        text could never reproduce it (universal-newline translation would
+        rewrite CRLF as LF and drop a BOM). The byte form is what a restore
+        must use.
+        """
         try:
             if not file_path.exists():
                 return {
                     "exists": False,
                     "content": None,
+                    "content_b64": None,
                     "hash": None,
                     "size": 0,
                 }
@@ -783,28 +846,72 @@ class GitRepositoryAdapter(RecoveryAdapter):
                 return {
                     "exists": True,
                     "content": None,
+                    "content_b64": None,
                     "hash": self._compute_file_hash(file_path),
                     "size": file_path.stat().st_size,
                     "oversized": True,
                 }
 
-            content = file_path.read_text(encoding="utf-8")
+            raw = file_path.read_bytes()
+            try:
+                content = raw.decode("utf-8")
+                binary = False
+            except UnicodeDecodeError:
+                content = None
+                binary = True
             return {
                 "exists": True,
                 "content": content,
-                "hash": self._compute_file_hash(file_path),
-                "size": file_path.stat().st_size,
+                "content_b64": base64.b64encode(raw).decode("ascii"),
+                "hash": hashlib.sha256(raw).hexdigest(),
+                "size": len(raw),
+                "binary": binary,
             }
-        except UnicodeDecodeError:
-            return {
-                "exists": True,
-                "content": None,
-                "hash": self._compute_file_hash(file_path),
-                "size": file_path.stat().st_size,
-                "binary": True,
-            }
-        except Exception:
+        except OSError:
             return None
+
+    def _restore_bytes(self, before_content: dict[str, Any] | None) -> bytes | None:
+        """The exact bytes to restore, or None when they are not available.
+
+        Prefers the captured raw bytes. Text is only used when no byte form
+        was captured - and then the restore is verified against the recorded
+        hash afterwards, so a re-encoded file is reported as a failure instead
+        of being reported as a successful recovery.
+        """
+        if not before_content:
+            return None
+        content_b64 = before_content.get("content_b64")
+        if content_b64:
+            try:
+                return base64.b64decode(content_b64)
+            except (ValueError, TypeError):
+                return None
+        content = before_content.get("content")
+        if content is None:
+            return None
+        if not isinstance(content, str):
+            return None
+        return content.encode("utf-8")
+
+    def _stage_bytes(self, path: Path, data: bytes) -> Path:
+        """Write *data* to a staging file beside *path* and return its path.
+
+        The staged bytes are verified BEFORE they are swapped in, so a restore
+        that cannot reproduce the recorded hash never touches the target.
+        """
+        temp_path = path.with_name(f"{path.name}.recovery_tmp")
+        temp_path.unlink(missing_ok=True)
+        fd = os.open(temp_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        try:
+            with os.fdopen(fd, "wb") as handle:
+                handle.write(data)
+                handle.flush()
+                os.fsync(handle.fileno())
+        except BaseException:
+            with contextlib.suppress(OSError):
+                temp_path.unlink(missing_ok=True)
+            raise
+        return temp_path
 
     def _compute_file_hash(self, file_path: Path) -> str:
         """Compute SHA-256 hash of a file."""
@@ -876,7 +983,13 @@ class GitRepositoryAdapter(RecoveryAdapter):
                 "error": "No before content available for restoration",
             }
 
-        full_path = repo_path / file_path
+        full_path, path_error = self._resolve_payload_path(file_path, repo_path)
+        if full_path is None or path_error:
+            return {
+                "success": False,
+                "execution_state": ExecutionState.FAILED,
+                "error": path_error,
+            }
 
         if not full_path.exists():
             return {
@@ -896,11 +1009,41 @@ class GitRepositoryAdapter(RecoveryAdapter):
             }
 
         try:
-            full_path.write_text(before_content["content"], encoding="utf-8")
+            data = self._restore_bytes(before_content)
+            if data is None:
+                return {
+                    "success": False,
+                    "execution_state": ExecutionState.FAILED,
+                    "error": "No before content available for restoration",
+                }
+            temp_path = self._stage_bytes(full_path, data)
+            # Verify the STAGED bytes before they can reach the target: a
+            # restore that cannot reproduce the recorded hash must not touch
+            # the file at all.
+            expected_hash = before_content.get("hash")
+            staged_hash = self._compute_file_hash(temp_path)
+            if expected_hash and staged_hash != expected_hash:
+                with contextlib.suppress(OSError):
+                    temp_path.unlink(missing_ok=True)
+                return {
+                    "success": False,
+                    "execution_state": ExecutionState.FAILED,
+                    "error": (
+                        f"Post-write hash mismatch: expected {expected_hash}, "
+                        f"got {staged_hash}"
+                    ),
+                }
+            os.replace(temp_path, full_path)
+            restored_hash = self._compute_file_hash(full_path)
             return {
                 "success": True,
                 "execution_state": ExecutionState.SUCCEEDED,
-                "details": {"operation": "restore_content", "file": file_path},
+                "details": {
+                    "operation": "restore_content",
+                    "file": file_path,
+                    "restored_hash": restored_hash,
+                    "byte_exact": True,
+                },
                 "external_outcome": "content_restored",
             }
         except Exception as e:
@@ -921,7 +1064,13 @@ class GitRepositoryAdapter(RecoveryAdapter):
                 "error": "No file path in payload",
             }
 
-        full_path = repo_path / file_path
+        full_path, path_error = self._resolve_payload_path(file_path, repo_path)
+        if full_path is None or path_error:
+            return {
+                "success": False,
+                "execution_state": ExecutionState.FAILED,
+                "error": path_error,
+            }
 
         if not full_path.exists():
             return {
@@ -971,7 +1120,13 @@ class GitRepositoryAdapter(RecoveryAdapter):
                 "error": "No before content available for restoration",
             }
 
-        full_path = repo_path / file_path
+        full_path, path_error = self._resolve_payload_path(file_path, repo_path)
+        if full_path is None or path_error:
+            return {
+                "success": False,
+                "execution_state": ExecutionState.FAILED,
+                "error": path_error,
+            }
 
         if full_path.exists():
             return {
@@ -982,11 +1137,38 @@ class GitRepositoryAdapter(RecoveryAdapter):
 
         try:
             full_path.parent.mkdir(parents=True, exist_ok=True)
-            full_path.write_text(before_content["content"], encoding="utf-8")
+            data = self._restore_bytes(before_content)
+            if data is None:
+                return {
+                    "success": False,
+                    "execution_state": ExecutionState.FAILED,
+                    "error": "No before content available for restoration",
+                }
+            temp_path = self._stage_bytes(full_path, data)
+            expected_hash = before_content.get("hash")
+            staged_hash = self._compute_file_hash(temp_path)
+            if expected_hash and staged_hash != expected_hash:
+                with contextlib.suppress(OSError):
+                    temp_path.unlink(missing_ok=True)
+                return {
+                    "success": False,
+                    "execution_state": ExecutionState.FAILED,
+                    "error": (
+                        f"Post-write hash mismatch: expected {expected_hash}, "
+                        f"got {staged_hash}"
+                    ),
+                }
+            os.replace(temp_path, full_path)
+            restored_hash = self._compute_file_hash(full_path)
             return {
                 "success": True,
                 "execution_state": ExecutionState.SUCCEEDED,
-                "details": {"operation": "restore_deleted_file", "file": file_path},
+                "details": {
+                    "operation": "restore_deleted_file",
+                    "file": file_path,
+                    "restored_hash": restored_hash,
+                    "byte_exact": True,
+                },
                 "external_outcome": "file_restored",
             }
         except Exception as e:
@@ -1007,18 +1189,28 @@ class GitRepositoryAdapter(RecoveryAdapter):
                 "error": "No file path in payload",
             }
 
-        full_path = repo_path / file_path
-
-        if not full_path.exists():
+        full_path, path_error = self._resolve_payload_path(file_path, repo_path)
+        if full_path is None or path_error:
             return {
                 "success": False,
                 "execution_state": ExecutionState.FAILED,
-                "error": f"File does not exist at expected path: {file_path}",
+                "error": path_error,
             }
 
+        # Rename reversal is not implemented: the original destination path is
+        # not recorded in the evidence payload, so nothing can be moved back.
+        # Never report success for a no-op — demand manual action instead.
         return {
-            "success": True,
-            "execution_state": ExecutionState.SUCCEEDED,
-            "details": {"operation": "rename_back", "file": file_path},
-            "external_outcome": "file_at_expected_path",
+            "success": False,
+            "execution_state": ExecutionState.REQUIRES_MANUAL_ACTION,
+            "error": (
+                "Rename reversal is not implemented (destination path not "
+                f"recorded in evidence); manual action required for {file_path}"
+            ),
+            "external_outcome": "manual_action_required",
+            "details": {
+                "operation": "rename_back",
+                "file": file_path,
+                "file_exists_at_resource_path": full_path.exists(),
+            },
         }

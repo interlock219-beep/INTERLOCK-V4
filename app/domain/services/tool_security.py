@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import ipaddress
+import ntpath
 import os
+import posixpath
 import re
 import socket
 from typing import Any
@@ -42,7 +44,14 @@ class ToolArgumentValidator:
     def validate_path(self, path_value: str, allow_absolute: bool = False) -> None:
         if ".." in path_value:
             raise ToolSecurityError("Path traversal detected.")
-        if not allow_absolute and os.path.isabs(path_value):
+        # Absolute-path verdicts must be platform-independent: a Windows-style
+        # absolute path (C:\..., C:/...) must be rejected on macOS/Linux too,
+        # and a POSIX absolute path must be rejected on Windows. Checking only
+        # os.path follows the host flavour (os.path.isabs("C:\\x") is False on
+        # POSIX) and, since Python 3.14, ntpath.isabs no longer reports
+        # drive-less rooted paths as absolute. Both flavours are checked
+        # explicitly so the security verdict is identical on every platform.
+        if not allow_absolute and (ntpath.isabs(path_value) or posixpath.isabs(path_value)):
             raise ToolSecurityError("Absolute paths are not allowed.")
         os.path.normpath(path_value)
 

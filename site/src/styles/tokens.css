@@ -1,0 +1,79 @@
+:root {
+  /* Core palette */
+  --bg: #080a0b;
+  --bg-raise: #0c0f10;
+  --panel: #101416;
+  --panel-2: #14181a;
+  --graphite: #242628;
+  --border: #23272a;
+  --border-strong: #34393d;
+  --border-accent: #4a4418;
+
+  --yellow: #ffd900;
+  --yellow-hover: #ffe64d;
+  --yellow-dim: #b9a100;
+  --yellow-soft: rgba(255, 217, 0, 0.1);
+
+  --text: #f5f5f5;
+  --text-muted: #a2a8ad;
+  --text-faint: #7d848a;
+
+  --green: #46b17b;
+  --green-soft: rgba(70, 177, 123, 0.12);
+  --amber: #e0a800;
+  --amber-soft: rgba(224, 168, 0, 0.12);
+  --red: #e5534b;
+  --red-soft: rgba(229, 83, 75, 0.12);
+
+  /* Typography */
+  --font-mono: ui-monospace, "SFMono-Regular", "JetBrains Mono", "Cascadia Mono", "Roboto Mono",
+    Consolas, "Liberation Mono", Menlo, monospace;
+  --font-sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+
+  --text-xs: 0.75rem;
+  --text-sm: 0.875rem;
+  --text-base: 1rem;
+  --text-md: 1.0625rem;
+  --text-lg: 1.25rem;
+  --text-xl: 1.5rem;
+  --text-2xl: 2rem;
+  --text-3xl: 2.75rem;
+
+  /* Spacing scale */
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.5rem;
+  --space-6: 2rem;
+  --space-7: 3rem;
+  --space-8: 4.5rem;
+  --space-9: 6.5rem;
+
+  /* Shape */
+  --radius-sm: 4px;
+  --radius: 8px;
+  --radius-lg: 14px;
+  --radius-xl: 20px;
+
+  --shadow-panel: 0 1px 0 rgba(255, 255, 255, 0.03) inset, 0 24px 60px rgba(0, 0, 0, 0.55);
+  --shadow-pop: 0 18px 45px rgba(0, 0, 0, 0.6);
+
+  --container: 1200px;
+  --header-h: 68px;
+
+  --grid-line: rgba(255, 255, 255, 0.035);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --motion-fast: 0ms;
+    --motion: 0ms;
+  }
+}
+
+:root {
+  --motion-fast: 140ms;
+  --motion: 240ms;
+  --motion-slow: 520ms;
+}

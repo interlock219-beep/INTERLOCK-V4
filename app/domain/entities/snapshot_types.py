@@ -73,7 +73,8 @@ def _retention_days(params: dict[str, Any]) -> int | float:
         raise ValueError("retention days must be a non-negative number")
     if not math.isfinite(float(value)) or value < 0:
         raise ValueError("retention days must be a non-negative number")
-    return value
+    days: int | float = value
+    return days
 
 
 def _retention_count(params: dict[str, Any]) -> int:
@@ -83,7 +84,8 @@ def _retention_count(params: dict[str, Any]) -> int:
     )
     if isinstance(value, bool) or not isinstance(value, int) or value < 1:
         raise ValueError("retention count must be a positive integer")
-    return value
+    count: int = value
+    return count
 
 
 def _normalise_retention(

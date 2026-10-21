@@ -383,27 +383,34 @@ class TestGitRepositoryAdapterEndToEnd:
         test_file.write_text(original_content)
 
         import hashlib
-        original_hash = hashlib.sha256(test_file.read_bytes()).hexdigest()
+        original_bytes = test_file.read_bytes()
+        original_hash = hashlib.sha256(original_bytes).hexdigest()
 
         adapter = GitRepositoryAdapter(repo_path=repo_path)
-
-        test_file.write_text("app:\n  name: hacked\n  debug: true\n")
-
         action = _make_git_action(
             action_id="act-e2e-1",
             action_type="modify",
             resource="file:config.yaml",
         )
 
-        evidence = await adapter.capture_recovery_evidence(action)
+        # 1. The before-state is captured while the file still holds the
+        #    original. The adapter stores the RAW BYTES, so the restore
+        #    reproduces the recorded hash exactly (the previous text-only
+        #    capture could not reproduce a CRLF file's hash).
+        before_content = (await adapter.capture_recovery_evidence(action)).compensation_payload[
+            "before_content"
+        ]
+        assert before_content["hash"] == original_hash
+        assert before_content["content_b64"] is not None
 
-        evidence.compensation_payload["before_content"] = {
-            "exists": True,
-            "content": original_content,
-            "hash": original_hash,
-            "size": len(original_content),
-        }
+        # 2. The agent damages the file.
+        test_file.write_text("app:\n  name: hacked\n  debug: true\n")
 
+        # 3. The plan is made against the damaged state, with the captured
+        #    before-state as the recovery source.
+        evidence = await adapter.capture_recovery_evidence(
+            action, before_snapshot=before_content
+        )
         impact = await adapter.simulate(action, evidence)
         assert impact.would_succeed is True
 
@@ -413,7 +420,60 @@ class TestGitRepositoryAdapterEndToEnd:
 
         verification = await adapter.verify(compensation)
         assert verification.verified is True
-        assert test_file.read_text() == original_content
+        # Byte for byte - not "the text happens to match".
+        assert test_file.read_bytes() == original_bytes
+
+    @pytest.mark.asyncio
+    async def test_a_restore_that_cannot_reproduce_the_hash_fails_closed(
+        self, tmp_path: Path
+    ) -> None:
+        """A before-state whose text cannot reproduce the recorded hash must be
+        REFUSED, not silently written as different bytes.
+
+        This is the defect the adapter used to have: it captured text (with
+        universal-newline translation) while hashing the raw bytes, so a CRLF
+        file was restored with LF endings and reported as a success.
+        """
+        repo_path = tmp_path / "repo"
+        repo_path.mkdir()
+        _init_git_repo(repo_path)
+        test_file = repo_path / "config.yaml"
+        test_file.write_text("app:\n  name: myapp\n  debug: false\n")
+
+        import hashlib
+        original_bytes = test_file.read_bytes()
+        original_hash = hashlib.sha256(original_bytes).hexdigest()
+
+        adapter = GitRepositoryAdapter(repo_path=repo_path)
+        action = _make_git_action(
+            action_id="act-mismatch-1",
+            action_type="modify",
+            resource="file:config.yaml",
+        )
+        before_content = (await adapter.capture_recovery_evidence(action)).compensation_payload[
+            "before_content"
+        ]
+
+        # A text-only before-state whose bytes do NOT match the recorded hash
+        # (the byte form is missing, and the text has LF where the file had CRLF).
+        lossy_before = dict(before_content)
+        lossy_before["content_b64"] = None
+        lossy_before["content"] = "app:\n  name: myapp\n  debug: false\n"
+
+        damaged = b"app:\n  name: hacked\n  debug: true\n"
+        test_file.write_text("app:\n  name: hacked\n  debug: true\n")
+        damaged = test_file.read_bytes()
+
+        evidence = await adapter.capture_recovery_evidence(action, before_snapshot=lossy_before)
+        compensation = await adapter.generate_compensation(action, evidence)
+        result = await adapter.execute_compensation(compensation, evidence.idempotency_key)
+
+        assert result.success is False
+        assert result.execution_state == ExecutionState.FAILED
+        assert "hash mismatch" in (result.error or "").lower()
+        # The file was not silently rewritten with different bytes.
+        assert test_file.read_bytes() == damaged
+        assert original_hash != hashlib.sha256(damaged).hexdigest()
 
     @pytest.mark.asyncio
     async def test_conflict_prevents_blind_overwrite(self, tmp_path: Path) -> None:
@@ -443,3 +503,205 @@ class TestGitRepositoryAdapterEndToEnd:
         assert result.success is False
         assert result.execution_state == ExecutionState.BLOCKED_BY_CONFLICT
         assert test_file.read_text() == '{"key": "human_value"}'
+
+
+class TestGitRepositoryAdapterPayloadContainment:
+    """Tampered compensation payloads must never escape the repository root.
+
+    Release-gate audit: execute/verify previously joined
+    ``repo_path / payload['file_path']`` with no containment check, so an
+    absolute path (or ``..`` segment) stored in a tampered evidence payload
+    could delete or overwrite files outside the repository — the same defect
+    class as the config-adapter traversal hardening (V5-9).
+    """
+
+    @pytest.mark.asyncio
+    async def test_execute_refuses_path_traversal_payload(
+        self, tmp_path: Path
+    ) -> None:
+        repo_path = tmp_path / "repo"
+        repo_path.mkdir()
+        _init_git_repo(repo_path)
+        victim = tmp_path / "victim.txt"
+        victim.write_text("user data")
+
+        adapter = GitRepositoryAdapter(repo_path=repo_path)
+        action = _make_git_action(action_type="create", resource="file:created.txt")
+        evidence = await adapter.capture_recovery_evidence(action)
+        evidence.compensation_payload["operation"] = "delete_file"
+        evidence.compensation_payload["file_path"] = "../victim.txt"
+        compensation = await adapter.generate_compensation(action, evidence)
+
+        result = await adapter.execute_compensation(
+            compensation, evidence.idempotency_key
+        )
+
+        assert result.success is False
+        assert result.execution_state == ExecutionState.FAILED
+        assert "traversal" in (result.error or "").lower()
+        # User data outside the repository survives a tampered payload.
+        assert victim.exists()
+        assert victim.read_text() == "user data"
+
+    @pytest.mark.asyncio
+    async def test_execute_refuses_absolute_path_payload(
+        self, tmp_path: Path
+    ) -> None:
+        repo_path = tmp_path / "repo"
+        repo_path.mkdir()
+        _init_git_repo(repo_path)
+        victim = tmp_path / "victim.txt"
+        victim.write_text("user data")
+
+        adapter = GitRepositoryAdapter(repo_path=repo_path)
+        action = _make_git_action(action_type="create", resource="file:created.txt")
+        evidence = await adapter.capture_recovery_evidence(action)
+        evidence.compensation_payload["operation"] = "delete_file"
+        evidence.compensation_payload["file_path"] = str(victim)
+        compensation = await adapter.generate_compensation(action, evidence)
+
+        result = await adapter.execute_compensation(
+            compensation, evidence.idempotency_key
+        )
+
+        assert result.success is False
+        assert result.execution_state == ExecutionState.FAILED
+        assert "absolute path refused" in (result.error or "").lower()
+        assert victim.exists()
+        assert victim.read_text() == "user data"
+
+    @pytest.mark.asyncio
+    async def test_verify_refuses_payload_outside_repository(
+        self, tmp_path: Path
+    ) -> None:
+        repo_path = tmp_path / "repo"
+        repo_path.mkdir()
+        _init_git_repo(repo_path)
+        victim = tmp_path / "victim.txt"
+        victim.write_text("user data")
+        victim_hash = hashlib.sha256(victim.read_bytes()).hexdigest()
+
+        adapter = GitRepositoryAdapter(repo_path=repo_path)
+        action = _make_git_action(action_type="modify", resource="file:readme.txt")
+        evidence = await adapter.capture_recovery_evidence(action)
+        evidence.compensation_payload["operation"] = "restore_content"
+        evidence.compensation_payload["file_path"] = str(victim)
+        evidence.compensation_payload["before_content"] = {
+            "exists": True,
+            "content": "user data",
+            "hash": victim_hash,
+            "size": len("user data"),
+        }
+        compensation = await adapter.generate_compensation(action, evidence)
+
+        verification = await adapter.verify(compensation)
+
+        # Verification must refuse to read (and self-certify) a path outside
+        # the repository instead of comparing against the victim file.
+        assert verification.verified is False
+        assert "refused" in str(verification.details.get("reason", "")).lower()
+
+    @pytest.mark.asyncio
+    async def test_detect_drift_refuses_absolute_resource(
+        self, tmp_path: Path
+    ) -> None:
+        repo_path = tmp_path / "repo"
+        repo_path.mkdir()
+        _init_git_repo(repo_path)
+        (repo_path / "readme.txt").write_text("Original content")
+        outside = tmp_path / "outside.txt"
+        outside.write_text("Not in the repository")
+
+        adapter = GitRepositoryAdapter(repo_path=repo_path)
+        capture_action = _make_git_action(
+            action_type="modify", resource="file:readme.txt"
+        )
+        evidence = await adapter.capture_recovery_evidence(capture_action)
+
+        tampered_action = _make_git_action(
+            action_type="modify", resource=f"file:{outside}"
+        )
+        with pytest.raises(ValueError, match="outside base path"):
+            await adapter.detect_drift(
+                tampered_action, evidence, {"repo_path": str(repo_path)}
+            )
+
+
+class TestGitRepositoryAdapterRenameHonesty:
+    """The declared rename-recovery capability must not over-claim: rename
+    reversal is not implemented (the original destination is not recorded in
+    evidence), so drift must not assert NO_DRIFT, execution must demand manual
+    action, and verification must not self-certify."""
+
+    @pytest.mark.asyncio
+    async def test_rename_drift_is_insufficient_evidence(
+        self, tmp_path: Path
+    ) -> None:
+        repo_path = tmp_path / "repo"
+        repo_path.mkdir()
+        _init_git_repo(repo_path)
+        (repo_path / "old.txt").write_text("content")
+
+        adapter = GitRepositoryAdapter(repo_path=repo_path)
+        action = _make_git_action(action_type="rename", resource="file:old.txt")
+        evidence = await adapter.capture_recovery_evidence(action)
+
+        drift = await adapter.detect_drift(
+            action, evidence, {"repo_path": str(repo_path)}
+        )
+
+        assert drift.status.value == "insufficient_evidence"
+
+    @pytest.mark.asyncio
+    async def test_rename_back_requires_manual_action(
+        self, tmp_path: Path
+    ) -> None:
+        repo_path = tmp_path / "repo"
+        repo_path.mkdir()
+        _init_git_repo(repo_path)
+        (repo_path / "old.txt").write_text("content")
+
+        adapter = GitRepositoryAdapter(repo_path=repo_path)
+        action = _make_git_action(action_type="rename", resource="file:old.txt")
+        evidence = await adapter.capture_recovery_evidence(action)
+        compensation = await adapter.generate_compensation(action, evidence)
+
+        result = await adapter.execute_compensation(
+            compensation, evidence.idempotency_key
+        )
+
+        assert result.success is False
+        assert result.execution_state == ExecutionState.REQUIRES_MANUAL_ACTION
+
+        verification = await adapter.verify(compensation)
+        assert verification.verified is False
+
+
+class TestGitRepositoryAdapterBeforeSnapshot:
+    """capture_recovery_evidence must honor the pre-action before snapshot
+    (same contract as the config/filesystem adapters, V5-8): the live file is
+    the post-action state, not both sides of the comparison."""
+
+    @pytest.mark.asyncio
+    async def test_capture_honors_before_snapshot(self, tmp_path: Path) -> None:
+        repo_path = tmp_path / "repo"
+        repo_path.mkdir()
+        _init_git_repo(repo_path)
+        (repo_path / "readme.txt").write_text("after agent action")
+
+        adapter = GitRepositoryAdapter(repo_path=repo_path)
+        action = _make_git_action(action_type="modify", resource="file:readme.txt")
+        snapshot = {
+            "exists": True,
+            "content": "original content",
+            "hash": "snapshot-hash",
+            "size": len("original content"),
+        }
+
+        evidence = await adapter.capture_recovery_evidence(
+            action, before_snapshot=snapshot
+        )
+
+        payload = evidence.compensation_payload
+        assert payload["before_content"]["content"] == "original content"
+        assert payload["after_content"]["content"] == "after agent action"

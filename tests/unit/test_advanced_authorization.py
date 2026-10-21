@@ -285,6 +285,7 @@ def test_previous_behavior_unknown_history_fails_closed():
     context = _make_context(
         agent_history=[],
         proposed_tool="search",
+        agent_history_required=True,
     )
     decision, reason = service.authorize(context)
     assert decision == AuthorizationDecision.DENY
@@ -886,6 +887,53 @@ class MockGrantRepo:
     async def list_by_tenant(self, tenant_id, limit=100, offset=0):
         filtered = [g for g in self._grants.values() if g.tenant_id == tenant_id]
         return filtered, len(filtered)
+
+    async def consume_one_shot(self, tenant_id, grant_id):
+        """Atomic one-shot consumption mirroring the production repository contract.
+
+        Mirrors ``SqlAlchemyAuthorityGrantRepository.consume_one_shot``: the
+        grant must be active, marked one-shot, unconsumed, unexpired, and
+        belong to the requested tenant before it can be consumed exactly once.
+        """
+        grant = self._grants.get(grant_id)
+        if grant is None or grant.tenant_id != tenant_id:
+            return None
+        if grant.status != AuthorityStatus.ACTIVE or not grant.one_shot:
+            return None
+        if grant.usage_count != 0:
+            return None
+        if grant.expires_at is not None:
+            expires = grant.expires_at
+            if expires.tzinfo is None:
+                expires = expires.replace(tzinfo=UTC)
+            if expires < datetime.now(UTC):
+                return None
+        now = datetime.now(UTC)
+        consumed = AuthorityGrant(
+            grant_id=grant.grant_id,
+            tenant_id=grant.tenant_id,
+            grantor_agent_id=grant.grantor_agent_id,
+            grantee_agent_id=grant.grantee_agent_id,
+            scope=grant.scope,
+            resource=grant.resource,
+            conditions=grant.conditions,
+            expires_at=grant.expires_at,
+            delegation_depth=grant.delegation_depth,
+            parent_authority_id=grant.parent_authority_id,
+            root_authority_id=grant.root_authority_id,
+            status=AuthorityStatus.ONE_SHOT_USED,
+            metadata=grant.metadata,
+            created_at=grant.created_at,
+            updated_at=now,
+            is_jit=grant.is_jit,
+            jit_created_at=grant.jit_created_at,
+            jit_expires_at=grant.jit_expires_at,
+            jit_consumed_at=now,
+            one_shot=grant.one_shot,
+            usage_count=1,
+        )
+        self._grants[grant_id] = consumed
+        return consumed
 
 
 def _make_grant(

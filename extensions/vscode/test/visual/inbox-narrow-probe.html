@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Inbox narrow-width probe</title>
+<style>
+  body { margin: 0; background: #101010; color: #eee; font-family: monospace; }
+  iframe { width: 420px; height: 1200px; border: 1px solid #444; }
+  #report { white-space: pre-wrap; padding: 8px; font-size: 12px; }
+</style>
+</head>
+<body>
+<iframe id="frame" src="recovery-inbox.html"></iframe>
+<div id="report">measuring…</div>
+<script>
+  document.getElementById('frame').addEventListener('load', function () {
+    var doc = this.contentDocument;
+    var win = this.contentWindow;
+    var root = doc.documentElement;
+    var wide = [];
+    var all = doc.querySelectorAll('*');
+    for (var i = 0; i < all.length; i++) {
+      var node = all[i];
+      var rect = node.getBoundingClientRect();
+      if (rect.width > 420.5) {
+        wide.push((node.id || node.className || node.tagName) + ' = ' + Math.round(rect.width));
+      }
+      if (wide.length > 12) { break; }
+    }
+    document.getElementById('report').textContent = JSON.stringify({
+      clientWidth: root.clientWidth,
+      scrollWidth: root.scrollWidth,
+      bodyScroll: doc.body.scrollWidth,
+      wide: wide
+    }, null, 1);
+  });
+</script>
+</body>
+</html>

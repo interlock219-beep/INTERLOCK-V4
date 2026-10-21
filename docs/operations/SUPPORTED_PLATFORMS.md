@@ -1,6 +1,8 @@
 # INTERLOCK V6 — Supported platforms matrix
 
-Last verified: 2026-10-18 (session: final release readiness). This matrix
+Last verified: 2026-10-19 (mission: macOS availability). The **two product
+interfaces** section was added and verified 2026-10-20 (mission: two-interface
+scope). This matrix
 records what has been **demonstrated**, what is **declared pending CI**, and
 what is **unverified**. Nothing here claims support that has not been
 evidenced. A "supported" row means: the declared controlled-beta scope
@@ -28,14 +30,35 @@ that environment.
 | Windows | x64 | 3.11.9 | FAT32 / exFAT | none | — | — | — | **UNSUPPORTED** — rename durability/atomicity not guaranteed |
 | Windows | x64 | 3.11.9 | network / OneDrive-synced dirs | none | — | — | — | **UNSUPPORTED** — no local atomic-replace guarantees |
 | Linux (Ubuntu runner) | x64 | 3.11–3.14 | ext4 | CI runner (planned) | encoded in CI job | encoded (recovery subset) | symlink drills + R17 POSIX tests **will execute** there (unprivileged symlink/chmod semantics) | DECLARED — CI PENDING |
-| macOS (runner) | arm64 | 3.11–3.14 | APFS | CI runner (planned) | encoded; **risk cell**: `xmlsec` (via `python3-saml`) wheel availability on arm64 will be proven by the first run | encoded | same as Linux | DECLARED — CI PENDING |
-| macOS | x64 | 3.11–3.14 | APFS | none | — | — | — | UNTESTED |
+| macOS (runner) | arm64 | 3.11–3.14 | APFS | CI runner (planned) | **dependency-resolved 2026-10-19**: all 58 locked pins verified to publish `macosx_11_0_arm64` wheels (incl. `xmlsec` 1.3.17, `cryptography` 50 abi3, `psycopg2-binary`, `pydantic-core` for cp311 **and** cp314); install doc `docs/operations/MACOS_INSTALL.md` | encoded (recovery subset) | symlink drills + R17 POSIX tests **will execute** natively (unprivileged); a `macos-release-artifact` CI job builds + hashes + uploads the wheel on the runner | DECLARED — CI PENDING (dep-resolved) |
+| macOS (Intel) | x86_64 | 3.11–3.14 | APFS | none | **dependency-blocked**: upstream `cryptography` ≥46 has **no macOS x86_64 wheel** (PyPI-verified 2026-10-19); `cryptography` ≤45 does — enabling Intel needs an owner-approved pin change + native validation | — | — | **UNSUPPORTED** (dependency-blocked) |
+
+## The two product interfaces (per-interface status)
+
+Interlock ships exactly **two** interfaces over the shared engine. Each has its
+own installation/platform story, and each is tested independently:
+
+| Interface | Ships | Python prerequisite | Platforms actually exercised (this session) | Status |
+|---|---|---|---|---|
+| **1. VS Code extension** (`interlock-vscode-0.1.0.vsix`) | bundles a pinned, SHA-256-verified CPython **3.11.17** runtime for **Windows x64** | none on Windows x64 (zero-config); elsewhere it falls back to a **system** Python 3.11–3.14 | Windows x64 — clean-Env install + activation (42 checks) | TESTED — PRIMARY (bundled runtime **Windows x64 only**) |
+| **2. Terminal Runner** (`interlock` CLI / `interlock_cli.py`) | **no** bundled runtime (package-based wheel) | **Python 3.11–3.14 required** (engine is stdlib-only) | Windows x64 / NTFS / 3.11.9 — source (38) + clean-venv wheel (27) | TESTED — PRIMARY (Windows); macOS/Linux engine-portable but **CI pending** |
+
+- The extension's bundled runtime makes it zero-config **on Windows x64 only**;
+  on macOS/Linux/ARM it requires a system Python and is not yet advertised as
+  zero-config there (no runtime is provisioned or tested for those).
+- The terminal runner deliberately has **no** bundled Python (evaluated in
+  `TERMINAL_RUNNER.md`); it therefore needs an interpreter but works on any OS
+  the engine supports once Python is present.
+- Neither interface is published: the extension is a **local VSIX** (no
+  Marketplace account) and the CLI is a **local wheel** (no PyPI upload).
 
 ## Declared Python range
 
-`requires-python = ">=3.11,<3.15"` (3.11–3.14). **Locally verified: 3.11.9
-only.** 3.12/3.13/3.14 are declared pending the CI matrix; they must not be
-marketed as tested until the matrix cells are green with recorded runs.
+`requires-python = ">=3.11,<3.15"` (3.11–3.14). **Locally verified on
+Windows: 3.11.9 and 3.14.7** (recovery + security subset: 105 passed,
+6 skipped on both, 2026-10-19). 3.12/3.13 remain declared pending the CI
+matrix; no version may be marketed as tested until its matrix cells are
+green with recorded runs.
 
 ## Platform-dependent behavior (inspected in code)
 
@@ -57,6 +80,12 @@ marketed as tested until the matrix cells are green with recorded runs.
   **retracted after inspection**).
 - Case sensitivity: engine compares bytes/hashes, not names; case-insensitive
   filesystems behave as the OS does.
+- Path validation (fixed 2026-10-19): `ToolArgumentValidator.validate_path`
+  previously used `os.path.isabs` (platform-dependent), so `C:\...` was
+  accepted on any POSIX host and `/...` was accepted on Windows with Python
+  3.14 (`ntpath.isabs` semantics change). It now rejects absolute paths of
+  **both** path flavours on every platform, with a cross-platform regression
+  test; verdicts no longer depend on the host OS.
 - Unicode/long paths: `pathlib` throughout; byte-exact content travels as
   base64 (encoding-independent); >260-char paths on Windows untested.
 - Disk-full: typed fail-closed verified only via mocks; the **real ENOSPC

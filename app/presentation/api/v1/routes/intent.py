@@ -33,6 +33,7 @@ from app.infrastructure.persistence.repositories.sqlalchemy_protected_action_rep
     SQLAlchemyProtectedActionRepository,
 )
 from app.presentation.api.dependencies.auth import CurrentUser, get_user_tenant_id
+from app.presentation.api.dependencies.emergency_guard import assert_execution_permitted
 from app.presentation.api.dependencies.security import get_execution_token_service
 
 router = APIRouter(prefix="/intent", tags=["Intent"])
@@ -246,6 +247,13 @@ async def execute_intent(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Token tenant does not match authenticated user tenant.",
         )
+
+    # Emergency deny must stop execution authorisation itself: the token is
+    # verified but no execution may proceed while the tenant is under deny
+    # (PILLAR 6: emergency deny blocks ALL execution).
+    await assert_execution_permitted(
+        str(payload.get("tenant_id") or current_user.tenant_id or "")
+    )
 
     token_agent_id = str(payload.get("agent_id", ""))
     if body.agent_id and token_agent_id and token_agent_id != body.agent_id:

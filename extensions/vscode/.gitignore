@@ -1,0 +1,17 @@
+# Build output (rebuild with `npm run compile`)
+out/
+node_modules/
+.vscode-test/
+
+# Packaged artifacts (rebuild with `npm run package`)
+*.vsix
+
+# Bundled Python runtime: ~100 MB of interpreter binaries that must not be
+# committed. It is provisioned at build/CI time by `tools/provision-runtime.js`
+# from a pinned, SHA-256-verified python-build-standalone release, and shipped
+# inside the VSIX only.
+runtime/
+
+# Python
+__pycache__/
+*.pyc

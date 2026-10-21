@@ -49,6 +49,7 @@ from app.domain.entities.surgical_recovery_types import (
 from app.domain.entities.surgical_recovery_types import (
     Reversibility as RevEnum,
 )
+from app.domain.services.evidence_hash import seal_evidence
 from app.domain.services.recovery_adapter import RecoveryAdapter
 
 
@@ -82,6 +83,93 @@ class FilesystemRecoveryAdapter(RecoveryAdapter):
     @staticmethod
     def _now() -> str:
         return datetime.now(UTC).isoformat()
+
+    @staticmethod
+    def _truncated_before_state_error(before_snapshot: dict[str, Any] | None) -> str | None:
+        """Refuse to act on a before-state that was truncated at capture time.
+
+        A truncated capture holds only a PREFIX of the original file. Restoring
+        it would silently shrink the user's file to that prefix while the
+        operation reported success - the one outcome a recovery must never
+        produce. A before-state is either captured completely or not at all.
+        """
+        if not isinstance(before_snapshot, dict):
+            return None
+        if not before_snapshot.get("truncated"):
+            return None
+        captured = before_snapshot.get("raw_bytes_length")
+        total = before_snapshot.get("size")
+        return (
+            "The captured before-state was truncated at capture time "
+            f"({captured} of {total} bytes captured). Restoring it would shrink the file, "
+            "so the recovery was refused. Capture a complete before-state first."
+        )
+
+    @staticmethod
+    def _bytes_match_file(path: Path, expected: bytes) -> bool:
+        """Compare a file's bytes with *expected* without loading the file.
+
+        The file is read in chunks so verification stays bounded in memory no
+        matter how large the recovered file is.
+        """
+        try:
+            with path.open("rb") as handle:
+                offset = 0
+                while True:
+                    chunk = handle.read(65536)
+                    if not chunk:
+                        return offset == len(expected)
+                    end = offset + len(chunk)
+                    if end > len(expected) or expected[offset:end] != chunk:
+                        return False
+                    offset = end
+        except OSError:
+            return False
+
+    def _verify_metadata(
+        self, full_path: Path, before_snapshot: dict[str, Any] | None
+    ) -> tuple[list[str], list[str]]:
+        """Verify the metadata the engine claims to restore (POSIX only).
+
+        On POSIX the engine restores the recorded mode and timestamps, so a
+        recovery must not report success when they were not restored - the
+        content can be byte-exact while the file's permissions or timestamps
+        are not what they were. On platforms without POSIX permission
+        semantics (Windows) the check does not apply and nothing is claimed.
+        """
+        passed: list[str] = []
+        failed: list[str] = []
+        if os.name != "posix" or not self._preserve_metadata:
+            return passed, failed
+        if not isinstance(before_snapshot, dict):
+            return passed, failed
+        metadata = before_snapshot.get("metadata") or {}
+        expected_mode = metadata.get("mode")
+        if expected_mode is not None:
+            try:
+                actual_mode = stat.S_IMODE(full_path.stat().st_mode)
+                if actual_mode == int(expected_mode):
+                    passed.append("permissions_match")
+                else:
+                    failed.append(
+                        f"permissions_mismatch(expected {int(expected_mode):o}, "
+                        f"found {actual_mode:o})"
+                    )
+            except (OSError, TypeError, ValueError):
+                failed.append("permissions_unverifiable")
+        expected_mtime = metadata.get("mtime")
+        if expected_mtime is not None:
+            try:
+                actual_mtime = full_path.stat().st_mtime
+                # Filesystem timestamp granularity differs; one second of
+                # tolerance avoids false failures without hiding a real change.
+                if abs(actual_mtime - float(expected_mtime)) <= 1.0:
+                    passed.append("mtime_match")
+                else:
+                    failed.append("mtime_mismatch")
+            except (OSError, TypeError, ValueError):
+                failed.append("mtime_unverifiable")
+        return passed, failed
 
     @staticmethod
     def _json_safe(value: Any) -> Any:
@@ -134,7 +222,7 @@ class FilesystemRecoveryAdapter(RecoveryAdapter):
         result: dict[str, Any] = {"available": False, "entries": [], "error": None}
         if os.name == "nt":
             try:
-                import win32security
+                import win32security  # type: ignore[import-untyped]  # pywin32 ships no stubs
 
                 descriptor = win32security.GetFileSecurity(
                     str(path), win32security.DACL_SECURITY_INFORMATION
@@ -143,13 +231,23 @@ class FilesystemRecoveryAdapter(RecoveryAdapter):
                 entries: list[str] = []
                 if dacl is not None:
                     for index in range(dacl.GetAceCount()):
-                        entries.append(str(dacl.GetAce(index)))
+                        ace = dacl.GetAce(index)
+                        # ``str(ace)`` embeds ``PySID`` reprs that contain heap
+                        # addresses, which makes two captures of the *same* ACL
+                        # compare as different and produces false drift/conflict
+                        # detections.  Render each ACE as a stable string.
+                        entries.append(FilesystemRecoveryAdapter._format_ace(ace))
                 result.update({"available": True, "entries": entries})
             except Exception as exc:
                 result["error"] = f"{type(exc).__name__}: {exc}"
             return result
         try:
-            names = os.listxattr(path) if hasattr(os, "listxattr") else []
+            # Do not follow symlinks: capture the link's own attributes only.
+            names = (
+                os.listxattr(path, follow_symlinks=False)
+                if hasattr(os, "listxattr")
+                else []
+            )
             acl_names = [name for name in names if "acl" in name.lower()]
             xattr_entries: dict[str, str] = {}
             getxattr = getattr(os, "getxattr", None)
@@ -168,6 +266,28 @@ class FilesystemRecoveryAdapter(RecoveryAdapter):
         return result
 
     @staticmethod
+    def _format_ace(ace: Any) -> str:
+        """Render a Windows ACE as a stable, comparable string.
+
+        A raw ``win32security`` ACE tuple contains ``PySID`` objects whose
+        ``repr`` embeds heap addresses, so two captures of the identical ACL
+        would otherwise compare as different.  SIDs are rendered via
+        ``ConvertSidToStringSid`` so the output is deterministic.
+        """
+        try:
+            import win32security
+
+            # GetAce returns ((ace_type, ace_flags), access_mask, sid).
+            (ace_type, ace_flags), access_mask, sid = ace
+            try:
+                sid_str = win32security.ConvertSidToStringSid(sid)
+            except Exception:
+                sid_str = str(sid)
+            return f"ace({ace_type},{ace_flags},{access_mask},{sid_str})"
+        except Exception:
+            return f"ace({ace!r})"
+
+    @staticmethod
     def _capture_xattrs(path: Path) -> dict[str, str]:
         result: dict[str, str] = {}
         getxattr = getattr(os, "getxattr", None)
@@ -175,10 +295,12 @@ class FilesystemRecoveryAdapter(RecoveryAdapter):
         if getxattr is None or listxattr is None:
             return result
         try:
-            for name in listxattr(path):
+            for name in listxattr(path, follow_symlinks=False):
                 if "acl" in str(name).lower():
                     continue
-                result[str(name)] = base64.b64encode(getxattr(path, name)).decode("ascii")
+                result[str(name)] = base64.b64encode(
+                    getxattr(path, name, follow_symlinks=False)
+                ).decode("ascii")
         except (OSError, PermissionError):
             pass
         return result
@@ -216,7 +338,11 @@ class FilesystemRecoveryAdapter(RecoveryAdapter):
                 snapshot["snapshot_hash"] = cls._hash_json(snapshot)
                 return snapshot
             link_target = os.readlink(path) if is_link else None
-            file_stat = path.stat()
+            # Use lstat so symlinks are captured as symlinks (the link itself),
+            # not as their target.  Following the link here would misclassify a
+            # broken symlink as "missing" and would let recovery materialise a
+            # regular file where a symlink used to be.
+            file_stat = path.lstat()
             raw_bytes = b""
             if stat.S_ISREG(file_stat.st_mode):
                 with path.open("rb") as handle:
@@ -937,7 +1063,6 @@ class FilesystemRecoveryAdapter(RecoveryAdapter):
         before_snapshot: dict[str, Any] | None = None,
     ) -> RecoveryEvidence:
         self._verify_tenant_isolation(action)
-        payload_str = json.dumps(action.tool_arguments, sort_keys=True, default=str)
         base_path = self._get_base_path(execution_context)
         file_path_str = self._extract_file_path(action.resource)
         before_snapshot = before_snapshot or action.before_state_snapshot
@@ -950,13 +1075,6 @@ class FilesystemRecoveryAdapter(RecoveryAdapter):
                 before_snapshot = self._capture_file_snapshot(file_path, self._max_file_size_bytes)
             after_snapshot = self._capture_file_snapshot(file_path, self._max_file_size_bytes)
             current_snapshot = after_snapshot
-
-        state_json = self._hash_json(
-            {"before": before_snapshot, "after": after_snapshot, "current": current_snapshot}
-        )
-        evidence_hash = hashlib.sha256(
-            f"{action.action_id}:{payload_str}:{state_json}".encode()
-        ).hexdigest()
 
         operation = self._determine_compensation_operation(action)
         new_path_str = action.tool_arguments.get("new_path")
@@ -1010,7 +1128,7 @@ class FilesystemRecoveryAdapter(RecoveryAdapter):
         if after_snapshot and after_snapshot.get("hash"):
             after_ref = f"fs:{after_snapshot['hash']}"
 
-        return RecoveryEvidence(
+        return seal_evidence(RecoveryEvidence(
             evidence_id=f"ev-{action.action_id}",
             action_id=action.action_id,
             tenant_id=action.tenant_id,
@@ -1032,14 +1150,15 @@ class FilesystemRecoveryAdapter(RecoveryAdapter):
             dependency_edges=[],
             reversibility_classification=Reversibility.normalize(action.reversibility),
             state_version=action.policy_version,
-            evidence_hash=evidence_hash,
             adapter_capability=AdapterCapability.PRODUCTION_VALIDATED,
             verification_requirements=[
                 "file_content_matches_expected",
-                "file_metadata_preserved",
                 "file_permissions_preserved",
+                "file_timestamps_preserved_where_supported",
                 "file_ownership_preserved_where_supported",
-                "file_acl_preserved_where_supported",
+                # ACLs are CAPTURED but not restored: the engine has no
+                # portable ACL writer, so the requirement must not claim it.
+                "file_acl_captured_not_restored",
                 "no_unintended_changes",
                 "independent_verification_required",
             ],
@@ -1053,7 +1172,7 @@ class FilesystemRecoveryAdapter(RecoveryAdapter):
                 "concurrent_modification": preview["concurrent_modification"],
                 "evidence_bundle": evidence_bundle,
             },
-        )
+        ))
 
     async def classify_reversibility(
         self,
@@ -1403,7 +1522,6 @@ class FilesystemRecoveryAdapter(RecoveryAdapter):
     @staticmethod
     def _build_byte_exact_verification(
         action_id: str,
-        current_bytes: bytes,
         current_hash: str,
         full_path: Path,
         before_snapshot: dict[str, Any] | None,
@@ -1414,6 +1532,29 @@ class FilesystemRecoveryAdapter(RecoveryAdapter):
         checks_passed: list[str] = []
         checks_failed: list[str] = []
 
+        # A truncated before-state cannot be verified byte-exactly: its hash
+        # covers only the captured prefix. Never report success for one.
+        truncated_error = FilesystemRecoveryAdapter._truncated_before_state_error(before_snapshot)
+        if truncated_error:
+            return VerificationResult(
+                action_id=action_id,
+                verified=False,
+                details={
+                    "reason": truncated_error,
+                    "checks_failed": ["truncated_before_state"],
+                    "byte_exact": False,
+                },
+            )
+
+        try:
+            current_size = full_path.stat().st_size
+        except OSError as exc:
+            return VerificationResult(
+                action_id=action_id,
+                verified=False,
+                details={"reason": f"File could not be inspected after recovery: {exc}"},
+            )
+
         if expected_hash:
             if current_hash == expected_hash:
                 checks_passed.append("hash_match")
@@ -1421,13 +1562,13 @@ class FilesystemRecoveryAdapter(RecoveryAdapter):
                 checks_failed.append("hash_mismatch")
 
         if expected_size is not None:
-            if full_path.stat().st_size == expected_size:
+            if current_size == expected_size:
                 checks_passed.append("size_match")
             else:
                 checks_failed.append("size_mismatch")
 
         if expected_raw_len is not None:
-            if len(current_bytes) == expected_raw_len:
+            if current_size == expected_raw_len:
                 checks_passed.append("raw_bytes_length_match")
             else:
                 checks_failed.append("raw_bytes_length_mismatch")
@@ -1435,7 +1576,7 @@ class FilesystemRecoveryAdapter(RecoveryAdapter):
         content_b64 = before_snapshot.get("content_b64") if before_snapshot else None
         if content_b64 is not None:
             expected_bytes = base64.b64decode(content_b64)
-            if current_bytes == expected_bytes:
+            if FilesystemRecoveryAdapter._bytes_match_file(full_path, expected_bytes):
                 checks_passed.append("byte_exact_match")
             else:
                 checks_failed.append("byte_exact_mismatch")
@@ -1455,14 +1596,44 @@ class FilesystemRecoveryAdapter(RecoveryAdapter):
                 ),
                 "hash": current_hash,
                 "expected_hash": expected_hash,
-                "size": full_path.stat().st_size,
+                "size": current_size,
                 "expected_size": expected_size,
-                "raw_bytes_length": len(current_bytes),
+                "raw_bytes_length": current_size,
                 "expected_raw_bytes_length": expected_raw_len,
                 "checks_passed": checks_passed,
                 "checks_failed": checks_failed,
                 "byte_exact": True,
             },
+        )
+
+    def _with_metadata_verification(
+        self,
+        result: VerificationResult,
+        full_path: Path,
+        before_snapshot: dict[str, Any] | None,
+    ) -> VerificationResult:
+        """Add the POSIX metadata checks to a byte-exact verification result.
+
+        A recovery that restored the bytes but not the recorded permissions or
+        timestamps is not a complete recovery: reporting success would claim
+        a property that was never established.
+        """
+        if not result.verified:
+            return result
+        passed, failed = self._verify_metadata(full_path, before_snapshot)
+        if not failed:
+            if passed:
+                result.details["metadata_checks_passed"] = passed
+            return result
+        details = dict(result.details)
+        details["reason"] = f"Metadata verification failed: {failed}"
+        details["metadata_checks_passed"] = passed
+        details["metadata_checks_failed"] = failed
+        details["byte_exact"] = False
+        return VerificationResult(
+            action_id=result.action_id,
+            verified=False,
+            details=details,
         )
 
     async def verify(
@@ -1475,7 +1646,8 @@ class FilesystemRecoveryAdapter(RecoveryAdapter):
         1. The real filesystem is inspected after execution
         2. The resulting bytes exactly match the immutable before-state
         3. The resulting cryptographic hash exactly matches the before-state hash
-        4. Relevant metadata checks pass where supported
+        4. The metadata the engine claims to restore (POSIX permissions and
+           timestamps) is verified where the platform supports it
         5. All required verification checks explicitly return passed=True
 
         Never infer success from:
@@ -1518,15 +1690,21 @@ class FilesystemRecoveryAdapter(RecoveryAdapter):
                         details={"reason": f"File does not exist after recovery: {file_path_str}"},
                     )
 
-                # Independent byte-exact verification.
-                current_bytes = full_path.read_bytes()
+                # Independent byte-exact verification (bounded memory: the
+                # file is hashed and compared in chunks, never loaded whole).
                 current_hash = self._compute_file_hash(full_path)
-                return self._build_byte_exact_verification(
-                    compensation.action_id, current_bytes, current_hash, full_path, before_snapshot
+                return self._with_metadata_verification(
+                    self._build_byte_exact_verification(
+                        compensation.action_id, current_hash, full_path, before_snapshot
+                    ),
+                    full_path,
+                    before_snapshot,
                 )
 
             elif operation == "delete_file":
-                if full_path.exists():
+                # lexists (not exists) so a dangling symlink still counts as
+                # present — exists() is False for broken symlinks.
+                if os.path.lexists(full_path):
                     return VerificationResult(
                         action_id=compensation.action_id,
                         verified=False,
@@ -1535,34 +1713,121 @@ class FilesystemRecoveryAdapter(RecoveryAdapter):
                 return VerificationResult(
                     action_id=compensation.action_id,
                     verified=True,
-                    details={"reason": "File successfully deleted", "byte_exact": True},
+                    details={
+                        "reason": "File successfully deleted",
+                        # A deletion compares no bytes: it is verified by the
+                        # file's absence, so byte-exactness is NOT claimed.
+                        "verified_by": "existence",
+                    },
                 )
 
             elif operation == "restore_deleted_file":
-                if not full_path.exists():
+                if not os.path.lexists(full_path):
                     return VerificationResult(
                         action_id=compensation.action_id,
                         verified=False,
                         details={"reason": f"File was not restored: {file_path_str}"},
                     )
 
-                current_bytes = full_path.read_bytes()
-                current_hash = self._compute_file_hash(full_path)
-                return self._build_byte_exact_verification(
-                    compensation.action_id, current_bytes, current_hash, full_path, before_snapshot
-                )
-
-            elif operation == "rename_back":
-                if full_path.exists():
+                if before_snapshot is not None and before_snapshot.get("type") == "symlink":
+                    if not full_path.is_symlink():
+                        return VerificationResult(
+                            action_id=compensation.action_id,
+                            verified=False,
+                            details={
+                                "reason": (
+                                    "Symlink was not restored as a symlink "
+                                    f"(found regular file): {file_path_str}"
+                                )
+                            },
+                        )
+                    current_target = os.readlink(full_path)
+                    expected_target = before_snapshot.get("symlink_target")
+                    if current_target != expected_target:
+                        return VerificationResult(
+                            action_id=compensation.action_id,
+                            verified=False,
+                            details={
+                                "reason": (
+                                    f"Symlink target mismatch: expected {expected_target!r}, "
+                                    f"found {current_target!r}"
+                                )
+                            },
+                        )
                     return VerificationResult(
                         action_id=compensation.action_id,
                         verified=True,
-                        details={"reason": "File exists at expected path", "byte_exact": True},
+                        details={
+                            "reason": "Symlink restored with matching target",
+                            "byte_exact": True,
+                        },
+                    )
+
+                current_hash = self._compute_file_hash(full_path)
+                return self._with_metadata_verification(
+                    self._build_byte_exact_verification(
+                        compensation.action_id, current_hash, full_path, before_snapshot
+                    ),
+                    full_path,
+                    before_snapshot,
+                )
+
+            elif operation == "rename_back":
+                if not os.path.lexists(full_path):
+                    return VerificationResult(
+                        action_id=compensation.action_id,
+                        verified=False,
+                        details={
+                            "reason": f"File does not exist at expected path: {file_path_str}"
+                        },
+                    )
+                # Verify content matches the captured before-state when a hash
+                # is available, and that the post-rename location no longer holds
+                # the file.
+                content_compared = False
+                expected_hash = before_snapshot.get("hash") if before_snapshot else None
+                if expected_hash and full_path.is_file() and not full_path.is_symlink():
+                    content_compared = True
+                    current_hash = self._compute_file_hash(full_path)
+                    if current_hash != expected_hash:
+                        return VerificationResult(
+                            action_id=compensation.action_id,
+                            verified=False,
+                            details={
+                                "reason": (
+                                    f"Content hash mismatch after rename_back: expected "
+                                    f"{expected_hash}, found {current_hash}"
+                                )
+                            },
+                        )
+                new_path_str = payload.get("new_path")
+                if new_path_str:
+                    new_path = self._resolve_file_path(new_path_str, base_path)
+                    if os.path.lexists(new_path):
+                        return VerificationResult(
+                            action_id=compensation.action_id,
+                            verified=False,
+                            details={
+                                "reason": f"File still present at post-rename path: {new_path_str}"
+                            },
+                        )
+                details: dict[str, Any] = {
+                    "reason": "File restored at expected path",
+                    "verified_by": "content_hash" if content_compared else "path_presence",
+                }
+                if content_compared:
+                    # Only claim byte-exactness when the content was actually
+                    # compared against the captured before-state.
+                    details["byte_exact"] = True
+                else:
+                    details["note"] = (
+                        "The content was not compared (no captured hash): the file's "
+                        "presence at the expected path was verified."
                     )
                 return VerificationResult(
                     action_id=compensation.action_id,
-                    verified=False,
-                    details={"reason": f"File does not exist at expected path: {file_path_str}"},
+                    verified=True,
+                    details=details,
                 )
 
             return VerificationResult(
@@ -1742,6 +2007,45 @@ class FilesystemRecoveryAdapter(RecoveryAdapter):
 
         return CompensationType.REVERSE_OPERATION
 
+    @staticmethod
+    def _discard_staging(path: Path) -> None:
+        """Best-effort staging cleanup (D-RH-1/D-RH-7).
+
+        ``unlink(missing_ok=True)`` removes a planted symlink itself, never its
+        target. Residue is cleared again by the next attempt, so a cleanup
+        failure can never block recovery.
+        """
+        with contextlib.suppress(OSError):
+            path.unlink(missing_ok=True)
+
+    @staticmethod
+    def _clear_staging_path(path: Path) -> str | None:
+        """Free the reserved staging path WITHOUT destroying data.
+
+        The engine owns ``<target>.recovery_tmp`` (D-RH-1/D-RH-7): a killed
+        attempt may leave residue there, and a symlink planted there must
+        never be followed. The previous behaviour DELETED whatever sat at
+        that path - which could destroy a file the user had created with
+        that name.
+
+        A colliding entry is now MOVED ASIDE (preserved under a new name in
+        the same directory) instead of deleted: the staging path is freed,
+        the symlink-planting defence is unchanged (the link itself is moved,
+        never followed, so its target is untouched), and no user data is
+        lost. A directory at the staging path is refused rather than moved.
+        """
+        if not os.path.lexists(path):
+            return None
+        if path.is_dir() and not path.is_symlink():
+            raise OSError(
+                f"The reserved staging path '{path.name}' exists and is a directory; "
+                "move it aside before recovering."
+            )
+        stamp = datetime.now(UTC).strftime("%Y%m%d%H%M%S%f")
+        preserved = path.with_name(f"{path.name}.preserved-{stamp}")
+        path.rename(preserved)
+        return preserved.name
+
     def _execute_restore_content(self, payload: dict[str, Any], base_path: Path) -> dict[str, Any]:
         """Execute content restoration with atomic write.
 
@@ -1787,6 +2091,17 @@ class FilesystemRecoveryAdapter(RecoveryAdapter):
                 "error": f"File does not exist: {file_path_str}",
             }
 
+        # A truncated before-state cannot restore the original bytes. Refuse it
+        # BEFORE writing anything: restoring the captured prefix would shrink
+        # the user's file and report success.
+        truncated_error = self._truncated_before_state_error(before_snapshot)
+        if truncated_error:
+            return {
+                "success": False,
+                "execution_state": ExecutionState.FAILED,
+                "error": truncated_error,
+            }
+
         current_hash = self._compute_file_hash(full_path)
         expected_current_hash = payload.get("after_snapshot", {}).get("hash")
 
@@ -1797,20 +2112,35 @@ class FilesystemRecoveryAdapter(RecoveryAdapter):
                 "error": "File was modified after the agent action - conflict detected",
             }
 
+        preserved_staging: str | None = None
         try:
             metadata = before_snapshot.get("metadata") if self._preserve_metadata else None
             temp_path = full_path.with_suffix(full_path.suffix + ".recovery_tmp")
-            if temp_path.exists():
-                temp_path.unlink()
+            # D-RH-7: clear anything planted at the staging path first (an
+            # exists() check is False for a DANGLING symlink, so the write below
+            # would have followed the link outside base_path), then create the
+            # staging file with O_EXCL so a link re-planted in the gap is
+            # refused instead of followed.
+            #
+            # A colliding entry is MOVED ASIDE, never deleted: the staging
+            # path is the engine's, but the bytes in it may be the user's.
+            try:
+                preserved_staging = self._clear_staging_path(temp_path)
+            except OSError as exc:
+                return {
+                    "success": False,
+                    "execution_state": ExecutionState.FAILED,
+                    "error": f"Could not free the staging path: {exc}",
+                }
 
             # ALWAYS prefer the raw bytes (content_b64) when available.
             # This guarantees byte-exact restoration regardless of encoding,
             # BOM, or line-ending differences.
             if content_b64 is not None:
-                temp_path.write_bytes(base64.b64decode(content_b64))
+                data = base64.b64decode(content_b64)
             elif content is not None:
                 try:
-                    encoded = content.encode("utf-8")
+                    data = content.encode("utf-8")
                 except Exception as exc:
                     return {
                         "success": False,
@@ -1820,7 +2150,6 @@ class FilesystemRecoveryAdapter(RecoveryAdapter):
                             f"cannot be safely re-encoded: {exc}"
                         ),
                     }
-                temp_path.write_bytes(encoded)
             else:
                 return {
                     "success": False,
@@ -1828,12 +2157,21 @@ class FilesystemRecoveryAdapter(RecoveryAdapter):
                     "error": "No before content available for restoration",
                 }
 
+            # R17: staging holds the user's pre-fault bytes - owner-only.
+            fd = os.open(temp_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+            with os.fdopen(fd, "wb") as handle:
+                handle.write(data)
+                handle.flush()
+                os.fsync(handle.fileno())
+
             # Atomic replace on the same filesystem.
             temp_path.replace(full_path)
 
-            if metadata:
+            # R17: apply only a RECORDED mode; with none recorded, keep the
+            # staging file's restrictive mode instead of forcing 0o644.
+            if metadata and metadata.get("mode") is not None:
                 with contextlib.suppress(OSError, TypeError):
-                    os.chmod(full_path, metadata.get("mode", 0o644))
+                    os.chmod(full_path, int(metadata["mode"]))
             self._restore_metadata(full_path, before_snapshot)
             self._restore_timestamps(full_path, before_snapshot)
 
@@ -1849,19 +2187,24 @@ class FilesystemRecoveryAdapter(RecoveryAdapter):
                     ),
                 }
 
+            details: dict[str, Any] = {
+                "operation": "restore_content",
+                "file": file_path_str,
+                "restored_hash": restored_hash,
+                "byte_exact": True,
+            }
+            if preserved_staging:
+                # A file that occupied the reserved staging path was preserved
+                # (moved aside), never deleted. Say so in the result.
+                details["staging_preserved_as"] = preserved_staging
             return {
                 "success": True,
                 "execution_state": ExecutionState.SUCCEEDED,
-                "details": {
-                    "operation": "restore_content",
-                    "file": file_path_str,
-                    "restored_hash": restored_hash,
-                    "byte_exact": True,
-                },
+                "details": details,
                 "external_outcome": "content_restored",
             }
         except Exception as e:
-            if temp_path.exists():
+            with contextlib.suppress(OSError):
                 temp_path.unlink(missing_ok=True)
             return {
                 "success": False,
@@ -1882,7 +2225,8 @@ class FilesystemRecoveryAdapter(RecoveryAdapter):
 
         full_path = self._resolve_file_path(file_path_str, base_path)
 
-        if not full_path.exists():
+        # lexists (not exists) so a dangling symlink is still removed.
+        if not os.path.lexists(full_path):
             return {
                 "success": True,
                 "execution_state": ExecutionState.SUCCEEDED,
@@ -1895,6 +2239,21 @@ class FilesystemRecoveryAdapter(RecoveryAdapter):
             }
 
         try:
+            # Identity check immediately before the unlink: the file observed
+            # when the plan was made must still be the file that is deleted.
+            # Without this, a human file that replaced the agent's file in the
+            # meantime would be deleted unverified.
+            expected_hash = (payload.get("after_snapshot") or {}).get("hash")
+            if expected_hash and full_path.is_file() and not full_path.is_symlink():
+                current_hash = self._compute_file_hash(full_path)
+                if current_hash != expected_hash:
+                    return {
+                        "success": False,
+                        "execution_state": ExecutionState.BLOCKED_BY_CONFLICT,
+                        "error": (
+                            "File was modified after the plan was made - refusing to delete it"
+                        ),
+                    }
             full_path.unlink()
             return {
                 "success": True,
@@ -1943,7 +2302,7 @@ class FilesystemRecoveryAdapter(RecoveryAdapter):
         content = before_snapshot.get("content")
         content_b64 = before_snapshot.get("content_b64")
 
-        if content is None and content_b64 is None:
+        if content is None and content_b64 is None and before_snapshot.get("type") != "symlink":
             return {
                 "success": False,
                 "execution_state": ExecutionState.FAILED,
@@ -1952,22 +2311,81 @@ class FilesystemRecoveryAdapter(RecoveryAdapter):
 
         full_path = self._resolve_file_path(file_path_str, base_path)
 
-        if full_path.exists():
+        if full_path.exists() or full_path.is_symlink():
             return {
                 "success": False,
                 "execution_state": ExecutionState.BLOCKED_BY_CONFLICT,
                 "error": f"File already exists at target path: {file_path_str}",
             }
 
+        # A truncated before-state would create a SHORTENED file that claims
+        # to be the original. Refuse it before anything is staged.
+        truncated_error = self._truncated_before_state_error(before_snapshot)
+        if truncated_error:
+            return {
+                "success": False,
+                "execution_state": ExecutionState.FAILED,
+                "error": truncated_error,
+            }
+
+        # D-RH-1: stage beside the target and swap atomically. A failed or
+        # killed attempt can never leave partial bytes at the target path, and
+        # a retry is never blocked by residue of its own failed attempt (the
+        # precondition check above proves the target was absent beforehand).
+        staged_path = full_path.with_name(full_path.name + ".recovery_tmp")
+        preserved_staging: str | None = None
         try:
             full_path.parent.mkdir(parents=True, exist_ok=True)
+            # Clear staging left behind by a previously killed attempt. A
+            # colliding entry is MOVED ASIDE, never deleted: the staging path
+            # belongs to the engine, but the bytes in it may be the user's.
+            try:
+                preserved_staging = self._clear_staging_path(staged_path)
+            except OSError as exc:
+                return {
+                    "success": False,
+                    "execution_state": ExecutionState.FAILED,
+                    "error": f"Could not free the staging path: {exc}",
+                }
+
+            # Recreate the symlink itself rather than materialising its target
+            # content as a regular file.
+            if before_snapshot.get("type") == "symlink":
+                link_target = before_snapshot.get("symlink_target")
+                if link_target:
+                    os.symlink(link_target, full_path)
+                    restored_hash = None
+                    if before_snapshot.get("metadata") and self._preserve_metadata:
+                        with contextlib.suppress(OSError, TypeError):
+                            os.utime(
+                                full_path,
+                                (before_snapshot["metadata"].get("atime"),
+                                 before_snapshot["metadata"].get("mtime")),
+                                follow_symlinks=False,
+                            )
+                    return {
+                        "success": True,
+                        "execution_state": ExecutionState.SUCCEEDED,
+                        "details": {
+                            "operation": "restore_deleted_file",
+                            "file": file_path_str,
+                            "restored_symlink_target": link_target,
+                            "byte_exact": True,
+                        },
+                        "external_outcome": "symlink_restored",
+                    }
+                return {
+                    "success": False,
+                    "execution_state": ExecutionState.FAILED,
+                    "error": "Symlink snapshot has no recorded target",
+                }
 
             # ALWAYS prefer the raw bytes (content_b64) when available.
             if content_b64 is not None:
-                full_path.write_bytes(base64.b64decode(content_b64))
+                data = base64.b64decode(content_b64)
             elif content is not None:
                 try:
-                    full_path.write_bytes(content.encode("utf-8"))
+                    data = content.encode("utf-8")
                 except Exception as exc:
                     return {
                         "success": False,
@@ -1984,17 +2402,58 @@ class FilesystemRecoveryAdapter(RecoveryAdapter):
                     "error": "No before content available for restoration",
                 }
 
+            # R17: staging holds the user's pre-fault bytes - owner-only.
+            fd = os.open(staged_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+            with os.fdopen(fd, "wb") as handle:
+                handle.write(data)
+                handle.flush()
+                os.fsync(handle.fileno())
+
+            # Verify the staged bytes BEFORE they can ever reach the target.
+            staged_hash = self._compute_file_hash(staged_path)
+            expected_hash = before_snapshot.get("hash")
+            if expected_hash and staged_hash != expected_hash:
+                self._discard_staging(staged_path)
+                return {
+                    "success": False,
+                    "execution_state": ExecutionState.FAILED,
+                    "error": (
+                        f"Post-write hash mismatch: expected {expected_hash}, "
+                        f"got {staged_hash}"
+                    ),
+                }
+
+            # Never clobber a file that appeared after the precondition check.
+            if full_path.exists() or full_path.is_symlink():
+                self._discard_staging(staged_path)
+                return {
+                    "success": False,
+                    "execution_state": ExecutionState.BLOCKED_BY_CONFLICT,
+                    "error": f"File already exists at target path: {file_path_str}",
+                }
+
+            # Atomic swap; a failure here leaves only the staging file (cleared
+            # on the next attempt), never a partial target.
+            os.replace(staged_path, full_path)
+
             metadata = before_snapshot.get("metadata") if self._preserve_metadata else None
             if metadata:
                 try:
-                    os.chmod(full_path, metadata.get("mode", 0o644))
-                    os.utime(full_path, (metadata.get("atime", None), metadata.get("mtime", None)))
+                    # R17: apply only a RECORDED mode; with none recorded,
+                    # keep the staging file's restrictive mode (never 0o644).
+                    if metadata.get("mode") is not None:
+                        os.chmod(full_path, int(metadata["mode"]))
+                    atime = metadata.get("atime")
+                    mtime = metadata.get("mtime")
+                    if atime is not None and mtime is not None:
+                        os.utime(full_path, (float(atime), float(mtime)))
                 except (OSError, TypeError):
                     pass
 
-            # Independent post-write hash check.
+            # Independent post-write hash check: the staged bytes were verified
+            # pre-swap, so this re-check detects interference in the swap window
+            # and reports honestly instead of claiming success.
             restored_hash = self._compute_file_hash(full_path)
-            expected_hash = before_snapshot.get("hash")
             if expected_hash and restored_hash != expected_hash:
                 return {
                     "success": False,
@@ -2004,18 +2463,22 @@ class FilesystemRecoveryAdapter(RecoveryAdapter):
                     ),
                 }
 
+            details: dict[str, Any] = {
+                "operation": "restore_deleted_file",
+                "file": file_path_str,
+                "restored_hash": restored_hash,
+                "byte_exact": True,
+            }
+            if preserved_staging:
+                details["staging_preserved_as"] = preserved_staging
             return {
                 "success": True,
                 "execution_state": ExecutionState.SUCCEEDED,
-                "details": {
-                    "operation": "restore_deleted_file",
-                    "file": file_path_str,
-                    "restored_hash": restored_hash,
-                    "byte_exact": True,
-                },
+                "details": details,
                 "external_outcome": "file_restored",
             }
         except Exception as e:
+            self._discard_staging(staged_path)
             return {
                 "success": False,
                 "execution_state": ExecutionState.FAILED,
@@ -2023,7 +2486,12 @@ class FilesystemRecoveryAdapter(RecoveryAdapter):
             }
 
     def _execute_rename_back(self, payload: dict[str, Any], base_path: Path) -> dict[str, Any]:
-        """Execute rename reversal."""
+        """Execute rename reversal.
+
+        Refuses to overwrite a file that now exists at the original path unless
+        it matches the captured before-state, so a human modification or
+        recreation of the original path is never silently destroyed.
+        """
         file_path_str = payload.get("file_path")
         new_path_str = payload.get("new_path")
 
@@ -2037,7 +2505,37 @@ class FilesystemRecoveryAdapter(RecoveryAdapter):
         old_path = self._resolve_file_path(file_path_str, base_path)
         new_path = self._resolve_file_path(new_path_str, base_path) if new_path_str else None
 
-        if new_path and new_path.exists():
+        before_snapshot = payload.get("before_snapshot") or {}
+
+        if new_path and os.path.lexists(new_path):
+            # If the original path is occupied, only proceed when its content
+            # matches the captured before-state (idempotent re-run).  Otherwise
+            # renaming would overwrite a human modification.
+            if os.path.lexists(old_path):
+                current_hash = (
+                    self._compute_file_hash(old_path)
+                    if old_path.is_file() and not old_path.is_symlink()
+                    else None
+                )
+                expected_hash = before_snapshot.get("hash")
+                if expected_hash and current_hash != expected_hash:
+                    return {
+                        "success": False,
+                        "execution_state": ExecutionState.BLOCKED_BY_CONFLICT,
+                        "error": (
+                            f"Original path {file_path_str} was modified or recreated "
+                            "after the rename; refusing to overwrite it"
+                        ),
+                    }
+                if not expected_hash:
+                    return {
+                        "success": False,
+                        "execution_state": ExecutionState.BLOCKED_BY_CONFLICT,
+                        "error": (
+                            f"Original path {file_path_str} is occupied and no before-state "
+                            "hash is available to prove it is unchanged"
+                        ),
+                    }
             try:
                 new_path.rename(old_path)
                 return {
@@ -2053,7 +2551,7 @@ class FilesystemRecoveryAdapter(RecoveryAdapter):
                     "error": f"Failed to rename back: {str(e)}",
                 }
 
-        if old_path.exists():
+        if os.path.lexists(old_path):
             return {
                 "success": True,
                 "execution_state": ExecutionState.SUCCEEDED,

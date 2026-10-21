@@ -20,6 +20,10 @@ from app.domain.repositories.containment_repository import RecoveryPlanRepositor
 from app.domain.repositories.protected_action_repository import ProtectedActionRepository
 from app.domain.repositories.recovery_evidence_repository import RecoveryEvidenceRepository
 from app.domain.services.recovery_adapter import RecoveryAdapter
+from app.domain.services.tenant_quota_service import (
+    QuotaExceededError,
+    TenantQuotaService,
+)
 from app.infrastructure.observability.metrics import metrics
 
 
@@ -36,11 +40,13 @@ class RecoveryPlanningService:
         plan_repository: RecoveryPlanRepository,
         adapters: list[RecoveryAdapter] | None = None,
         evidence_repo: RecoveryEvidenceRepository | None = None,
+        quota_service: TenantQuotaService | None = None,
     ) -> None:
         self._action_repo = action_repository
         self._plan_repo = plan_repository
         self._adapters = adapters or []
         self._evidence_repo = evidence_repo
+        self._quota_service = quota_service
 
     async def create_plan(
         self,
@@ -62,6 +68,17 @@ class RecoveryPlanningService:
         topological_order = self._compute_topological_order(affected)
         plan_hash = self._compute_plan_hash(plan_id, incident_action_id, topological_order)
         stop_conditions = self._determine_stop_conditions(affected)
+
+        # Tenant quota: daily plan budget + per-plan action cap (opt-in).
+        if self._quota_service is not None:
+            decision = self._quota_service.begin_plan_creation(
+                tenant_id, len(affected)
+            )
+            if not decision.admitted:
+                raise QuotaExceededError(
+                    f"Recovery plan creation denied for tenant {tenant_id!r}: "
+                    f"{decision.reason}"
+                )
 
         plan = RecoveryPlan(
             plan_id=plan_id,
@@ -216,29 +233,48 @@ class RecoveryPlanningService:
         execution_results: dict[str, dict[str, Any]] = {}
         execution_states: dict[str, str] = {}
 
-        for a in ordered:
-            result = await self._execute_with_protocol_adapters(a, plan_approved_by)
-            if result:
-                execution_results[a.action_id] = result
-                execution_states[a.action_id] = result.get("execution_state", "succeeded")
-                if result.get("execution_state") in (
-                    "failed",
-                    "blocked_by_conflict",
-                    "blocked_by_drift",
-                ):
-                    stop_conditions = set(self._normalize_stop_conditions(plan.stop_conditions))
-                    if StopCondition.ON_FIRST_FAILURE in stop_conditions:
-                        break
-                    if (
-                        StopCondition.ON_BLOCKING_CONFLICT in stop_conditions
-                        and result.get("execution_state") == "blocked_by_conflict"
+        # Tenant quota: hold one concurrent-compensation slot while the plan's
+        # compensations execute (opt-in).
+        compensation_slot = False
+        if self._quota_service is not None:
+            decision = self._quota_service.begin_compensation(tenant_id)
+            if not decision.admitted:
+                raise QuotaExceededError(
+                    f"Recovery execution denied for tenant {tenant_id!r}: "
+                    f"{decision.reason}"
+                )
+            compensation_slot = True
+        try:
+            for a in ordered:
+                result = await self._execute_with_protocol_adapters(a, plan_approved_by)
+                if result:
+                    execution_results[a.action_id] = result
+                    execution_states[a.action_id] = result.get(
+                        "execution_state", "succeeded"
+                    )
+                    if result.get("execution_state") in (
+                        "failed",
+                        "blocked_by_conflict",
+                        "blocked_by_drift",
                     ):
-                        break
-                    if (
-                        StopCondition.ON_BLOCKING_DRIFT in stop_conditions
-                        and result.get("execution_state") == "blocked_by_drift"
-                    ):
-                        break
+                        stop_conditions = set(
+                            self._normalize_stop_conditions(plan.stop_conditions)
+                        )
+                        if StopCondition.ON_FIRST_FAILURE in stop_conditions:
+                            break
+                        if (
+                            StopCondition.ON_BLOCKING_CONFLICT in stop_conditions
+                            and result.get("execution_state") == "blocked_by_conflict"
+                        ):
+                            break
+                        if (
+                            StopCondition.ON_BLOCKING_DRIFT in stop_conditions
+                            and result.get("execution_state") == "blocked_by_drift"
+                        ):
+                            break
+        finally:
+            if compensation_slot and self._quota_service is not None:
+                self._quota_service.end_compensation(tenant_id)
 
         all_succeeded = (
             all(

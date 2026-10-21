@@ -91,7 +91,7 @@ class StripePaymentProvider(PaymentProvider):
         publishable_key: str | None = None,
     ) -> None:
         try:
-            import stripe
+            import stripe  # type: ignore[import-not-found]  # optional dependency, ImportError-raised above
         except ImportError as exc:
             raise ImportError(
                 "stripe package is required for StripePaymentProvider. "

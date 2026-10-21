@@ -274,3 +274,35 @@ class TestConfigRollbackExplicitFailure:
         # The result should clearly indicate success or failure
         if not result.success:
             assert result.execution_state != ExecutionState.SUCCEEDED
+
+
+async def test_payload_path_traversal_refused(tmp_path: Path) -> None:
+    """V5 hardening: a tampered payload must not escape the config directory."""
+    import dataclasses
+
+    config_dir = tmp_path / "config"
+    config_dir.mkdir()
+    (config_dir / "settings.json").write_text("safe: config", encoding="utf-8")
+    victim = tmp_path / "victim.yaml"
+    victim.write_text("victim: data", encoding="utf-8")
+
+    adapter = ConfigRecoveryAdapter(config_dir=config_dir)
+    action = _make_config_action(action_type="modify", resource="config:settings.json")
+    evidence = await adapter.capture_recovery_evidence(action)
+    compensation = await adapter.generate_compensation(action, evidence)
+
+    payload = dict(compensation.compensation_payload)
+    payload["config_file"] = "../victim.yaml"
+    tampered = dataclasses.replace(compensation, compensation_payload=payload)
+
+    result = await adapter.execute_compensation(tampered, tampered.idempotency_key)
+    assert result.success is False
+    assert result.execution_state == ExecutionState.FAILED
+    assert "traversal" in (result.error or "")
+    # The victim file outside the config directory was never touched.
+    assert victim.read_text(encoding="utf-8") == "victim: data"
+
+    # Verification refuses the same tampered payload instead of reading outside.
+    verification = await adapter.verify(tampered)
+    assert verification.verified is False
+    assert "traversal" in str(verification.details.get("reason", ""))

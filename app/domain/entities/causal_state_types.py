@@ -290,6 +290,10 @@ class DurableExecutionStep:
     retry_count: int = 0
     max_retries: int = 3
     step_metadata: dict[str, Any] = field(default_factory=dict)
+    # Durable write fence (additive, default 0): monotonic fencing token of
+    # the newest accepted write. See StaleFencingTokenError in
+    # app.domain.repositories.causal_state_repositories.
+    write_fence: int = 0
 
 
 @dataclass(frozen=True, slots=True)

@@ -46,11 +46,25 @@ Interlock V4 is an enterprise-grade control plane for AI-agent actions. It contr
 
 ## Operations
 
+- [Evaluator Guide](operations/EVALUATOR_GUIDE.md) — install → configure → run → recover → inspect evidence → back up → shut down, plus the supported-configuration matrix
 - [Release Baseline](operations/RELEASE_BASELINE.md) — V4 architecture, adapters, guarantees, limitations
 - [Recovery Validation Report](operations/RECOVERY_VALIDATION_REPORT.md) — chaos engineering and recovery test results
 - [Production Readiness Plan](operations/PRODUCTION_READINESS_PLAN.md) — verification matrix and evidence
 - [Incident Response](operations/INCIDENT_RESPONSE.md) — containment, key compromise, tenant incident handling
 - [Final Status](operations/FINAL_STATUS.md) — security hardening summary and release determination
+- [Controlled Beta First Run](operations/BETA_FIRST_RUN.md) — install → demo → trigger failure → recover → verify on a disposable project
+- [Safety and Limitations](operations/SAFETY_AND_LIMITATIONS.md) — verified capabilities, explicit non-capabilities, stop conditions
+- [Troubleshooting](operations/TROUBLESHOOTING.md) — common setup failures and safe next steps
+- [Terminal Runner](operations/TERMINAL_RUNNER.md) — the `interlock` CLI: commands, exit codes, baseline integrity and replacement policy
+- [VSIX Build](operations/VSIX_BUILD.md) — reproducible extension package build, contents inspection and checksum
+- [Migration Repair Proposal](operations/MIGRATION_R10_PROPOSAL.md) — MIG-01/MIG-02: evidence, options and the owner decision required
+
+## Release-gate evidence (V6)
+
+- [Commit Manifest](../INTERLOCK_V6_COMMIT_MANIFEST.md) — exact file set for the pending release candidate
+- [Release Gate R1–R4](../INTERLOCK_V6_RELEASE_GATE_R1_R4.md) — install/CI/security-gate closure record
+- [Migration Review](../INTERLOCK_V6_MPKG_MIGRATION_REVIEW.md) — M-PKG schema-drift migration: operations, data safety, rollback limits
+- [Gap Register](../INTERLOCK_V6_GAP_REGISTER.md) — market-readiness gaps with severity, state, and remediation
 
 ## Repository layout
 
@@ -73,5 +87,5 @@ app/                 — FastAPI application (presentation, application, domain,
 tests/               — unit, integration, adversarial, performance, recovery_lab
 config/              — policy configuration
 alembic/             — database migrations
-web/                 — Next.js dashboard
+web/                 — Next.js dashboard (removed in the current working tree; present in commit history)
 ```

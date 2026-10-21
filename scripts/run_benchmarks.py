@@ -97,10 +97,13 @@ async def benchmark_hitl_operations(iterations: int = 100) -> dict[str, Any]:
         await queue.list_pending_requests()
     list_elapsed = time.perf_counter() - start
 
-    # Approve
+    # Approve (a distinct approver identity: self-approval with the requester
+    # is correctly rejected by the queue's guard and is not what we benchmark).
+    # decided_by is a UUID column, so the approver must be a UUID.
+    approve_kwargs = {"decided_by": UUID("00000000-0000-0000-0000-00000000ffff")}
     start = time.perf_counter()
     for request_id in request_ids[: min(10, iterations)]:
-        await queue.approve_request(request_id, decided_by=None)
+        await queue.approve_request(request_id, **approve_kwargs)
     approve_elapsed = time.perf_counter() - start
 
     return {

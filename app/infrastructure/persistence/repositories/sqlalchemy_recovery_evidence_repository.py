@@ -167,6 +167,24 @@ class SQLAlchemyRecoveryEvidenceRepository(RecoveryEvidenceRepository):
             except (ValueError, TypeError):
                 return {}
 
+        def _safe_json_metadata(raw: str | None) -> dict[str, object]:
+            """Load recovery_metadata, failing closed on storage corruption.
+
+            The v2 spec marker lives in this column; silently dropping an
+            unparseable value would downgrade v2 evidence to the legacy
+            field-presence path (fail open). A corrupt column is instead
+            surfaced as a marker the verifier rejects.
+            """
+            if not raw:
+                return {}
+            try:
+                data = json.loads(raw)
+            except (ValueError, TypeError):
+                return {"evidence_hash_spec": "corrupt-storage"}
+            if not isinstance(data, dict):
+                return {"evidence_hash_spec": "corrupt-storage"}
+            return data
+
         return RecoveryEvidence(
             evidence_id=model.evidence_id,
             action_id=model.action_id,
@@ -176,7 +194,10 @@ class SQLAlchemyRecoveryEvidenceRepository(RecoveryEvidenceRepository):
             parent_action_id=model.parent_action_id,
             root_action_id=model.root_action_id,
             correlation_id=model.correlation_id,
-            incident_id=model.incident_id or "",
+            # Preserve None exactly as stored: collapsing None -> "" would
+            # change the v2 canonical document and fail hash verification
+            # after a faithful round-trip.
+            incident_id=model.incident_id,
             target_system=model.target_system,
             target_resource=model.target_resource or "",
             action_type=model.action_type,
@@ -196,7 +217,7 @@ class SQLAlchemyRecoveryEvidenceRepository(RecoveryEvidenceRepository):
             state_hash=model.state_hash,
             resource_version=model.resource_version,
             verification_requirements=_safe_json(model.verification_requirements),
-            recovery_metadata=_safe_json_dict(model.recovery_metadata),
+            recovery_metadata=_safe_json_metadata(model.recovery_metadata),
             evidence_hash=model.evidence_hash or "",
             adapter_capability=AdapterCapability(model.adapter_capability),
             created_at=model.created_at or datetime.now(UTC),

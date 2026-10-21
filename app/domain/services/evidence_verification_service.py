@@ -79,8 +79,24 @@ class EvidenceVerificationService:
     ) -> dict[str, Any]:
         """Verify that evidence has not been tampered with.
 
-        Checks that all required fields are present and consistent.
+        Spec dispatch (see ``app.domain.services.evidence_hash``):
+
+        - ``recovery_metadata["evidence_hash_spec"] == "v2"`` → the canonical
+          v2 hash is **recomputed** and compared against the stored
+          ``evidence_hash``; malformed/missing hashes and unsupported
+          spec versions are rejected (fail closed).
+        - no marker → legacy **v1** compatibility path: field-presence and
+          consistency checks only (the legacy per-adapter hash formulas are
+          not recomputable). Never reported as v2.
+        - non-dict ``recovery_metadata`` → rejected (corrupt storage).
         """
+        from app.domain.services.evidence_hash import (
+            EVIDENCE_HASH_SPEC_KEY,
+            EVIDENCE_HASH_SPEC_V2,
+            compute_evidence_hash_v2,
+            is_sha256_hex,
+        )
+
         issues: list[str] = []
 
         if not evidence.evidence_id:
@@ -102,6 +118,45 @@ class EvidenceVerificationService:
         ):
             issues.append("Before-state reference missing or state_hash malformed")
 
+        metadata = evidence.recovery_metadata
+        if metadata is None or not isinstance(metadata, dict):
+            # Fail closed: the spec marker lives in recovery_metadata, so a
+            # non-object column value means integrity cannot be established.
+            issues.append(
+                "Inconclusive: recovery_metadata is corrupt (not an object)"
+            )
+            hash_spec = "malformed"
+        else:
+            marker = metadata.get(EVIDENCE_HASH_SPEC_KEY)
+            if marker is None:
+                # Legacy v1 evidence: documented field-presence-only path.
+                hash_spec = "v1-legacy"
+            elif marker == EVIDENCE_HASH_SPEC_V2:
+                hash_spec = "v2"
+                if not evidence.evidence_hash:
+                    issues.append("Missing evidence_hash for v2 evidence")
+                elif not is_sha256_hex(evidence.evidence_hash):
+                    issues.append(
+                        "Malformed v2 evidence_hash (expected 64-char sha256 hex)"
+                    )
+                else:
+                    expected = compute_evidence_hash_v2(evidence)
+                    if expected != evidence.evidence_hash:
+                        issues.append(
+                            "v2 evidence hash mismatch: evidence was modified "
+                            "after sealing (tamper or corruption detected)"
+                        )
+            else:
+                if marker == "corrupt-storage":
+                    hash_spec = "corrupt-storage"
+                    issues.append(
+                        "Evidence metadata storage corrupt: recovery_metadata "
+                        "column failed to parse (storage integrity failure)"
+                    )
+                else:
+                    hash_spec = f"unsupported:{marker!r}"
+                    issues.append(f"Unsupported evidence hash spec: {marker!r}")
+
         integrity_ok = len(issues) == 0
 
         return {
@@ -109,6 +164,7 @@ class EvidenceVerificationService:
             "integrity_ok": integrity_ok,
             "issues": issues,
             "state_hash": evidence.state_hash,
+            "hash_spec": hash_spec,
             "reversibility": evidence.reversibility_classification.value
             if evidence.reversibility_classification
             else None,

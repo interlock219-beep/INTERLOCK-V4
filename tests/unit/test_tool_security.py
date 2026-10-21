@@ -75,6 +75,29 @@ def test_tool_argument_validator_absolute_path_accepted_when_allowed() -> None:
     VALIDATOR.validate_path("/etc/passwd", allow_absolute=True)
 
 
+def test_tool_argument_validator_absolute_paths_rejected_on_every_platform() -> None:
+    """Cross-platform contract: absolute paths of BOTH path flavours are
+    rejected regardless of the host OS.
+
+    Regression guard for the macOS validation mission: the pre-fix check used
+    ``os.path.isabs`` alone, so ``C:\\etc\\passwd`` was accepted on any POSIX
+    host (macOS/Linux) and ``/etc/passwd`` was accepted on Windows with
+    Python 3.14 (``ntpath.isabs`` semantics change). The verdict of this
+    security check must not depend on the platform it runs on.
+    """
+    for candidate in ("C:\\etc\\passwd", "C:/etc/passwd", "/etc/passwd"):
+        with pytest.raises(
+            ToolSecurityError, match="Absolute paths are not allowed"
+        ):
+            VALIDATOR.validate_path(candidate, allow_absolute=False)
+
+
+def test_tool_argument_validator_relative_paths_still_accepted() -> None:
+    """The cross-platform tightening must not reject genuinely relative input."""
+    VALIDATOR.validate_path("relative/dir/file.txt", allow_absolute=False)
+    VALIDATOR.validate_path("file.txt", allow_absolute=False)
+
+
 def test_tool_argument_validator_url_safe_accepted() -> None:
     VALIDATOR.validate_url("https://example.com/api")
     VALIDATOR.validate_url("http://example.com/api")

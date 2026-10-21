@@ -5,6 +5,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.infrastructure.config.settings import get_settings
+from app.infrastructure.persistence import database
 from app.infrastructure.persistence.database import init_db
 from app.presentation.api.middleware.correlation import CorrelationIdMiddleware
 from app.presentation.api.middleware.exception_handler import register_exception_handlers
@@ -17,7 +18,14 @@ from app.presentation.api.v1.router import api_v1_router
 @asynccontextmanager
 async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     init_db()
-    yield
+    try:
+        yield
+    finally:
+        # V6 WP-10 (G-17): predictable shutdown — release all pooled
+        # database connections deterministically so a stop/restart never
+        # leaks sessions or holds database files/locks open until the
+        # process is killed.
+        database.engine.dispose()
 
 
 def create_app() -> FastAPI:

@@ -33,6 +33,38 @@ def test_validate_gateway_url_missing_host() -> None:
         _validate_gateway_url("http:///api")
 
 
+def test_validate_gateway_url_refuses_cleartext_http_for_a_remote_host() -> None:
+    """The client sends a bearer token: cleartext HTTP to a remote gateway
+    would expose it on the network."""
+    from sdk.intentlock import _validate_gateway_url
+
+    with pytest.raises(ValueError, match="must use https"):
+        _validate_gateway_url("http://gateway.example.com/api/v1/intent/verify")
+
+
+def test_validate_gateway_url_allows_cleartext_http_for_loopback() -> None:
+    """Local development over http://localhost keeps working."""
+    from sdk.intentlock import _validate_gateway_url
+
+    for url in (
+        "http://localhost:8000/api",
+        "http://127.0.0.1:8000/api",
+        "http://[::1]:8000/api",
+    ):
+        assert _validate_gateway_url(url) == url
+
+
+def test_guard_refuses_a_remote_cleartext_gateway() -> None:
+    """The refusal happens when the client is built, not at request time."""
+    from sdk.intentlock import SecurityError
+
+    with pytest.raises((ValueError, SecurityError)):
+        IntentLockGuard(
+            base_url="http://gateway.example.com/api/v1/intent/verify",
+            auth_token="secret-token",
+        )
+
+
 def test_auth_headers_with_token() -> None:
     client = IntentLockGuard(auth_token="test-token")
     headers = client._auth_headers()
