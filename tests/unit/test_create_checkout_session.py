@@ -34,7 +34,7 @@ class StubPaymentProvider:
     def __init__(self, session) -> None:
         self._session = session
 
-    async def create_checkout_session(self, request, user_id, tenant_id):
+    async def create_checkout_session(self, request, user_id, tenant_id, plan):
         return self._session
 
 

@@ -9,6 +9,9 @@ from app.application.dto.billing import (
     CancelSubscriptionResponse,
     CreateCheckoutRequest,
     CreateCheckoutResponse,
+    CreditLedgerEntryResponse,
+    CreditSummaryResponse,
+    InvoiceHistoryResponse,
     PlanResponse,
     PortalSessionResponseDTO,
     RecordUsageRequest,
@@ -16,23 +19,29 @@ from app.application.dto.billing import (
     UsageResponse,
 )
 from app.application.interfaces.payment_provider import PaymentProvider
-from app.domain.entities.billing_entities import Plan
+from app.domain.entities.billing_entities import Plan, PlanTier
 from app.domain.exceptions.billing_errors import (
     PlanNotFoundError,
     SubscriptionAlreadyExistsError,
     SubscriptionNotFoundError,
 )
+from app.domain.services.billing_plans import monthly_credits_for
+from app.domain.services.recovery_credit_service import RecoveryCreditService
 from app.infrastructure.config.settings import Settings, get_settings
 from app.infrastructure.payments.payment_providers import MockPaymentProvider, StripePaymentProvider
 from app.infrastructure.persistence.database import SessionLocal
 from app.infrastructure.persistence.repositories.sqlalchemy_billing_repositories import (
     SQLAlchemyCheckoutRepository,
+    SQLAlchemyInvoiceRepository,
     SQLAlchemyPlanRepository,
     SQLAlchemySubscriptionRepository,
     SQLAlchemyUsageRepository,
     SQLAlchemyWebhookRepository,
 )
-from app.presentation.api.dependencies.auth import CurrentUser
+from app.infrastructure.persistence.repositories.sqlalchemy_credit_repositories import (
+    SQLAlchemyCreditRepository,
+)
+from app.presentation.api.dependencies.auth import CurrentUser, get_user_tenant_id
 
 router = APIRouter(prefix="/billing", tags=["Billing"])
 
@@ -78,6 +87,14 @@ def _get_payment_provider(settings: Settings) -> PaymentProvider:
     return MockPaymentProvider(
         publishable_key=settings.stripe_publishable_key,
         webhook_secret=settings.stripe_webhook_secret or "whsec_mock",
+    )
+
+
+def _credit_service(session: Session, settings: Settings) -> RecoveryCreditService:
+    """Server-side authority over the tenant's recovery-credit wallet."""
+    return RecoveryCreditService(
+        SQLAlchemyCreditRepository(session),
+        reservation_ttl_minutes=settings.credit_reservation_ttl_minutes,
     )
 
 
@@ -213,6 +230,8 @@ async def billing_webhook(
         SQLAlchemyCheckoutRepository(session),
         SQLAlchemyPlanRepository(session),
         provider,
+        credit_service=_credit_service(session, settings),
+        invoice_repository=SQLAlchemyInvoiceRepository(session),
     )
     try:
         await use_case.execute(payload, signature, settings.stripe_webhook_secret or "")
@@ -269,3 +288,125 @@ async def record_usage(
         request.resource_type,
         request.quantity,
     )
+
+
+def _allowance_for_tier(tier_value: str, fallback: int) -> int:
+    """Monthly allowance from the central plan registry (never hardcoded here)."""
+    if not tier_value:
+        return fallback
+    try:
+        return monthly_credits_for(PlanTier(tier_value))
+    except ValueError:
+        return fallback
+
+
+@router.get("/credits", response_model=CreditSummaryResponse)
+async def get_credit_summary(
+    current_user: CurrentUser,
+    session: Annotated[Session, Depends(_get_session)],
+    settings: Annotated[Settings, Depends(get_billing_settings)],
+) -> CreditSummaryResponse:
+    """Recovery-credit wallet for the caller's organization (tenant-scoped).
+
+    Users without a tenant and tenants that have never been billed see the
+    evaluation-mode summary (all zeros, not enforced).
+    """
+    tenant_id = get_user_tenant_id(current_user)
+    service = _credit_service(session, settings)
+    summary = await service.summary(tenant_id) if tenant_id else None
+    subscription = await SQLAlchemySubscriptionRepository(session).get_active_by_user(
+        current_user.id
+    )
+    if summary is None or not summary.has_wallet:
+        return CreditSummaryResponse(
+            plan_tier="",
+            plan_name="",
+            subscription_status=subscription.status.value if subscription else "",
+            billing_enforced=False,
+            allocated=0,
+            consumed=0,
+            reserved=0,
+            available=0,
+            allowance=0,
+            period_start=None,
+            period_end=None,
+            next_renewal=(
+                subscription.current_period_end.isoformat() if subscription else None
+            ),
+        )
+    return CreditSummaryResponse(
+        plan_tier=summary.plan_tier,
+        plan_name=summary.plan_name,
+        subscription_status=subscription.status.value if subscription else "",
+        billing_enforced=summary.enforced,
+        allocated=summary.allocated,
+        consumed=summary.consumed,
+        reserved=summary.reserved,
+        available=summary.available,
+        allowance=_allowance_for_tier(summary.plan_tier, summary.allocated),
+        period_start=summary.period_start.isoformat() if summary.period_start else None,
+        period_end=summary.period_end.isoformat() if summary.period_end else None,
+        next_renewal=(
+            subscription.current_period_end.isoformat()
+            if subscription
+            else (summary.period_end.isoformat() if summary.period_end else None)
+        ),
+    )
+
+
+@router.get("/credits/ledger", response_model=list[CreditLedgerEntryResponse])
+async def list_credit_ledger(
+    current_user: CurrentUser,
+    session: Annotated[Session, Depends(_get_session)],
+    settings: Annotated[Settings, Depends(get_billing_settings)],
+    page: int = 1,
+    page_size: int = 50,
+) -> list[CreditLedgerEntryResponse]:
+    """Append-only credit history for the caller's tenant (newest first)."""
+    tenant_id = get_user_tenant_id(current_user)
+    if not tenant_id:
+        return []
+    service = _credit_service(session, settings)
+    entries = await service.list_ledger(
+        tenant_id, limit=min(max(page_size, 1), 200), offset=max(page - 1, 0) * page_size
+    )
+    return [
+        CreditLedgerEntryResponse(
+            id=str(entry.id),
+            kind=entry.kind.value,
+            delta=entry.delta,
+            balance_after=entry.balance_after,
+            reason=entry.reason,
+            recovery_plan_id=entry.recovery_plan_id,
+            created_at=entry.created_at.isoformat(),
+        )
+        for entry in entries
+    ]
+
+
+@router.get("/invoices", response_model=list[InvoiceHistoryResponse])
+async def list_invoices(
+    current_user: CurrentUser,
+    session: Annotated[Session, Depends(_get_session)],
+) -> list[InvoiceHistoryResponse]:
+    """Billing/invoice history for the caller's subscription."""
+    subscription = await SQLAlchemySubscriptionRepository(session).get_active_by_user(
+        current_user.id
+    )
+    if subscription is None:
+        return []
+    invoices = await SQLAlchemyInvoiceRepository(session).list_by_subscription(
+        subscription.id
+    )
+    return [
+        InvoiceHistoryResponse(
+            id=str(invoice.id),
+            amount_cents=invoice.amount_cents,
+            currency=invoice.currency,
+            status=invoice.status,
+            provider_invoice_id=invoice.provider_invoice_id,
+            paid_at=invoice.paid_at.isoformat() if invoice.paid_at else None,
+            created_at=invoice.created_at.isoformat(),
+        )
+        for invoice in invoices
+    ]

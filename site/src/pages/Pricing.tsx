@@ -8,84 +8,94 @@ import { Accordion } from '../components/Accordion';
 
 const PLANS = [
   {
-    id: 'beta',
+    id: 'free',
     name: 'Free evaluation',
     price: '$0',
     unit: 'available now — no account',
     status: 'available' as const,
     statusLabel: 'Available',
-    note: 'Controlled beta, disposable projects, Windows x64.',
+    featured: true,
+    note: 'Local evaluation tier: the full engine runs unbilled, exactly as before subscriptions existed.',
     features: [
       ['Full source, installed from the public repository', true],
       ['Recovery engine, verification and conflict protection', true],
-      ['Safe demonstration and first-run guide', true],
+      ['Unbilled executions in evaluation mode (no wallet, no credits)', true],
       ['Browser-based interactive demo (no install)', true],
-      ['Structured bug-report template and coordinator support', true],
-      ['Any hosted service or dashboard — does not exist', false],
+      ['Emergency containment and previews — never gated on credits', true],
+      ['Recovery-credit allowance — not included', false],
     ] as [string, boolean][],
     cta: { label: 'Join the beta', to: '/beta' },
   },
   {
-    id: 'credits',
-    name: 'Individual credits (proposed)',
-    price: 'TBD',
-    unit: 'concept, not for sale',
-    status: 'proposed' as const,
-    statusLabel: 'Proposed',
-    note: 'A pricing concept under evaluation. Nothing here can be purchased.',
+    id: 'starter',
+    name: 'Starter',
+    price: '$15',
+    unit: 'per month (or $180/year = 12 monthly payments)',
+    status: 'soon' as const,
+    statusLabel: 'Stripe checkout: per deployment',
+    featured: false,
+    note: 'For a single operator running regular recoveries. 100 credits every month.',
     features: [
-      ['One credit = one completed recovery workflow (plan → restore → verify) over a single project of up to 50 files', true],
-      ['Refused and conflicted runs cost no credit — only a completed, verified run does', true],
-      ['Credits would never be charged for retries of the same idempotency key', true],
-      ['Published price per credit — not decided', false],
-      ['Checkout, invoicing or refund policy — does not exist', false],
+      ['100 recovery credits per month', true],
+      ['One credit = one completed AND verified recovery', true],
+      ['Failed, partial, unverified or previewed runs cost nothing', true],
+      ['Retries and resumes of a billed plan are free', true],
+      ['Append-only credit ledger, visible in your billing page', true],
+      ['1,000 intents/day, email support, 30-day audit retention', true],
     ] as [string, boolean][],
-    cta: { label: 'Give feedback in the beta', to: '/beta' },
+    cta: { label: 'Join the beta', to: '/beta' },
   },
   {
-    id: 'team',
-    name: 'Team & enterprise (proposed)',
-    price: '—',
-    unit: 'not offered today',
-    status: 'unavailable' as const,
-    statusLabel: 'Not offered',
-    note: 'Described only to show direction. There is no team product, contract or SLA.',
+    id: 'pro',
+    name: 'Pro',
+    price: '$30',
+    unit: 'per month (or $360/year = 12 monthly payments)',
+    status: 'soon' as const,
+    statusLabel: 'Stripe checkout: per deployment',
+    featured: false,
+    note: 'For teams that recover often and want the ledger, upgrades and renewals handled automatically.',
     features: [
-      ['Shared recovery policy and audit evidence export', true],
-      ['Multiple-operator approval workflows', true],
-      ['Seat-based or usage-based billing — undecided', true],
-      ['Terms, privacy policy, support policy — required first, not written', false],
-      ['Invoicing, contracts, tax handling — do not exist', false],
+      ['250 recovery credits per month', true],
+      ['Everything in Starter, plus:', true],
+      ['Mid-period upgrades grant the difference immediately', true],
+      ['Renewals allocate the next allowance exactly once (idempotent)', true],
+      ['10,000 intents/day, priority email support, 60-day audit retention', true],
+      ['99.9% SLA target', true],
     ] as [string, boolean][],
-    cta: { label: 'See the roadmap in docs', to: '/docs/limitations' },
+    cta: { label: 'Join the beta', to: '/beta' },
   },
 ];
 
 const FAQ = [
   {
     id: 'buy',
-    q: 'Can I buy something today?',
-    a: 'No. There is no billing system, no checkout, no payment processing, no account system and no invoice path anywhere in this project. The pricing on this page is either free-and-available or explicitly marked proposed.',
+    q: 'Can I subscribe today?',
+    a: 'The free evaluation is open to everyone with no account. Paid checkout runs through Stripe and activates per deployment once the operator has connected a Stripe account (until then, subscriptions are provisioned server-side in test mode). The prices on this page are the real prices the backend charges — nothing here is a mock-up.',
   },
   {
-    id: 'why',
-    q: 'Why is there no real price yet?',
-    a: 'The release-readiness review concluded that charging customers today is not justified: no customer interviews have happened, willingness to pay is unknown, and the legal, support and incident-response apparatus required for a paid beta does not exist. The recommended path is a consent-based free pilot first.',
+    id: 'credit',
+    q: 'What exactly costs one credit?',
+    a: 'One credit is consumed at a single billable point: a recovery plan execution that the engine reports as completed AND independently verified. Previews and simulations are never billed. Failed, stopped, partial or unverified runs release their held credit back to the wallet. A plan consumes at most one credit for its lifetime, so retries and resumes are always free.',
   },
   {
-    id: 'credits',
-    q: 'How would credits work if they are ever built?',
-    a: 'The proposal charges for a unit of work you can point at: one completed recovery workflow that reaches a verified result. Refusals, conflicts, retries of the same idempotency key and failed verification would not consume credits, so you are never billed for an ambiguous event or for the tool declining to act.',
+    id: 'ledger',
+    q: 'How do I know I was charged correctly?',
+    a: 'Every balance change is an entry in an append-only credit ledger: allocations on verified payments, holds placed before executions, consumptions tied to the recovery plan that earned them, releases, expiries and upgrade adjustments. The ledger is tenant-scoped, read-only for customers and reconciles against the wallet on every entry.',
   },
   {
-    id: 'payment',
-    q: 'Is there any payment integration in the code?',
-    a: 'The repository contains experimental payment-provider scaffolding that is not wired to a product, not configured with credentials and not reachable from any customer flow. It is not evidence of a purchasable product, and no payment functionality is exposed on this website.',
+    id: 'expiry',
+    q: 'Do unused credits roll over?',
+    a: 'No. Unused credits expire when the paid period ends; the expiry is recorded as a ledger entry, and the next renewal allocates the new period’s allowance exactly once. Duplicate or replayed payment webhooks can never allocate twice — allocations are keyed by subscription and billing period.',
+  },
+  {
+    id: 'exhausted',
+    q: 'What happens when I run out of credits?',
+    a: 'Billable executions are refused with HTTP 402 and a response that states your remaining balance and the renewal time. Previews, planning, evidence review and emergency containment are never blocked by billing — an empty wallet can’t stop you from containing an incident.',
   },
   {
     id: 'enterprise',
     q: 'Do you offer enterprise agreements?',
-    a: 'Not today. There is no enterprise product, no contract template and no service-level commitment. Any statement to the contrary would be invented.',
+    a: 'Not today. There is no enterprise product, no contract template and no service-level commitment beyond the Pro SLA target. Any statement to the contrary would be invented.',
   },
 ];
 
@@ -93,7 +103,7 @@ export function PricingPage() {
   usePageMeta({
     title: 'Pricing — Interlock V6',
     description:
-      'Interlock is free to evaluate during the controlled beta. Credit and team pricing are proposals only — no checkout, billing system or account exists today.',
+      'Free evaluation tier, plus Starter at $15/month (100 recovery credits) and Pro at $30/month (250 credits). One credit = one completed, verified recovery — enforced by a server-side ledger.',
   });
 
   return (
@@ -102,11 +112,11 @@ export function PricingPage() {
         <div className="container">
           <Reveal>
             <span className="eyebrow">Pricing</span>
-            <h1>Free to evaluate. Honest about the rest.</h1>
+            <h1>Free to evaluate. Priced on verified recoveries.</h1>
             <p className="section-lead">
-              There is no billing system in this project: nothing here can be purchased, and no
-              checkout, invoice or payment flow will ever appear on this site. Everything below is
-              either available now for free, or clearly labelled as a proposal.
+              The evaluation tier is free and needs no account. Paid plans grant a monthly
+              recovery-credit allowance, and the backend charges exactly one credit per recovery
+              it completes and independently verifies — nothing else is ever billed.
             </p>
           </Reveal>
         </div>
@@ -116,15 +126,15 @@ export function PricingPage() {
         <SectionHead
           id="plans-title"
           eyebrow="Plans"
-          title="One real option, two honest proposals."
-          lead="The free evaluation is genuinely available. The other two rows describe a direction, not a product you can buy."
+          title="Three tiers, one billing rule."
+          lead="Prices are fixed in a single server-side plan registry the checkout charges from — the client never sets an amount. Yearly billing is always twelve monthly payments."
         />
 
         <div className="pricing-grid">
           {PLANS.map((plan, index) => (
             <Reveal key={plan.id} delay={index * 70}>
               <article
-                className={`price-card${plan.status === 'available' ? ' featured' : ''}`}
+                className={`price-card${plan.featured ? ' featured' : ''}`}
                 style={{ height: '100%' }}
               >
                 <div className="spread" style={{ marginBottom: 'var(--space-3)' }}>
@@ -146,7 +156,7 @@ export function PricingPage() {
                     </li>
                   ))}
                 </ul>
-                <Link to={plan.cta.to} className={`btn ${plan.status === 'available' ? 'btn-primary' : 'btn-secondary'} btn-block`}>
+                <Link to={plan.cta.to} className={`btn ${plan.featured ? 'btn-primary' : 'btn-secondary'} btn-block`}>
                   {plan.cta.label}
                 </Link>
               </article>
@@ -155,11 +165,13 @@ export function PricingPage() {
         </div>
 
         <Reveal>
-          <Callout type="warn" title="No fake checkout, ever">
+          <Callout type="info" title="How paid checkout goes live">
             <p>
-              If a future version of this site offers a way to pay, it will be attached to a real
-              billing system with published terms. Until then, any button that says “Buy”, “Upgrade”
-              or “Confirm payment” would be a lie — so none exists.
+              Payments run through Stripe. Checkout buttons appear on deployments where the
+              operator has connected a Stripe account; while an account is unconnected (or in
+              test mode), the free evaluation tier remains fully open and paid plans are
+              provisioned server-side. Every charge still comes from the server-side plan record
+              — a client can never submit its own price.
             </p>
           </Callout>
         </Reveal>
@@ -168,18 +180,19 @@ export function PricingPage() {
       <Section alt labelledBy="credit-model-title">
         <div className="grid grid-2" style={{ alignItems: 'start' }}>
           <Reveal>
-            <span className="eyebrow">Proposed credit model</span>
+            <span className="eyebrow">The credit rule</span>
             <h2 id="credit-model-title">Charge for a unit you can audit.</h2>
             <p className="section-lead">
-              If a credit model is ever introduced, the unit of usage would be a completed recovery
-              workflow that reaches a verified result — not an ambiguous event, and never a refusal.
+              A credit is consumed at one precisely defined billable point — a recovery plan
+              execution the engine reports as completed and independently verified. The rule is
+              enforced by the server, not by the interface.
             </p>
             <ul className="prose-list">
               {[
-                'Counts: plan → restore → verification passes.',
-                'Does not count: refused plans, conflicted runs, withheld approval, failed verification.',
-                'Never double-charges: retries of the same idempotency key are free.',
-                'Recorded: each charge would tie to a verifiable evidence manifest in your own logs.',
+                'Counts: plan → restore → independent verification passes (one credit, once per plan).',
+                'Never counts: previews, simulations, refused or conflicted runs, withheld approval, failed or partial verification.',
+                'Never double-charges: a plan that was already billed runs free on every retry and resume; duplicate payment events allocate once.',
+                'Auditable: every movement lands in an append-only, tenant-scoped ledger you can read from the billing page.',
               ].map((item) => (
                 <li key={item}>
                   <Icon name="check" />
@@ -190,24 +203,25 @@ export function PricingPage() {
           </Reveal>
           <Reveal delay={80}>
             <div className="card">
-              <h3>What has to exist before charging</h3>
+              <h3>Always free, wallet or not</h3>
               <ul className="compare-list">
                 {[
-                  'Customer demand evidence from real interviews and a completed pilot.',
-                  'Terms of service, privacy policy, refund policy and a support policy.',
-                  'An incident-response runbook with a rehearsed drill.',
-                  'External security review of the release candidate.',
-                  'Working payment, invoicing and tax handling — none of which exists today.',
+                  'Emergency containment — billing never gates an incident response.',
+                  'Previews and simulations of any plan.',
+                  'The evaluation tier: tenants without a wallet execute unbilled.',
+                  'Re-running a recovery that already consumed its credit.',
+                  'Reading your own ledger and invoice history.',
                 ].map((item) => (
                   <li key={item}>
-                    <Icon name="alert" />
+                    <Icon name="check" />
                     <span>{item}</span>
                   </li>
                 ))}
               </ul>
               <p className="faint small mb-0">
-                Source: the release-readiness report’s “Is charging customers justified today?”
-                section, which answers “No”.
+                Enforcement is a wallet flag on the server: tenants that were never billed have
+                no wallet, so nothing about the free tier’s behavior changed when subscriptions
+                were added.
               </p>
             </div>
           </Reveal>

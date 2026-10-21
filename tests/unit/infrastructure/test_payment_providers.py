@@ -2,13 +2,14 @@ import hashlib
 import hmac
 import json
 import sys
+from datetime import UTC, datetime
 from types import ModuleType
 from unittest.mock import MagicMock, patch
 from uuid import uuid4
 
 import pytest
 
-from app.domain.entities.billing_entities import PlanTier
+from app.domain.entities.billing_entities import Plan, PlanTier
 from app.infrastructure.payments.payment_providers import (
     MockPaymentProvider,
     StripePaymentProvider,
@@ -22,14 +23,31 @@ def mock_plan() -> PlanModel:
         id=uuid4(),
         name="Pro",
         tier=PlanTier.PRO,
-        price_monthly_cents=4900,
-        price_yearly_cents=47040,
+        price_monthly_cents=3000,
+        price_yearly_cents=36000,
         currency="usd",
         features="{}",
-        limits='{"intents_per_day": 10000}',
+        limits='{"intents_per_day": 10000, "recovery_credits": 250}',
         is_active=True,
-        created_at=__import__("datetime").datetime.now(tz=__import__("datetime").UTC),
-        updated_at=__import__("datetime").datetime.now(tz=__import__("datetime").UTC),
+        created_at=datetime.now(tz=UTC),
+        updated_at=datetime.now(tz=UTC),
+    )
+
+
+def _make_plan(*, tier: PlanTier = PlanTier.PRO, monthly_cents: int = 3000) -> Plan:
+    now = datetime.now(tz=UTC)
+    return Plan(
+        id=uuid4(),
+        name=tier.value.title(),
+        tier=tier,
+        price_monthly_cents=monthly_cents,
+        price_yearly_cents=monthly_cents * 12,
+        currency="usd",
+        features={},
+        limits={},
+        is_active=True,
+        created_at=now,
+        updated_at=now,
     )
 
 
@@ -66,10 +84,16 @@ class TestMockPaymentProvider:
             request=request,
             user_id=uuid4(),
             tenant_id="tenant-1",
+            plan=mock_plan,
         )
         assert response.session_id.startswith("cs_mock_")
         assert response.url is not None
         assert response.expires_at is not None
+        # The session is priced from the server-side plan record.
+        session = provider.get_session(response.session_id)
+        assert session is not None
+        assert session["unit_amount_cents"] == 3000
+        assert session["currency"] == "usd"
 
     @pytest.mark.asyncio
     async def test_create_portal_session(self) -> None:
@@ -154,9 +178,18 @@ class TestStripePaymentProvider:
             success_url="http://localhost/success",
             cancel_url="http://localhost/cancel",
         )
-        response = await provider.create_checkout_session(request, uuid4(), "tenant-1")
+        response = await provider.create_checkout_session(
+            request, uuid4(), "tenant-1", _make_plan()
+        )
         assert response.session_id == "cs_test_123"
         assert response.url == "https://checkout.stripe.com/cs_test"
+        # Price comes from the server-side plan, never from the client request.
+        params = sys.modules["stripe"].checkout.Session.create.call_args.kwargs
+        price_data = params["line_items"][0]["price_data"]
+        assert price_data["unit_amount"] == 3000
+        assert price_data["currency"] == "usd"
+        assert price_data["recurring"] == {"interval": "month"}
+        assert params["subscription_data"]["metadata"]["plan_tier"] == "pro"
 
     @pytest.mark.asyncio
     async def test_create_checkout_session_yearly(self) -> None:
@@ -177,8 +210,14 @@ class TestStripePaymentProvider:
             success_url="http://localhost/success",
             cancel_url="http://localhost/cancel",
         )
-        response = await provider.create_checkout_session(request, uuid4(), "tenant-1")
+        response = await provider.create_checkout_session(
+            request, uuid4(), "tenant-1", _make_plan(tier=PlanTier.STARTER, monthly_cents=1500)
+        )
         assert response.session_id == "cs_test_yearly"
+        params = sys.modules["stripe"].checkout.Session.create.call_args.kwargs
+        price_data = params["line_items"][0]["price_data"]
+        assert price_data["unit_amount"] == 18000
+        assert price_data["recurring"] == {"interval": "year"}
 
     @pytest.mark.asyncio
     async def test_create_portal_session_with_customer_id(self) -> None:

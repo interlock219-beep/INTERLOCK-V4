@@ -125,6 +125,17 @@ class Settings(BaseSettings):
     stripe_secret_key: str = Field(default="")
     stripe_webhook_secret: str = Field(default="")
     stripe_publishable_key: str = Field(default="")
+    # Currency every plan is priced in; validated against the central plan
+    # registry so a deployment can never charge a mixed currency.
+    billing_currency: str = Field(default="usd")
+    # Return URL for the hosted customer billing portal (Stripe requires an
+    # absolute URL). Defaults to the deployed site's pricing page.
+    billing_portal_return_url: str = Field(
+        default="https://interlock-v6.interlock219.workers.dev/pricing"
+    )
+    # How long a credit hold survives around an in-flight recovery execution
+    # before lazy expiry releases it back to the wallet.
+    credit_reservation_ttl_minutes: int = Field(default=60, ge=1, le=1440)
 
     mfa_enabled: bool = Field(default=False)
     mfa_issuer_name: str = Field(default="IntentLock")

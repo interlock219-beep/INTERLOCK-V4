@@ -15,6 +15,7 @@ from app.application.dto.billing import (
     PortalSessionResponse,
 )
 from app.application.interfaces.payment_provider import PaymentProvider
+from app.domain.entities.billing_entities import BillingInterval, Plan
 
 
 class MockPaymentProvider(PaymentProvider):
@@ -35,8 +36,14 @@ class MockPaymentProvider(PaymentProvider):
         request: CreateCheckoutRequest,
         user_id: UUID,
         tenant_id: str | None,
+        plan: Plan,
     ) -> CheckoutSessionResponse:
         session_id = f"cs_mock_{int(time.time())}_{user_id.hex[:8]}"
+        unit_amount = (
+            plan.price_yearly_cents
+            if request.interval == "yearly"
+            else plan.price_monthly_cents
+        )
         self._sessions[session_id] = {
             "id": session_id,
             "user_id": str(user_id),
@@ -45,6 +52,10 @@ class MockPaymentProvider(PaymentProvider):
             "status": "open",
             "success_url": request.success_url,
             "cancel_url": request.cancel_url,
+            # Priced from the server-side plan record, mirroring what the
+            # Stripe adapter does with price_data.
+            "unit_amount_cents": unit_amount,
+            "currency": plan.currency,
         }
         return CheckoutSessionResponse(
             session_id=session_id,
@@ -113,31 +124,43 @@ class StripePaymentProvider(PaymentProvider):
         request: CreateCheckoutRequest,
         user_id: UUID,
         tenant_id: str | None,
+        plan: Plan,
     ) -> CheckoutSessionResponse:
         import stripe
 
+        # Price comes from the server-side plan record only. Inline price_data
+        # means no pre-created Stripe Price id is required and a client can
+        # never influence the charged amount or currency.
+        interval = "year" if request.interval == BillingInterval.YEARLY.value else "month"
+        unit_amount = (
+            plan.price_yearly_cents
+            if request.interval == BillingInterval.YEARLY.value
+            else plan.price_monthly_cents
+        )
+        subscription_metadata = {
+            "user_id": str(user_id),
+            "tenant_id": tenant_id or "",
+            "plan_id": str(plan.id),
+            "plan_tier": plan.tier.value,
+        }
         params: dict[str, Any] = {
             "mode": "subscription",
             "success_url": request.success_url,
             "cancel_url": request.cancel_url,
             "line_items": [
                 {
-                    "price": request.plan_id,
                     "quantity": 1,
+                    "price_data": {
+                        "currency": plan.currency,
+                        "unit_amount": unit_amount,
+                        "recurring": {"interval": interval},
+                        "product_data": {"name": f"INTERLOCK {plan.name}"},
+                    },
                 }
             ],
-            "metadata": {
-                "user_id": str(user_id),
-                "tenant_id": tenant_id or "",
-            },
+            "metadata": subscription_metadata,
+            "subscription_data": {"metadata": subscription_metadata},
         }
-        if request.interval == "yearly":
-            params["subscription_data"] = {
-                "metadata": {
-                    "user_id": str(user_id),
-                    "tenant_id": tenant_id or "",
-                }
-            }
         session = stripe.checkout.Session.create(**params)
         url = session.url or ""
         expires_at = (
@@ -157,10 +180,13 @@ class StripePaymentProvider(PaymentProvider):
     ) -> PortalSessionResponse:
         import stripe
 
+        from app.infrastructure.config.settings import get_settings
+
         stripe_customer_id = customer_id or self._get_customer_id(user_id)
+        return_url = get_settings().billing_portal_return_url
         session = stripe.billing_portal.Session.create(
             customer=stripe_customer_id,
-            return_url="https://intentlock.io/dashboard/billing",
+            return_url=return_url,
         )
         return PortalSessionResponse(
             url=session.url or "",

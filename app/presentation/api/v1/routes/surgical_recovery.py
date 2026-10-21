@@ -79,6 +79,11 @@ from app.presentation.api.dependencies.auth import (
     require_recovery_executor,
 )
 from app.presentation.api.dependencies.emergency_guard import assert_execution_permitted
+from app.presentation.api.v1.routes._recovery_billing import (
+    build_credit_service,
+    reserve_recovery_credit,
+    settle_recovery_credit,
+)
 
 router = APIRouter(tags=["Surgical Recovery"])
 DEFAULT_LIMIT = 100
@@ -477,21 +482,39 @@ async def execute_recovery_plan(
         adapters,
         lease_store=build_plan_lease_store(),
     )
-    await orchestrator.create_durable_plan(tenant_id, plan_id, affected, plan.topological_order)
 
-    # Tenant quota: hold one concurrent-compensation slot for this execution.
-    slot = quota_service.begin_compensation(tenant_id)
-    if not slot.admitted:
-        raise HTTPException(
-            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail=slot.reason,
-        )
+    # Recovery-credit gate: hold one credit before the billable execution
+    # (evaluation tenants without a wallet run unbilled). The verified
+    # outcome below decides charge vs. release; the engine is untouched.
+    billing_session, credit_service = build_credit_service()
     try:
-        execution_result = await orchestrator.execute_durable_plan(
-            tenant_id, plan_id, plan.stop_conditions
+        credit_hold = await reserve_recovery_credit(credit_service, tenant_id, plan_id)
+    except Exception:
+        billing_session.close()
+        raise
+
+    execution_result: dict[str, Any] = {}
+    try:
+        await orchestrator.create_durable_plan(
+            tenant_id, plan_id, affected, plan.topological_order
         )
+
+        # Tenant quota: hold one concurrent-compensation slot for this execution.
+        slot = quota_service.begin_compensation(tenant_id)
+        if not slot.admitted:
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail=slot.reason,
+            )
+        try:
+            execution_result = await orchestrator.execute_durable_plan(
+                tenant_id, plan_id, plan.stop_conditions
+            )
+        finally:
+            quota_service.end_compensation(tenant_id)
     finally:
-        quota_service.end_compensation(tenant_id)
+        await settle_recovery_credit(credit_service, credit_hold, execution_result)
+        billing_session.close()
 
     orchestrator_status = execution_result.get("status", "error")
     if orchestrator_status == "completed":
@@ -582,14 +605,28 @@ async def resume_recovery_plan(
             detail="Recovery plan must be in APPROVED state to resume.",
         )
 
+    # Credit gate for resumes too: an unverified or failed resume releases
+    # the hold; a completed+verified one charges at most one credit per plan
+    # (a plan already billed never charges again).
+    billing_session, credit_service = build_credit_service()
+    try:
+        credit_hold = await reserve_recovery_credit(credit_service, tenant_id, plan_id)
+    except Exception:
+        billing_session.close()
+        raise
 
-    orchestrator = DistributedRecoveryOrchestrator(
-        evidence_repo,
-        execution_repo,
-        adapters,
-        lease_store=build_plan_lease_store(),
-    )
-    result = await orchestrator.resume_plan(tenant_id, plan_id, plan.stop_conditions)
+    result: dict[str, Any] = {}
+    try:
+        orchestrator = DistributedRecoveryOrchestrator(
+            evidence_repo,
+            execution_repo,
+            adapters,
+            lease_store=build_plan_lease_store(),
+        )
+        result = await orchestrator.resume_plan(tenant_id, plan_id, plan.stop_conditions)
+    finally:
+        await settle_recovery_credit(credit_service, credit_hold, result)
+        billing_session.close()
 
     log_security_event(
         "recovery_plan_resumed",

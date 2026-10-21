@@ -6,6 +6,7 @@ from uuid import UUID
 
 class PlanTier(StrEnum):
     FREE = "free"
+    STARTER = "starter"
     PRO = "pro"
     BUSINESS = "business"
     ENTERPRISE = "enterprise"
@@ -121,6 +122,98 @@ class Invoice:
     provider_invoice_id: str | None
     due_date: datetime
     paid_at: datetime | None = None
+    created_at: datetime = field(
+        default_factory=lambda: datetime.now(tz=datetime.now().astimezone().tzinfo)
+    )
+
+
+class CreditLedgerKind(StrEnum):
+    """Kinds of movements recorded in the append-only recovery-credit ledger.
+
+    Every entry moves the tenant's *available* balance (allocated - consumed -
+    reserved) and carries ``balance_after`` so the full history is auditable
+    without reading the wallet row.
+    """
+
+    ALLOCATION = "allocation"  # paid period grant:            available +n
+    RESERVATION = "reservation"  # hold before execution:        available -1
+    RELEASE = "release"  # hold returned (non-billable):   available +1
+    CONSUMPTION = "consumption"  # hold captured by outcome:        available  0
+    EXPIRY = "expiry"  # unused credits expired:         available -n
+    REFUND = "refund"  # operator refund:                available +n
+    ADJUSTMENT = "adjustment"  # plan upgrade mid-period:       available +n
+
+
+class CreditReservationStatus(StrEnum):
+    """Lifecycle of the hold taken around one recovery execution."""
+
+    ACTIVE = "active"
+    CONSUMED = "consumed"
+    RELEASED = "released"
+    EXPIRED = "expired"
+
+
+@dataclass(frozen=True, slots=True)
+class CreditWallet:
+    """Server-controlled recovery-credit wallet for one tenant (organization).
+
+    Customers can never edit this row; all mutations go through
+    ``RecoveryCreditService`` inside database transactions. Invariant:
+    ``available == allocated - consumed - reserved``.
+    """
+
+    id: UUID
+    tenant_id: str
+    allocated: int
+    consumed: int
+    reserved: int
+    period_start: datetime
+    period_end: datetime
+    is_enforced: bool = False
+    plan_tier: str = ""
+    plan_name: str = ""
+    subscription_id: UUID | None = None
+    provider_subscription_id: str | None = None
+    created_at: datetime = field(
+        default_factory=lambda: datetime.now(tz=datetime.now().astimezone().tzinfo)
+    )
+    updated_at: datetime = field(
+        default_factory=lambda: datetime.now(tz=datetime.now().astimezone().tzinfo)
+    )
+
+    @property
+    def available(self) -> int:
+        return self.allocated - self.consumed - self.reserved
+
+
+@dataclass(frozen=True, slots=True)
+class CreditLedgerEntry:
+    """One append-only credit movement. Never updated or deleted."""
+
+    id: UUID
+    tenant_id: str
+    kind: CreditLedgerKind
+    delta: int
+    balance_after: int
+    reason: str
+    idempotency_key: str
+    recovery_plan_id: str | None = None
+    subscription_id: UUID | None = None
+    created_at: datetime = field(
+        default_factory=lambda: datetime.now(tz=datetime.now().astimezone().tzinfo)
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class CreditReservation:
+    """Hold placed around one recovery execution before its outcome is known."""
+
+    id: UUID
+    tenant_id: str
+    recovery_plan_id: str
+    status: CreditReservationStatus
+    expires_at: datetime
+    settled_at: datetime | None = None
     created_at: datetime = field(
         default_factory=lambda: datetime.now(tz=datetime.now().astimezone().tzinfo)
     )

@@ -29,7 +29,7 @@ class MockPaymentProvider(PaymentProvider):
     def get_publishable_key(self) -> str | None:
         return "pk_test_mock"
 
-    async def create_checkout_session(self, request, user_id, tenant_id):
+    async def create_checkout_session(self, request, user_id, tenant_id, plan=None):
         pass
 
     async def create_portal_session(self, user_id, tenant_id, customer_id=None):

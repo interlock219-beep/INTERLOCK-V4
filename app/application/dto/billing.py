@@ -103,3 +103,47 @@ class PortalSessionResponseDTO:
 
     url: str
     expires_at: str
+
+
+@dataclass(frozen=True, slots=True)
+class CreditSummaryResponse:
+    """Recovery-credit wallet summary for the billing dashboard."""
+
+    plan_tier: str
+    plan_name: str
+    subscription_status: str
+    billing_enforced: bool
+    allocated: int
+    consumed: int
+    reserved: int
+    available: int
+    allowance: int
+    period_start: str | None
+    period_end: str | None
+    next_renewal: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class CreditLedgerEntryResponse:
+    """One auditable credit movement (tenant-scoped, newest first)."""
+
+    id: str
+    kind: str
+    delta: int
+    balance_after: int
+    reason: str
+    recovery_plan_id: str | None
+    created_at: str
+
+
+@dataclass(frozen=True, slots=True)
+class InvoiceHistoryResponse:
+    """One billing invoice/payment record."""
+
+    id: str
+    amount_cents: int
+    currency: str
+    status: str
+    provider_invoice_id: str | None
+    paid_at: str | None
+    created_at: str

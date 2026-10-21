@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from app.domain.entities.billing_entities import (
     BillingInterval,
     CheckoutSession,
+    Invoice,
     Plan,
     PlanTier,
     Subscription,
@@ -16,6 +17,7 @@ from app.domain.entities.billing_entities import (
 )
 from app.domain.repositories.billing_repositories import (
     CheckoutRepository,
+    InvoiceRepository,
     PlanRepository,
     SubscriptionRepository,
     UsageRepository,
@@ -23,6 +25,7 @@ from app.domain.repositories.billing_repositories import (
 )
 from app.infrastructure.persistence.models import (
     CheckoutSessionModel,
+    InvoiceModel,
     PlanModel,
     SubscriptionModel,
     UsageRecordModel,
@@ -192,7 +195,10 @@ class SQLAlchemySubscriptionRepository(SubscriptionRepository):
             created_at=subscription.created_at,
             updated_at=subscription.updated_at,
         )
-        self._session.add(model)
+        # Upsert semantics: webhook handlers update EXISTING subscriptions
+        # (past_due marking, period refresh, cancellation); a plain insert
+        # would violate the provider_subscription_id unique constraint.
+        self._session.merge(model)
         self._session.flush()
         return subscription
 
@@ -359,3 +365,59 @@ class SQLAlchemyWebhookRepository(WebhookRepository):
         self._session.merge(model)
         self._session.flush()
         return webhook_event
+
+
+def _invoice_to_entity(model: InvoiceModel) -> Invoice:
+    return Invoice(
+        id=model.id,
+        user_id=model.user_id,
+        subscription_id=model.subscription_id,
+        amount_cents=model.amount_cents,
+        currency=model.currency,
+        status=model.status,
+        provider_invoice_id=model.provider_invoice_id,
+        due_date=model.due_date,
+        paid_at=model.paid_at,
+        created_at=model.created_at,
+    )
+
+
+class SQLAlchemyInvoiceRepository(InvoiceRepository):
+    def __init__(self, session: Session) -> None:
+        self._session = session
+
+    async def get_by_provider_invoice_id(self, provider_invoice_id: str) -> Invoice | None:
+        stmt = select(InvoiceModel).where(
+            InvoiceModel.provider_invoice_id == provider_invoice_id
+        )
+        model = self._session.execute(stmt).scalar_one_or_none()
+        return _invoice_to_entity(model) if model else None
+
+    async def save(self, invoice: Invoice) -> Invoice:
+        model = InvoiceModel(
+            id=invoice.id,
+            user_id=invoice.user_id,
+            subscription_id=invoice.subscription_id,
+            amount_cents=invoice.amount_cents,
+            currency=invoice.currency,
+            status=invoice.status,
+            provider_invoice_id=invoice.provider_invoice_id,
+            due_date=invoice.due_date,
+            paid_at=invoice.paid_at,
+            created_at=invoice.created_at,
+        )
+        self._session.merge(model)
+        self._session.flush()
+        return invoice
+
+    async def list_by_subscription(
+        self, subscription_id: UUID, *, limit: int = 50, offset: int = 0
+    ) -> list[Invoice]:
+        stmt = (
+            select(InvoiceModel)
+            .where(InvoiceModel.subscription_id == subscription_id)
+            .order_by(InvoiceModel.created_at.desc())
+            .limit(limit)
+            .offset(offset)
+        )
+        return [_invoice_to_entity(model) for model in self._session.scalars(stmt)]

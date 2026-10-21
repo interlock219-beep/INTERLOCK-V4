@@ -4,6 +4,7 @@ from uuid import UUID
 
 from app.domain.entities.billing_entities import (
     CheckoutSession,
+    Invoice,
     Plan,
     Subscription,
     WebhookEvent,
@@ -41,6 +42,21 @@ class SubscriptionRepository(ABC):
 
     @abstractmethod
     async def delete(self, subscription_id: UUID, user_id: UUID | None = None) -> None: ...
+
+
+class InvoiceRepository(ABC):
+    """Persistence for payment/invoice history (billing page + audit)."""
+
+    @abstractmethod
+    async def get_by_provider_invoice_id(self, provider_invoice_id: str) -> Invoice | None: ...
+
+    @abstractmethod
+    async def save(self, invoice: Invoice) -> Invoice: ...
+
+    @abstractmethod
+    async def list_by_subscription(
+        self, subscription_id: UUID, *, limit: int = 50, offset: int = 0
+    ) -> list[Invoice]: ...
 
 
 class UsageRepository(ABC):

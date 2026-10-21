@@ -1,11 +1,13 @@
 import logging
-from datetime import UTC, datetime
+from dataclasses import replace
+from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import UUID, uuid4
 
 from app.application.interfaces.payment_provider import PaymentProvider
 from app.domain.entities.billing_entities import (
     BillingInterval,
+    Invoice,
     Subscription,
     SubscriptionStatus,
     WebhookEvent,
@@ -13,10 +15,12 @@ from app.domain.entities.billing_entities import (
 from app.domain.exceptions.billing_errors import WebhookProcessingError
 from app.domain.repositories.billing_repositories import (
     CheckoutRepository,
+    InvoiceRepository,
     PlanRepository,
     SubscriptionRepository,
     WebhookRepository,
 )
+from app.domain.services.recovery_credit_service import RecoveryCreditService
 
 logger = logging.getLogger(__name__)
 
@@ -41,6 +45,35 @@ def _get_dict(value: object) -> dict[str, Any]:
     return {}
 
 
+def _extract_invoice_period(
+    event_object: dict[str, Any], subscription: Subscription, now: datetime
+) -> tuple[datetime, datetime]:
+    """Billing period for an invoice event (provider-trusted data only).
+
+    Preference order: invoice line period (Stripe always sends it), then the
+    subscription's current period, then a derived month/year from the
+    subscription interval as a last resort for degenerate payloads.
+    """
+    lines = _get_dict(event_object.get("lines"))
+    data = lines.get("data")
+    if isinstance(data, list):
+        for line in data:
+            if not isinstance(line, dict):
+                continue
+            period = _get_dict(line.get("period"))
+            start = _get_int(period.get("start", 0))
+            end = _get_int(period.get("end", 0))
+            if start and end and end > start:
+                return (
+                    datetime.fromtimestamp(start, tz=UTC),
+                    datetime.fromtimestamp(end, tz=UTC),
+                )
+    if subscription.current_period_end > subscription.current_period_start:
+        return subscription.current_period_start, subscription.current_period_end
+    days = 365 if subscription.interval is BillingInterval.YEARLY else 30
+    return now, now + timedelta(days=days)
+
+
 class HandleWebhookUseCase:
     def __init__(
         self,
@@ -49,12 +82,21 @@ class HandleWebhookUseCase:
         checkout_repository: CheckoutRepository,
         plan_repository: PlanRepository,
         payment_provider: PaymentProvider,
+        *,
+        credit_service: RecoveryCreditService | None = None,
+        invoice_repository: InvoiceRepository | None = None,
     ) -> None:
         self._webhook_repository = webhook_repository
         self._subscription_repository = subscription_repository
         self._checkout_repository = checkout_repository
         self._plan_repository = plan_repository
         self._payment_provider = payment_provider
+        # Credit allocation happens only on verified provider events
+        # (invoice.paid), never on a frontend redirect. Both dependencies are
+        # optional so constructions without billing persistence keep working;
+        # the billing route always passes them.
+        self._credit_service = credit_service
+        self._invoice_repository = invoice_repository
 
     async def execute(self, payload: bytes, signature: str, webhook_secret: str) -> None:
         provider_event = await self._payment_provider.construct_webhook_event(
@@ -238,6 +280,71 @@ class HandleWebhookUseCase:
             updated_at=datetime.now(tz=UTC),
         )
         await self._subscription_repository.save(updated_subscription)
+        await self._handle_plan_change(updated_subscription, event_object)
+
+    async def _handle_plan_change(
+        self, subscription: Subscription, event_object: dict[str, Any]
+    ) -> None:
+        """Apply mid-period plan changes to the credit wallet.
+
+        Upgrade (higher credit allowance): the difference is granted
+        immediately, recorded as an ADJUSTMENT ledger entry. Downgrade: the
+        current allowance stands until the period ends, then the new plan's
+        allowance applies at the next renewal (documented policy -- nothing
+        paid for is clawed back mid-period).
+        """
+        if self._credit_service is None:
+            return
+        tenant_id = subscription.tenant_id or ""
+        if not tenant_id:
+            return
+        metadata = _get_dict(event_object.get("metadata", {}))
+        new_tier = _get_str(metadata.get("plan_tier", ""))
+        if not new_tier:
+            return
+        plan = await self._plan_repository.get_by_tier(new_tier)
+        if plan is None:
+            return
+        credits = _get_int(plan.limits.get("recovery_credits", 0))
+        summary = await self._credit_service.summary(tenant_id)
+        if not summary.has_wallet:
+            # E.g. trialing before the first paid invoice: just link the
+            # wallet to the subscription. No credits are granted here --
+            # grants happen only in _handle_invoice_paid (verified payment).
+            await self._credit_service.attach_subscription(
+                tenant_id,
+                subscription_id=subscription.id,
+                provider_subscription_id=subscription.provider_subscription_id,
+                plan_tier=plan.tier.value,
+                plan_name=plan.name,
+            )
+            return
+        if plan.tier.value == summary.plan_tier:
+            return
+        marker = subscription.provider_subscription_id or str(subscription.id)
+        if credits > summary.allocated:
+            granted = await self._credit_service.apply_plan_upgrade(
+                tenant_id,
+                new_monthly_credits=credits,
+                subscription_id=subscription.id,
+                idempotency_key=(
+                    f"adjust:{marker}:{plan.tier.value}:"
+                    f"{int(subscription.current_period_start.timestamp())}"
+                ),
+                reason=f"plan upgraded to {plan.name} (allowance difference granted)",
+            )
+            if granted:
+                logger.info(
+                    "Plan upgrade granted %d extra credits to tenant %s",
+                    granted,
+                    tenant_id,
+                )
+        else:
+            logger.info(
+                "Plan change to %s for tenant %s deferred to next renewal (downgrade policy)",
+                plan.tier.value,
+                tenant_id,
+            )
 
     async def _handle_subscription_deleted(self, event_object: dict[str, Any]) -> None:
         provider_subscription_id = _get_str(event_object.get("id", ""))
@@ -263,8 +370,165 @@ class HandleWebhookUseCase:
         )
         await self._subscription_repository.save(updated_subscription)
 
+        # Cancellation: expire the remaining allowance (no rollover) and stop
+        # enforcement. The tenant falls back to the free evaluation tier.
+        if self._credit_service is not None and subscription.tenant_id:
+            expired = await self._credit_service.deactivate(
+                subscription.tenant_id, reason="subscription canceled"
+            )
+            logger.info(
+                "Credit enforcement deactivated for tenant %s (%d credits expired)",
+                subscription.tenant_id,
+                expired,
+            )
+
     async def _handle_invoice_paid(self, event_object: dict[str, Any]) -> None:
-        pass
+        """Verified payment: record the invoice and allocate the allowance.
+
+        This is the ONLY path that grants paid credits. The allocation's
+        idempotency key (provider subscription + period start) makes repeated
+        deliveries of the same invoice -- or renewals replayed with different
+        event ids -- grant the allowance exactly once per billing period.
+        """
+        provider_subscription_id = _get_str(event_object.get("subscription", ""))
+        if not provider_subscription_id:
+            logger.info("invoice.paid without subscription reference; nothing to allocate")
+            return
+        subscription = await self._subscription_repository.get_by_provider_id(
+            provider_subscription_id
+        )
+        if subscription is None:
+            logger.warning(
+                "invoice.paid for unknown subscription %s; skipping", provider_subscription_id
+            )
+            return
+
+        now = datetime.now(tz=UTC)
+        if self._invoice_repository is not None:
+            await self._record_invoice(
+                event_object, subscription, invoice_status="paid", now=now
+            )
+        await self._allocate_credits_for_period(event_object, subscription, now=now)
 
     async def _handle_invoice_payment_failed(self, event_object: dict[str, Any]) -> None:
-        pass
+        """Failed renewal payment: mark past_due and record the invoice.
+
+        No credits are granted. Current-period credits stand until the period
+        ends (documented policy: the tenant keeps what was already paid for).
+        """
+        provider_subscription_id = _get_str(event_object.get("subscription", ""))
+        if not provider_subscription_id:
+            return
+        subscription = await self._subscription_repository.get_by_provider_id(
+            provider_subscription_id
+        )
+        if subscription is None:
+            logger.warning(
+                "invoice.payment_failed for unknown subscription %s; skipping",
+                provider_subscription_id,
+            )
+            return
+
+        now = datetime.now(tz=UTC)
+        if self._invoice_repository is not None:
+            await self._record_invoice(
+                event_object, subscription, invoice_status="open", now=now
+            )
+        if subscription.status is not SubscriptionStatus.PAST_DUE:
+            await self._subscription_repository.save(
+                replace(subscription, status=SubscriptionStatus.PAST_DUE, updated_at=now)
+            )
+            logger.warning(
+                "Subscription %s marked past_due after failed payment",
+                provider_subscription_id,
+            )
+
+    async def _record_invoice(
+        self,
+        event_object: dict[str, Any],
+        subscription: Subscription,
+        *,
+        invoice_status: str,
+        now: datetime,
+    ) -> None:
+        if self._invoice_repository is None:
+            return
+        provider_invoice_id = _get_str(event_object.get("id", "")) or None
+        if provider_invoice_id is not None:
+            existing = await self._invoice_repository.get_by_provider_invoice_id(
+                provider_invoice_id
+            )
+            if existing is not None:
+                return  # duplicate delivery: invoice history is written once
+        amount_cents = _get_int(event_object.get("amount_paid", 0)) or _get_int(
+            event_object.get("amount_due", 0)
+        )
+        currency = (_get_str(event_object.get("currency", ""), "usd") or "usd").lower()
+        await self._invoice_repository.save(
+            Invoice(
+                id=uuid4(),
+                user_id=subscription.user_id,
+                subscription_id=subscription.id,
+                amount_cents=amount_cents,
+                currency=currency,
+                status=invoice_status,
+                provider_invoice_id=provider_invoice_id,
+                due_date=now,
+                paid_at=now if invoice_status == "paid" else None,
+                created_at=now,
+            )
+        )
+
+    async def _allocate_credits_for_period(
+        self,
+        event_object: dict[str, Any],
+        subscription: Subscription,
+        *,
+        now: datetime,
+    ) -> None:
+        if self._credit_service is None:
+            return
+        tenant_id = subscription.tenant_id or ""
+        if not tenant_id:
+            logger.warning(
+                "subscription %s has no tenant; credits are tenant-scoped, skipping allocation",
+                subscription.provider_subscription_id,
+            )
+            return
+        plan = await self._plan_repository.get_by_id(subscription.plan_id)
+        if plan is None:
+            logger.warning("plan %s missing; skipping credit allocation", subscription.plan_id)
+            return
+        credits = _get_int(plan.limits.get("recovery_credits", 0))
+        if credits <= 0:
+            logger.info(
+                "plan %s grants no recovery credits; nothing to allocate", plan.tier.value
+            )
+            return
+
+        period_start, period_end = _extract_invoice_period(event_object, subscription, now)
+        marker = subscription.provider_subscription_id or str(subscription.id)
+        entry = await self._credit_service.allocate(
+            tenant_id,
+            amount=credits,
+            period_start=period_start,
+            period_end=period_end,
+            idempotency_key=f"alloc:{marker}:{int(period_start.timestamp())}",
+            reason=f"{plan.name} allowance for paid period ({credits} credits)",
+            subscription_id=subscription.id,
+            plan_tier=plan.tier.value,
+            plan_name=plan.name,
+        )
+        if entry is None:
+            logger.info(
+                "Credit allocation for %s period %s already recorded; idempotent skip",
+                marker,
+                period_start.isoformat(),
+            )
+        else:
+            logger.info(
+                "Allocated %d recovery credits to tenant %s (plan %s)",
+                credits,
+                tenant_id,
+                plan.tier.value,
+            )

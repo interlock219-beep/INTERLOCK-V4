@@ -77,6 +77,7 @@ class CreateCheckoutSessionUseCase:
             ),
             user_id,
             tenant_id,
+            plan,
         )
 
         checkout = CheckoutSession(

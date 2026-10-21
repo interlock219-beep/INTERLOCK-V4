@@ -48,6 +48,11 @@ from app.presentation.api.dependencies.auth import (
     require_recovery_executor,
 )
 from app.presentation.api.dependencies.emergency_guard import assert_execution_permitted
+from app.presentation.api.v1.routes._recovery_billing import (
+    build_credit_service,
+    reserve_recovery_credit,
+    settle_recovery_credit,
+)
 
 router = APIRouter(tags=["Control"])
 
@@ -318,40 +323,57 @@ async def execute_recovery(
                 ),
             )
 
-        orchestrator = DistributedRecoveryOrchestrator(
-            evidence_repository=evidence_repo,
-            execution_repository=execution_repo,
-            adapters=adapters,
-            lease_store=build_plan_lease_store(),
-        )
+        # Recovery-credit gate (billing): hold one credit before execution;
+        # the verified outcome decides charge vs. release. Evaluation tenants
+        # (no wallet) run unbilled.
+        billing_session, credit_service = build_credit_service()
+        try:
+            credit_hold = await reserve_recovery_credit(
+                credit_service, get_user_tenant_id(current_user), plan.plan_id
+            )
+        except Exception:
+            billing_session.close()
+            raise
 
-        protected_actions: list[ProtectedAction] = []
-        for step in plan.steps:
-            protected_actions.append(
-                ProtectedAction(
-                    action_id=step.get("action_id", ""),
-                    tenant_id=get_user_tenant_id(current_user),
-                    actor_user_id=None,
-                    agent_id="",
-                    authority_grant_id=None,
-                    tool=step.get("target_system", ""),
-                    resource=step.get("target_resource", ""),
-                    action_type=step.get("action_type", ""),
-                )
+        execution_result: dict[str, Any] = {}
+        try:
+            orchestrator = DistributedRecoveryOrchestrator(
+                evidence_repository=evidence_repo,
+                execution_repository=execution_repo,
+                adapters=adapters,
+                lease_store=build_plan_lease_store(),
             )
 
-        await orchestrator.create_durable_plan(
-            tenant_id=get_user_tenant_id(current_user),
-            plan_id=plan.plan_id,
-            actions=protected_actions,
-            topological_order=plan.topological_order,
-        )
+            protected_actions: list[ProtectedAction] = []
+            for step in plan.steps:
+                protected_actions.append(
+                    ProtectedAction(
+                        action_id=step.get("action_id", ""),
+                        tenant_id=get_user_tenant_id(current_user),
+                        actor_user_id=None,
+                        agent_id="",
+                        authority_grant_id=None,
+                        tool=step.get("target_system", ""),
+                        resource=step.get("target_resource", ""),
+                        action_type=step.get("action_type", ""),
+                    )
+                )
 
-        execution_result = await orchestrator.execute_durable_plan(
-            tenant_id=get_user_tenant_id(current_user),
-            plan_id=plan.plan_id,
-            stop_conditions=plan.stop_conditions,
-        )
+            await orchestrator.create_durable_plan(
+                tenant_id=get_user_tenant_id(current_user),
+                plan_id=plan.plan_id,
+                actions=protected_actions,
+                topological_order=plan.topological_order,
+            )
+
+            execution_result = await orchestrator.execute_durable_plan(
+                tenant_id=get_user_tenant_id(current_user),
+                plan_id=plan.plan_id,
+                stop_conditions=plan.stop_conditions,
+            )
+        finally:
+            await settle_recovery_credit(credit_service, credit_hold, execution_result)
+            billing_session.close()
 
         verification_service = ContinuousVerificationService(
             evidence_repository=evidence_repo,
@@ -553,17 +575,33 @@ async def resume_recovery(
         execution_repo = SQLAlchemyDurableExecutionRepository(session)
         adapters = _build_recovery_adapters()
 
-        orchestrator = DistributedRecoveryOrchestrator(
-            evidence_repository=evidence_repo,
-            execution_repository=execution_repo,
-            adapters=adapters,
-            lease_store=build_plan_lease_store(),
-        )
-        resume_result = await orchestrator.resume_plan(
-            tenant_id=get_user_tenant_id(_authorized),
-            plan_id=plan_id,
-            stop_conditions=plan.stop_conditions,
-        )
+        # Credit gate for resumes: same billable point (completed+verified),
+        # at most one credit per plan for its lifetime.
+        billing_session, credit_service = build_credit_service()
+        try:
+            credit_hold = await reserve_recovery_credit(
+                credit_service, get_user_tenant_id(_authorized), plan_id
+            )
+        except Exception:
+            billing_session.close()
+            raise
+
+        resume_result: dict[str, Any] = {}
+        try:
+            orchestrator = DistributedRecoveryOrchestrator(
+                evidence_repository=evidence_repo,
+                execution_repository=execution_repo,
+                adapters=adapters,
+                lease_store=build_plan_lease_store(),
+            )
+            resume_result = await orchestrator.resume_plan(
+                tenant_id=get_user_tenant_id(_authorized),
+                plan_id=plan_id,
+                stop_conditions=plan.stop_conditions,
+            )
+        finally:
+            await settle_recovery_credit(credit_service, credit_hold, resume_result)
+            billing_session.close()
         with suppress(Exception):
             session.commit()
         return resume_result

@@ -6,6 +6,7 @@ from app.application.dto.billing import (
     CreateCheckoutRequest,
     PortalSessionResponse,
 )
+from app.domain.entities.billing_entities import Plan
 
 
 class PaymentProvider(ABC):
@@ -17,8 +18,14 @@ class PaymentProvider(ABC):
         request: CreateCheckoutRequest,
         user_id: UUID,
         tenant_id: str | None,
+        plan: Plan,
     ) -> CheckoutSessionResponse:
-        """Create a hosted checkout session and return the session URL."""
+        """Create a hosted checkout session and return the session URL.
+
+        ``plan`` is the server-side plan record: providers must price the
+        session from it (or from a pre-created Price mapped to it) and must
+        never accept amounts or currencies from the client request.
+        """
         ...
 
     @abstractmethod

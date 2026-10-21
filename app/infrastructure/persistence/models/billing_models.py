@@ -10,7 +10,11 @@ from app.infrastructure.persistence.database import Base
 
 
 class PlanTier(StrEnum):
+    """Must stay in sync with ``app.domain.entities.billing_entities.PlanTier``
+    (the persistence-layer column enum mirrors the domain tier registry)."""
+
     FREE = "free"
+    STARTER = "starter"
     PRO = "pro"
     BUSINESS = "business"
     ENTERPRISE = "enterprise"
