@@ -298,10 +298,15 @@ contain the website at all.
   `/download`, `/docs/...`). Deliberately **no `main`**: an assets-only Worker needs no script, and
   inventing an entry point would be fiction. Without `single-page-application`, every deep link would
   return a bare 404 (Cloudflare's documented default when no Worker script is present).
-- Committed and pushed `site/` (52 files) to `master`, the branch Cloudflare watches.
+- Committed and pushed `site/` (53 files, including the Wrangler config) to `master`, the branch
+  Cloudflare watches.
 - Required dashboard change (cannot be applied from here — no Cloudflare credentials in this
   environment): **Root directory `/` → `site`**; Build command `npm ci && npm run build`; Deploy
   command unchanged (`npx wrangler deploy`).
 
 **Verification:** `npx wrangler@4.151.3 deploy --dry-run` → exit 0, reads 19 assets from
 `site/dist`. Website checks on the committed tree: typecheck 0, lint 0, vitest 40/40, build 0.
+Production build verified in a real browser afterwards: full document loads of `/`, `/features` and
+an unknown route, plus client-side navigation via header clicks to `/demo` and `/download`, all
+render the correct per-route title and single `<h1>`, no horizontal overflow (985/1000), 0 dead
+links and 0 console errors.
