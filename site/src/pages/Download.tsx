@@ -43,12 +43,12 @@ export function DownloadPage() {
         <div className="container">
           <Reveal>
             <span className="eyebrow">Installation</span>
-            <h1>Build from source. Nothing published yet.</h1>
+            <h1>Install INTERLOCK.</h1>
             <p className="section-lead">
-              Two interfaces, one engine: run Interlock from your terminal today, or build the VS
-              Code extension from the source in this repository. Nothing is distributed through
-              PyPI, npm or any marketplace, so no download link or checksum appears anywhere on
-              this site.
+              Two ways to get the VS Code extension: install directly from the official Microsoft
+              Visual Studio Code Marketplace (recommended), or download the VSIX installer for
+              manual installation. The terminal runner installs from a checkout. Windows x64 is the
+              tested platform; macOS and Linux have not completed native validation.
             </p>
           </Reveal>
         </div>
@@ -67,7 +67,7 @@ export function DownloadPage() {
         <Reveal>
           <div className="wf-grid">
             {INSTALL_OPTIONS.map((option) => {
-              const pending = option.id === 'vscode';
+              const pending = false;
               const inPageSecondary = option.secondaryTarget.startsWith('#');
 
               return (
@@ -221,10 +221,10 @@ export function DownloadPage() {
           id="vscode-title"
           eyebrow="Installation instructions"
           title="Install for VS Code."
-          lead="Use Interlock directly inside your development environment. The editor interface exists in this repository: build it locally, install the resulting local package, and the engine is installed and verified for you. Nothing is published, so this page never offers a download."
+          lead="Use Interlock directly inside your development environment. Install from the VS Code Marketplace (recommended), download the VSIX installer for manual installation, or build from source. The extension is a thin interface over the shared engine."
         />
 
-        <Callout type="warn" title={VS_CODE_STATUS.badge}>
+        <Callout type="info" title={VS_CODE_STATUS.badge}>
           <p>{VS_CODE_STATUS.headline}</p>
           <ul>
             {VS_CODE_STATUS.facts.map((fact) => (
@@ -233,26 +233,65 @@ export function DownloadPage() {
           </ul>
         </Callout>
 
+        <div className="row" style={{ marginTop: 'var(--space-4)', marginBottom: 'var(--space-4)' }}>
+          <a
+            className="btn btn-primary btn-lg"
+            href={SITE.vscodeMarketplaceUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            <Icon name="vscode" /> Install from VS Code Marketplace
+          </a>
+          <a
+            className="btn btn-secondary btn-lg"
+            href={SITE.vscodeVsixReleasesPage}
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            <Icon name="download" /> Download VSIX Installer
+          </a>
+        </div>
+        <p className="small muted" style={{ marginBottom: 'var(--space-4)' }}>
+          Install from the official Microsoft Visual Studio Code Marketplace. Open the extension
+          listing and select Install. Prefer manual installation? Download the INTERLOCK VSIX
+          package ({SITE.vscodeVsixFilename}) and install it in Visual Studio Code using the
+          Extensions view's menu and the "Install from VSIX..." option.
+        </p>
+
         <div className="grid grid-2" style={{ alignItems: 'start' }}>
           <div className="stack">
             <div className="panel panel-pad">
               <h3>Install routes</h3>
               <ul className="compare-list">
                 <li>
-                  <Icon name="x" />
+                  <Icon name="check" />
                   <span>
-                    <strong>Marketplace installation</strong> — no listing exists, so there is no
-                    extension identifier to install and no Marketplace URL is shown.
+                    <strong>Marketplace installation (recommended)</strong> — install directly
+                    from the official Microsoft Visual Studio Code Marketplace. Extension id:{' '}
+                    <code>{SITE.vscodeMarketplaceId}</code>.{' '}
+                    <a
+                      href={SITE.vscodeMarketplaceUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
+                      Open the listing
+                    </a>
+                    .
                   </span>
                 </li>
                 <li>
                   <Icon name="check" />
                   <span>
-                    <strong>Build the local <code>.vsix</code></strong> — the extension source is in
-                    this repository. In <code>extensions/vscode/</code> run{' '}
-                    <code>npm install</code> and <code>npm run package</code>, then install the
-                    resulting file with <code>code --install-extension</code>. The artifact is
-                    local: it is not published and carries no published checksum.
+                    <strong>Download the VSIX installer</strong> — manual installation via
+                    "Install from VSIX...". File: <code>{SITE.vscodeVsixFilename}</code>.{' '}
+                    <a
+                      href={SITE.vscodeVsixReleasesPage}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
+                      GitHub Releases
+                    </a>
+                    .
                   </span>
                 </li>
                 <li>

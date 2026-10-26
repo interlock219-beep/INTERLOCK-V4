@@ -12,6 +12,7 @@ const DownloadPage = lazy(() => import('./pages/Download').then((m) => ({ defaul
 const DocsPage = lazy(() => import('./pages/Docs').then((m) => ({ default: m.DocsPage })));
 const SafetyPage = lazy(() => import('./pages/Safety').then((m) => ({ default: m.SafetyPage })));
 const PricingPage = lazy(() => import('./pages/Pricing').then((m) => ({ default: m.PricingPage })));
+const UsagePage = lazy(() => import('./pages/Usage').then((m) => ({ default: m.UsagePage })));
 const BlogPage = lazy(() => import('./pages/Blog').then((m) => ({ default: m.BlogPage })));
 const ArticlePage = lazy(() => import('./pages/Article').then((m) => ({ default: m.ArticlePage })));
 const BetaPage = lazy(() => import('./pages/Beta').then((m) => ({ default: m.BetaPage })));
@@ -70,6 +71,7 @@ export function App() {
             <Route path="/docs/:slug" element={<DocsPage />} />
             <Route path="/safety" element={<SafetyPage />} />
             <Route path="/pricing" element={<PricingPage />} />
+            <Route path="/usage" element={<UsagePage />} />
             <Route path="/blog" element={<BlogPage />} />
             <Route path="/blog/:slug" element={<ArticlePage />} />
             <Route path="/beta" element={<BetaPage />} />

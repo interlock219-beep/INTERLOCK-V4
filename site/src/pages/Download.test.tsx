@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { MemoryRouter } from 'react-router-dom';
 import { DownloadPage } from './Download';
 import { CopyButton } from '../components/CodeBlock';
+import { SITE } from '../data/site';
 
 function renderPage() {
   return render(
@@ -71,32 +72,21 @@ describe('Install page — two-workflow installation experience', () => {
     expect(document.body.textContent).toContain('Compatibility status');
   });
 
-  it('shows an honest not-published state from the VS Code CTA — never a fake install', () => {
+  it('shows the published VS Code extension state with a real Marketplace link', () => {
     renderPage();
 
-    const cta = screen.getByRole('button', { name: 'Install for VS Code' });
-    const panel = document.getElementById('vscode-unavailable');
+    const cta = screen.getAllByRole('link', { name: 'Install from VS Code Marketplace' })[0];
+    expect(cta.getAttribute('href')).toBe(SITE.vscodeMarketplaceUrl);
 
-    expect(panel).toBeTruthy();
-    expect(cta.getAttribute('aria-expanded')).toBe('false');
-    expect(cta.getAttribute('aria-controls')).toBe('vscode-unavailable');
-    expect(panel?.hasAttribute('hidden')).toBe(true);
-
-    fireEvent.click(cta);
-
-    expect(cta.getAttribute('aria-expanded')).toBe('true');
-    expect(panel?.hasAttribute('hidden')).toBe(false);
-    expect(document.body.textContent).toContain('Extension not published');
-    expect(document.body.textContent).toContain('nothing is published');
+    expect(document.body.textContent).toContain('Published on the VS Code Marketplace');
+    expect(document.body.textContent).toContain('interlock.interlock-vscode');
     expect(document.body.textContent).not.toMatch(/installed successfully|installation complete/i);
 
-    // The page must state the truth: the extension source EXISTS in the
-    // repository, it is simply not published.
-    expect(document.body.textContent).toContain('extensions/vscode/');
-    expect(document.body.textContent).not.toContain('no extension source');
+    // A VSIX installer is also offered for manual installation.
+    const vsix = screen.getAllByRole('link', { name: /Download VSIX Installer/i });
+    expect(vsix.length).toBeGreaterThan(0);
 
-    // No invented Marketplace / artifact destination anywhere on the page.
-    expect(hrefs().filter((h) => /marketplace|\.vsix/i.test(h ?? ''))).toHaveLength(0);
+    // No invented or placeholder download destinations.
     expect(hrefs().filter((h) => h === '#' || h === '')).toHaveLength(0);
   });
 

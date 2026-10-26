@@ -59,8 +59,16 @@ export function HomePage() {
                 </Link>
               </div>
               <p className="hero-note">
-                Install from the public repository — no binary or installer is published yet.
-                Windows x64 is the tested primary platform; macOS and Linux are{' '}
+                Install the VS Code extension from the{' '}
+                <a
+                  href={SITE.vscodeMarketplaceUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  VS Code Marketplace
+                </a>{' '}
+                or download the VSIX installer. Windows x64 is the tested primary platform;
+                macOS and Linux are{' '}
                 <Link to="/download">in validation</Link>.
               </p>
             </Reveal>

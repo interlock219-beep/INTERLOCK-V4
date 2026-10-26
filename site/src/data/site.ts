@@ -18,6 +18,15 @@ export const SITE = {
   repoLabel: 'interlock219-beep/INTERLOCK-V4',
   securityEmail: 'security@interlock.io',
   evidenceDate: '2026-10-18',
+  // VS Code extension (published on the Microsoft Visual Studio Code Marketplace)
+  vscodeMarketplaceId: 'interlock.interlock-vscode',
+  vscodeMarketplaceUrl: 'https://marketplace.visualstudio.com/items?itemName=interlock.interlock-vscode',
+  vscodeExtensionVersion: '0.1.3',
+  // VSIX installer is published as a GitHub Release asset (upload required)
+  vscodeVsixFilename: 'interlock-0.1.3.vsix',
+  vscodeVsixReleaseUrl:
+    'https://github.com/interlock219-beep/INTERLOCK-V4/releases/download/v0.1.3/interlock-0.1.3.vsix',
+  vscodeVsixReleasesPage: 'https://github.com/interlock219-beep/INTERLOCK-V4/releases',
 } as const;
 
 export interface NavLink {
@@ -420,14 +429,18 @@ export const INSTALL_OPTIONS: InstallOption[] = [
     icon: 'vscode',
     title: 'Install for VS Code',
     description: 'Bring Interlock into your development workflow.',
-    primaryLabel: 'Install for VS Code',
-    primaryTarget: '#vscode-unavailable',
+    primaryLabel: 'Install from VS Code Marketplace',
+    primaryTarget: SITE.vscodeMarketplaceUrl,
     secondaryLabel: 'View installation instructions',
     secondaryTarget: '#install-vscode',
-    statusLabel: 'Extension not published',
-    statusTone: 'amber',
+    statusLabel: 'Published on Marketplace',
+    statusTone: 'green',
     statusNote:
-      'The extension source is in this repository and builds locally, but nothing is published: no Marketplace listing, no download, no published checksum.',
+      'Published on the official Microsoft Visual Studio Code Marketplace (extension id ' +
+      SITE.vscodeMarketplaceId +
+      ', version ' +
+      SITE.vscodeExtensionVersion +
+      '). Install directly from VS Code, or download the VSIX installer below for manual installation.',
   },
   {
     id: 'terminal',
@@ -445,16 +458,19 @@ export const INSTALL_OPTIONS: InstallOption[] = [
   },
 ];
 
-/** Honest, expandable status behind the VS Code CTA. Nothing is "installed" by clicking it. */
+/** Published VS Code extension status. */
 export const VS_CODE_STATUS = {
-  badge: 'Extension not published',
+  badge: 'Published on the VS Code Marketplace',
   headline:
-    'The extension exists in this repository and builds locally — but nothing is published, so there is no download and no published checksum.',
+    'INTERLOCK is published on the official Microsoft Visual Studio Code Marketplace. Install it directly from VS Code, or download the VSIX installer for manual installation.',
   facts: [
-    'No Marketplace listing: there is no publisher or extension identifier to install from, so no Marketplace URL is shown.',
-    'The extension source, its manifest and its bundled engine are in this repository (`extensions/vscode/`), and the package step is `npm run package` in that directory.',
-    'A `.vsix` built that way is a LOCAL artifact: it is not published, and no checksum or signature is published for it.',
-    'This page never fakes a successful install: no button marks the extension as installed.',
+    'Marketplace listing: ' + SITE.vscodeMarketplaceUrl,
+    'Extension identifier: ' + SITE.vscodeMarketplaceId + ' (publisher: interlock, name: interlock-vscode).',
+    'Published version: ' + SITE.vscodeExtensionVersion + '.',
+    'The extension bundles a SHA-256-pinned CPython 3.11 runtime and a manifest-verified engine for Windows x64; on macOS/Linux/Windows ARM64 it falls back to a detected system Python 3.11–3.14.',
+    'A VSIX installer (' +
+      SITE.vscodeVsixFilename +
+      ') is also provided for manual installation via "Install from VSIX...".',
   ],
   capabilitiesTitle: 'What the extension does today',
   capabilities: [
@@ -481,7 +497,12 @@ export const VS_CODE_STATUS = {
     {
       check: 'Extension present in the Extensions view?',
       code: null,
-      note: 'Absence is expected — the extension is not published. Do not sideload a `.vsix` from an untrusted source; verify anything you run against the repository.',
+      note:
+        'Search for "Interlock" in the Extensions view, or open ' +
+        SITE.vscodeMarketplaceUrl +
+        '. The extension id is ' +
+        SITE.vscodeMarketplaceId +
+        '.',
     },
   ],
 } as const;
